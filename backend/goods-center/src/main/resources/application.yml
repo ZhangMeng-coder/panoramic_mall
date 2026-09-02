@@ -1,0 +1,32 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: goods-center
+  cloud:
+    nacos:
+      # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
+      username: @nacos.username@
+      password: @nacos.password@
+      discovery:
+        server-addr: @nacos.server-addr@
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 连接信息通过环境变量注入（默认本机 127.0.0.1 root/root，库 panoramic_mall）
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      # 逻辑删除：is_delete 字段（见 common BaseEntity 的 @TableLogic）
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL 日志，上线前移除
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

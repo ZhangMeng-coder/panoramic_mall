@@ -1,0 +1,23 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway
+  cloud:
+    nacos:
+      # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
+      username: @nacos.username@
+      password: @nacos.password@
+      discovery:
+        server-addr: @nacos.server-addr@
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: goods-center-route
+              uri: lb://goods-center
+              filters:
+                - StripPrefix=1
+              predicates:
+                - Path=/goods/**
