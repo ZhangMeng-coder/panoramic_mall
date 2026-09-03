@@ -1,0 +1,211 @@
+package com.panoramic.admin.service.impl;
+
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.panoramic.admin.dto.PermissionSaveDTO;
+import com.panoramic.admin.dto.PermissionUpdateDTO;
+import com.panoramic.admin.entity.SysPermission;
+import com.panoramic.admin.entity.SysRolePermission;
+import com.panoramic.admin.mapper.SysPermissionMapper;
+import com.panoramic.admin.mapper.SysRolePermissionMapper;
+import com.panoramic.admin.service.PermissionService;
+import com.panoramic.admin.vo.PermissionTreeVO;
+import com.panoramic.common.exception.ServiceException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * 权限服务实现
+ * <p>类型层级规则：目录(1) → 页面(2) → 按钮(3)，每层 +1。
+ * 根(parentId=0)只许目录；子类型必须等于父类型+1；按钮(3)不可再有子。</p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class PermissionServiceImpl implements PermissionService {
+
+    /** 类型：目录 */
+    private static final int TYPE_DIR = 1;
+    /** 类型：页面 */
+    private static final int TYPE_MENU = 2;
+    /** 类型：按钮 */
+    private static final int TYPE_BUTTON = 3;
+
+    private final SysPermissionMapper permissionMapper;
+    private final SysRolePermissionMapper rolePermissionMapper;
+
+    @Override
+    public List<PermissionTreeVO> tree() {
+        // 平铺查询（排序后），再按 parentId 分组递归组装成树
+        List<SysPermission> permissions = selectAll();
+        if (permissions.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<Long, List<SysPermission>> byParent = permissions.stream()
+                .collect(Collectors.groupingBy(SysPermission::getParentId));
+        return buildChildren(byParent, 0L);
+    }
+
+    @Override
+    public List<PermissionTreeVO> menus() {
+        // 前端目录接口：仅 目录+页面
+        List<SysPermission> menus = permissionMapper.selectList(
+                Wrappers.<SysPermission>lambdaQuery()
+                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
+                        .orderByAsc(SysPermission::getSort)
+                        .orderByAsc(SysPermission::getId));
+        if (menus.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<Long, List<SysPermission>> byParent = menus.stream()
+                .collect(Collectors.groupingBy(SysPermission::getParentId));
+        return buildChildren(byParent, 0L);
+    }
+
+    @Override
+    public PermissionTreeVO detail(Long id) {
+        return toVO(getByIdOrThrow(id));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long savePermission(PermissionSaveDTO dto) {
+        Long parentId = dto.getParentId();
+        Integer type = dto.getType();
+
+        if (parentId == 0L) {
+            // 根节点只允许目录
+            if (type != TYPE_DIR) {
+                throw new ServiceException("顶级节点只能是目录");
+            }
+        } else {
+            SysPermission parent = getByIdOrThrow(parentId);
+            // 子类型必须等于父类型+1（目录→页面→按钮，逐层递减）
+            if (type != parent.getType() + 1) {
+                throw new ServiceException("权限层级不合法：子类型必须是父类型下一级（目录→页面→按钮）");
+            }
+        }
+        checkNameDuplicate(dto.getName(), parentId, null);
+
+        SysPermission permission = new SysPermission();
+        BeanUtils.copyProperties(dto, permission);
+        if (permission.getSort() == null) {
+            permission.setSort(0);
+        }
+        permissionMapper.insert(permission);
+        return permission.getId();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updatePermission(Long id, PermissionUpdateDTO dto) {
+        SysPermission permission = getByIdOrThrow(id);
+        // 保持原有父级与类型，仅更新名称/权限字符串/图标/排序
+        checkNameDuplicate(dto.getName(), permission.getParentId(), id);
+
+        permission.setName(dto.getName());
+        permission.setPerms(dto.getPerms());
+        permission.setIcon(dto.getIcon());
+        permission.setSort(dto.getSort() == null ? 0 : dto.getSort());
+        permissionMapper.updateById(permission);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deletePermission(Long id) {
+        getByIdOrThrow(id);
+        // 存在直接子权限即拦截（树形结构下必然拦截所有后代）
+        Long childCount = permissionMapper.selectCount(
+                Wrappers.<SysPermission>lambdaQuery().eq(SysPermission::getParentId, id));
+        if (childCount > 0) {
+            throw new ServiceException("存在子权限，无法删除");
+        }
+        // 已被角色引用时拒绝删除
+        Long refCount = rolePermissionMapper.selectCount(
+                Wrappers.<SysRolePermission>lambdaQuery().eq(SysRolePermission::getPermissionId, id));
+        if (refCount > 0) {
+            throw new ServiceException("该权限已分配给角色，无法删除");
+        }
+        permissionMapper.deleteById(id);
+    }
+
+    /**
+     * 查询全量权限（排序后）
+     *
+     * @return 权限列表
+     */
+    private List<SysPermission> selectAll() {
+        return permissionMapper.selectList(
+                Wrappers.<SysPermission>lambdaQuery()
+                        .orderByAsc(SysPermission::getSort)
+                        .orderByAsc(SysPermission::getId));
+    }
+
+    /**
+     * 根据 ID 查询权限（不存在抛出业务异常）
+     *
+     * @param id 权限ID
+     * @return 权限实体
+     */
+    private SysPermission getByIdOrThrow(Long id) {
+        SysPermission permission = permissionMapper.selectById(id);
+        if (permission == null) {
+            throw new ServiceException("权限不存在");
+        }
+        return permission;
+    }
+
+    /**
+     * 递归构建指定父权限下的子权限树
+     *
+     * @param byParent 按父权限ID分组的全量权限
+     * @param parentId 父权限ID（0 表示顶级）
+     * @return 子权限树列表
+     */
+    private List<PermissionTreeVO> buildChildren(Map<Long, List<SysPermission>> byParent, Long parentId) {
+        List<SysPermission> nodes = byParent.getOrDefault(parentId, Collections.emptyList());
+        return nodes.stream().map(permission -> {
+            PermissionTreeVO vo = toVO(permission);
+            vo.setChildren(buildChildren(byParent, permission.getId()));
+            return vo;
+        }).collect(Collectors.toList());
+    }
+
+    /**
+     * 校验同一父节点下权限名称不重复
+     *
+     * @param name      权限名称
+     * @param parentId  父权限ID
+     * @param excludeId 需要排除的权限ID（更新时排除自身），可为 null
+     */
+    private void checkNameDuplicate(String name, Long parentId, Long excludeId) {
+        Long count = permissionMapper.selectCount(
+                Wrappers.<SysPermission>lambdaQuery()
+                        .eq(SysPermission::getParentId, parentId)
+                        .eq(SysPermission::getName, name)
+                        .ne(excludeId != null, SysPermission::getId, excludeId));
+        if (count > 0) {
+            throw new ServiceException("同级下已存在同名权限");
+        }
+    }
+
+    /**
+     * 实体转 VO
+     *
+     * @param permission 权限实体
+     * @return 权限节点
+     */
+    private PermissionTreeVO toVO(SysPermission permission) {
+        PermissionTreeVO vo = new PermissionTreeVO();
+        BeanUtils.copyProperties(permission, vo);
+        return vo;
+    }
+}

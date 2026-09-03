@@ -1,0 +1,30 @@
+# Java / Maven 构建产物
+target/
+
+# Git
+.git/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# 日志
+logs/
+*.log
+
+# Node / Vite 依赖与构建产物
+node_modules/
+dist/
+
+# 本地临时文件
+*.local
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db

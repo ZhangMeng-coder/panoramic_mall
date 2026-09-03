@@ -1,9 +1,10 @@
 <template>
   <el-container class="app-layout">
     <el-aside width="200px" class="app-aside">
-      <div class="app-logo">全景商城 · 商品中台</div>
+      <div class="app-logo">全景商城 · 后台管理</div>
       <el-menu
         :default-active="activeMenu"
+        :default-openeds="['/system']"
         router
         class="app-menu"
       >
@@ -19,6 +20,24 @@
           <el-icon><Box /></el-icon>
           <span>商品管理</span>
         </el-menu-item>
+        <el-sub-menu index="/system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/user">
+            <el-icon><User /></el-icon>
+            <span>用户管理</span>
+          </el-menu-item>
+          <el-menu-item index="/role">
+            <el-icon><Avatar /></el-icon>
+            <span>角色管理</span>
+          </el-menu-item>
+          <el-menu-item index="/permission">
+            <el-icon><Lock /></el-icon>
+            <span>权限管理</span>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
     <el-main class="app-main">
@@ -30,7 +49,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Menu, Goods, Box } from '@element-plus/icons-vue'
+import { Menu, Goods, Box, Setting, User, Avatar, Lock } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)
@@ -73,7 +92,8 @@ body,
   background-color: #001529;
 }
 
-.app-menu .el-menu-item {
+.app-menu .el-menu-item,
+.app-menu .el-sub-menu__title {
   color: rgba(255, 255, 255, 0.75);
 }
 
@@ -82,7 +102,8 @@ body,
   background-color: #409eff;
 }
 
-.app-menu .el-menu-item:hover {
+.app-menu .el-menu-item:hover,
+.app-menu .el-sub-menu__title:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
 

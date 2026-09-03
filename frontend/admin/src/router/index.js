@@ -19,6 +19,24 @@ const routes = [
     name: 'spu',
     component: () => import('../views/spu/SpuManage.vue'),
     meta: { title: '商品管理' }
+  },
+  {
+    path: '/user',
+    name: 'user',
+    component: () => import('../views/user/UserManage.vue'),
+    meta: { title: '用户管理' }
+  },
+  {
+    path: '/role',
+    name: 'role',
+    component: () => import('../views/role/RoleManage.vue'),
+    meta: { title: '角色管理' }
+  },
+  {
+    path: '/permission',
+    name: 'permission',
+    component: () => import('../views/permission/PermissionManage.vue'),
+    meta: { title: '权限管理' }
   }
 ]
 

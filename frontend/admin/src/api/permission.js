@@ -1,0 +1,36 @@
+import request from './request'
+
+/**
+ * 权限管理 API（admin 服务）
+ */
+export const permissionApi = {
+  /** 全量权限树（含按钮，权限管理页用） */
+  tree() {
+    return request.get('/admin/permissions/tree')
+  },
+
+  /** 前端目录接口（仅目录+页面） */
+  menus() {
+    return request.get('/admin/permissions/menus')
+  },
+
+  /** 权限详情 */
+  detail(id) {
+    return request.get(`/admin/permissions/${id}`)
+  },
+
+  /** 新建权限 */
+  add(data) {
+    return request.post('/admin/permissions', data)
+  },
+
+  /** 更新权限（仅名称/权限字符串/图标/排序） */
+  update(id, data) {
+    return request.put(`/admin/permissions/${id}`, data)
+  },
+
+  /** 删除权限 */
+  remove(id) {
+    return request.delete(`/admin/permissions/${id}`)
+  }
+}
