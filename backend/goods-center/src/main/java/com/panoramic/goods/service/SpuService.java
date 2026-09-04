@@ -1,10 +1,12 @@
 package com.panoramic.goods.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.goods.dto.SpuPageQueryDTO;
 import com.panoramic.goods.dto.SpuSaveDTO;
 import com.panoramic.goods.dto.SpuSkuReplaceDTO;
 import com.panoramic.goods.dto.SpuStatusDTO;
 import com.panoramic.goods.dto.SpuUpdateDTO;
+import com.panoramic.goods.entity.GoodsSpu;
 import com.panoramic.goods.vo.PageResult;
 import com.panoramic.goods.vo.SpuDetailVO;
 import com.panoramic.goods.vo.SpuPageItemVO;
@@ -12,7 +14,7 @@ import com.panoramic.goods.vo.SpuPageItemVO;
 /**
  * 商品（SPU）服务
  */
-public interface SpuService {
+public interface SpuService extends IService<GoodsSpu> {
 
     /**
      * 商品分页查询（分类/品牌/状态/名称关键字筛选）
@@ -71,4 +73,20 @@ public interface SpuService {
      * @param id 商品ID
      */
     void deleteSpu(Long id);
+
+    /**
+     * 统计某分类下挂载的商品数（删除分类守卫用）
+     *
+     * @param categoryId 分类ID
+     * @return 商品数
+     */
+    long countByCategoryId(Long categoryId);
+
+    /**
+     * 统计某品牌下挂载的商品数（删除品牌守卫用）
+     *
+     * @param brandId 品牌ID
+     * @return 商品数
+     */
+    long countByBrandId(Long brandId);
 }

@@ -3,6 +3,7 @@ package com.panoramic.goods.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,12 +20,10 @@ import com.panoramic.goods.entity.GoodsBrand;
 import com.panoramic.goods.entity.GoodsCategory;
 import com.panoramic.goods.entity.GoodsSku;
 import com.panoramic.goods.entity.GoodsSpu;
-import com.panoramic.goods.mapper.GoodsBrandMapper;
-import com.panoramic.goods.mapper.GoodsCategoryMapper;
-import com.panoramic.goods.mapper.GoodsSkuMapper;
 import com.panoramic.goods.mapper.GoodsSpuMapper;
 import com.panoramic.goods.service.BrandService;
 import com.panoramic.goods.service.CategoryService;
+import com.panoramic.goods.service.SkuService;
 import com.panoramic.goods.service.SpuService;
 import com.panoramic.goods.vo.PageResult;
 import com.panoramic.goods.vo.SkuVO;
@@ -53,20 +52,20 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class SpuServiceImpl implements SpuService {
+public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implements SpuService {
 
-    private final GoodsSpuMapper spuMapper;
-    private final GoodsSkuMapper skuMapper;
-    private final GoodsCategoryMapper categoryMapper;
-    private final GoodsBrandMapper brandMapper;
+    /** 跨实体：分类服务（叶子校验、详情取名、路径链、列表名称回填） */
     private final CategoryService categoryService;
+    /** 跨实体：品牌服务（存在性校验、详情取名、列表名称回填） */
     private final BrandService brandService;
+    /** 跨实体：SKU 服务（列表/详情/全量替换/级联读写） */
+    private final SkuService skuService;
     private final ObjectMapper objectMapper;
 
     @Override
     public PageResult<SpuPageItemVO> page(SpuPageQueryDTO dto) {
         Page<GoodsSpu> spuPage = dto.toPage(GoodsSpu.class);
-        IPage<GoodsSpu> result = spuMapper.selectPage(spuPage,
+        IPage<GoodsSpu> result = page(spuPage,
                 Wrappers.<GoodsSpu>lambdaQuery()
                         .eq(dto.getCategoryId() != null, GoodsSpu::getCategoryId, dto.getCategoryId())
                         .eq(dto.getBrandId() != null, GoodsSpu::getBrandId, dto.getBrandId())
@@ -77,8 +76,8 @@ public class SpuServiceImpl implements SpuService {
         List<GoodsSpu> records = result.getRecords();
         List<Long> categoryIds = records.stream().map(GoodsSpu::getCategoryId).distinct().collect(Collectors.toList());
         List<Long> brandIds = records.stream().map(GoodsSpu::getBrandId).distinct().collect(Collectors.toList());
-        Map<Long, String> categoryNames = categoryNamesByIds(categoryIds);
-        Map<Long, String> brandNames = brandNamesByIds(brandIds);
+        Map<Long, String> categoryNames = categoryService.nameMap(categoryIds);
+        Map<Long, String> brandNames = brandService.nameMap(brandIds);
 
         List<SpuPageItemVO> items = records.stream().map(spu -> {
             SpuPageItemVO vo = new SpuPageItemVO();
@@ -96,21 +95,18 @@ public class SpuServiceImpl implements SpuService {
         SpuDetailVO vo = new SpuDetailVO();
         // imageList/specConfig 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
         BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
-        // 分类/品牌名称
-        GoodsCategory category = categoryMapper.selectById(spu.getCategoryId());
-        GoodsBrand brand = brandMapper.selectById(spu.getBrandId());
+        // 分类/品牌名称（经各自实体服务取名，容缺失 -> ""）
+        GoodsCategory category = spu.getCategoryId() == null ? null : categoryService.getById(spu.getCategoryId());
+        GoodsBrand brand = spu.getBrandId() == null ? null : brandService.getById(spu.getBrandId());
         vo.setCategoryName(category == null ? "" : category.getName());
         vo.setBrandName(brand == null ? "" : brand.getName());
         // 轮播图 JSON -> List
         vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
         // 规格属性配置 JSON -> List；分类完整链条（根→叶子）
         vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
-        vo.setCategoryPath(categoryPath(category));
+        vo.setCategoryPath(categoryService.pathNames(spu.getCategoryId()));
         // SKU 列表
-        List<GoodsSku> skus = skuMapper.selectList(
-                Wrappers.<GoodsSku>lambdaQuery()
-                        .eq(GoodsSku::getSpuId, id)
-                        .orderByAsc(GoodsSku::getId));
+        List<GoodsSku> skus = skuService.listBySpuId(id);
         List<SkuVO> skuVos = skus.stream().map(sku -> {
             SkuVO skuVo = new SkuVO();
             BeanUtils.copyProperties(sku, skuVo);
@@ -133,7 +129,7 @@ public class SpuServiceImpl implements SpuService {
         spu.setImageList(writeJson(dto.getImageList()));
         spu.setSpecConfig(writeJson(dto.getSpecConfig()));
         spu.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
-        spuMapper.insert(spu);
+        save(spu);
         // 新建商品不携带 SKU（0 SKU 起步），SKU 由 replaceSkus 在「规格」管理中单独维护
         return spu.getId();
     }
@@ -156,7 +152,7 @@ public class SpuServiceImpl implements SpuService {
         if (dto.getStatus() != null) {
             spu.setStatus(dto.getStatus());
         }
-        spuMapper.updateById(spu);
+        updateById(spu);
         // SKU 不再随基础信息更新；由 replaceSkus 在「规格」管理中单独维护
     }
 
@@ -210,9 +206,8 @@ public class SpuServiceImpl implements SpuService {
         }
 
         // ---- diff：无 id 插入，带 id 更新，存量缺失的逻辑删除（保证 SKU ID 稳定）----
-        Map<Long, GoodsSku> existing = skuMapper.selectList(
-                        Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, id))
-                .stream().collect(Collectors.toMap(GoodsSku::getId, Function.identity()));
+        Map<Long, GoodsSku> existing = skuService.listBySpuId(id).stream()
+                .collect(Collectors.toMap(GoodsSku::getId, Function.identity()));
 
         Set<Long> incomingIds = new HashSet<>();
         for (SkuDTO skuDto : skus) {
@@ -228,7 +223,7 @@ public class SpuServiceImpl implements SpuService {
                 target.setSpecAttrs(writeJson(skuDto.getSpecAttrs()));
                 target.setSkuCode(skuDto.getSkuCode());
                 target.setMainImage(skuDto.getMainImage());
-                skuMapper.updateById(target);
+                skuService.updateById(target);
             }
         }
         // 入参缺失的存量 SKU -> 逻辑删除
@@ -236,7 +231,7 @@ public class SpuServiceImpl implements SpuService {
                 .filter(skuId -> !incomingIds.contains(skuId))
                 .collect(Collectors.toList());
         if (!removed.isEmpty()) {
-            skuMapper.deleteByIds(removed);
+            skuService.removeByIds(removed);
         }
     }
 
@@ -245,7 +240,7 @@ public class SpuServiceImpl implements SpuService {
     public void updateStatus(Long id, SpuStatusDTO dto) {
         GoodsSpu spu = getByIdOrThrow(id);
         spu.setStatus(dto.getStatus());
-        spuMapper.updateById(spu);
+        updateById(spu);
     }
 
     @Override
@@ -255,9 +250,19 @@ public class SpuServiceImpl implements SpuService {
         if (spu.getStatus() == 1) {
             throw new ServiceException("商品展示中，请先隐藏再删除");
         }
-        spuMapper.deleteById(id);
+        removeById(id);
         // 级联逻辑删除该商品全部 SKU
-        skuMapper.delete(Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, id));
+        skuService.removeBySpuId(id);
+    }
+
+    @Override
+    public long countByCategoryId(Long categoryId) {
+        return count(Wrappers.<GoodsSpu>lambdaQuery().eq(GoodsSpu::getCategoryId, categoryId));
+    }
+
+    @Override
+    public long countByBrandId(Long brandId) {
+        return count(Wrappers.<GoodsSpu>lambdaQuery().eq(GoodsSpu::getBrandId, brandId));
     }
 
     /**
@@ -267,7 +272,7 @@ public class SpuServiceImpl implements SpuService {
      * @return 商品实体
      */
     private GoodsSpu getByIdOrThrow(Long id) {
-        GoodsSpu spu = spuMapper.selectById(id);
+        GoodsSpu spu = getById(id);
         if (spu == null) {
             throw new ServiceException("商品不存在");
         }
@@ -282,9 +287,8 @@ public class SpuServiceImpl implements SpuService {
      * @param config 新的规格属性配置（null 视为清空配置）
      */
     private void guardConfigAgainstSkus(Long spuId, List<SpecConfigItem> config) {
-        List<GoodsSku> existing = skuMapper.selectList(
-                Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, spuId));
-        if (existing == null || existing.isEmpty()) {
+        List<GoodsSku> existing = skuService.listBySpuId(spuId);
+        if (existing.isEmpty()) {
             return;
         }
         Map<String, SpecConfigItem> newIndex = indexConfig(config);
@@ -301,30 +305,6 @@ public class SpuServiceImpl implements SpuService {
                 }
             }
         }
-    }
-
-    /**
-     * 分类完整链条（根→叶子名称拼接）。叶子分类不存在时返回空串
-     *
-     * @param leaf 叶子分类
-     * @return 如 "服饰 / 男装 / T恤"
-     */
-    private String categoryPath(GoodsCategory leaf) {
-        if (leaf == null) {
-            return "";
-        }
-        List<String> names = new ArrayList<>();
-        Set<Long> guard = new HashSet<>();
-        GoodsCategory cur = leaf;
-        while (cur != null && guard.add(cur.getId())) {
-            names.add(cur.getName());
-            if (cur.getParentId() == null || cur.getParentId() == 0) {
-                break;
-            }
-            cur = categoryMapper.selectById(cur.getParentId());
-        }
-        Collections.reverse(names);
-        return String.join(" / ", names);
     }
 
     /**
@@ -405,7 +385,7 @@ public class SpuServiceImpl implements SpuService {
     }
 
     /**
-     * 插入单个 SKU
+     * 插入单个 SKU（经 SKU 服务）
      *
      * @param spuId  商品ID
      * @param skuDto SKU 请求
@@ -416,35 +396,7 @@ public class SpuServiceImpl implements SpuService {
         sku.setSpecAttrs(writeJson(skuDto.getSpecAttrs()));
         sku.setSkuCode(skuDto.getSkuCode());
         sku.setMainImage(skuDto.getMainImage());
-        skuMapper.insert(sku);
-    }
-
-    /**
-     * 分类 ID 集合批量查名称（分页列表名称回填用）
-     *
-     * @param ids 分类 ID 集合
-     * @return id -> 分类名称映射
-     */
-    private Map<Long, String> categoryNamesByIds(List<Long> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        return categoryMapper.selectBatchIds(ids).stream()
-                .collect(Collectors.toMap(GoodsCategory::getId, GoodsCategory::getName));
-    }
-
-    /**
-     * 品牌 ID 集合批量查名称（分页列表名称回填用）
-     *
-     * @param ids 品牌 ID 集合
-     * @return id -> 品牌名称映射
-     */
-    private Map<Long, String> brandNamesByIds(List<Long> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        return brandMapper.selectBatchIds(ids).stream()
-                .collect(Collectors.toMap(GoodsBrand::getId, GoodsBrand::getName));
+        skuService.save(sku);
     }
 
     /**

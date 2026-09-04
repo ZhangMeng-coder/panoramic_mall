@@ -44,11 +44,6 @@ export const roleApi = {
     return request.get(`/admin/roles/${id}/user-ids`)
   },
 
-  /** 分页查询“不在该角色内”的用户（分配用户页面用） */
-  unassignedUsersPage(id, params) {
-    return request.get(`/admin/roles/${id}/unassigned-users/page`, { params })
-  },
-
   /** 给角色分配用户（整体替换） */
   assignUsers(id, userIds) {
     return request.put(`/admin/roles/${id}/users`, { userIds })

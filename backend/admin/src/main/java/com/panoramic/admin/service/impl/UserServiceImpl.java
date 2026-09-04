@@ -3,15 +3,16 @@ package com.panoramic.admin.service.impl;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.panoramic.admin.dto.RoleUnassignedUserPageQueryDTO;
 import com.panoramic.admin.dto.UserPageQueryDTO;
 import com.panoramic.admin.dto.UserSaveDTO;
 import com.panoramic.admin.dto.UserUpdateDTO;
-import com.panoramic.admin.entity.SysRole;
 import com.panoramic.admin.entity.SysUser;
 import com.panoramic.admin.entity.SysUserRole;
-import com.panoramic.admin.mapper.SysRoleMapper;
 import com.panoramic.admin.mapper.SysUserMapper;
-import com.panoramic.admin.mapper.SysUserRoleMapper;
+import com.panoramic.admin.service.RoleService;
+import com.panoramic.admin.service.UserRoleService;
 import com.panoramic.admin.service.UserService;
 import com.panoramic.admin.vo.PageResult;
 import com.panoramic.admin.vo.RoleVO;
@@ -26,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -38,18 +40,19 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UserServiceImpl implements UserService {
+public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserService {
 
-    private final SysUserMapper userMapper;
-    private final SysRoleMapper roleMapper;
-    private final SysUserRoleMapper userRoleMapper;
+    /** 跨实体：角色服务（角色ID存在性校验、角色徽标回填） */
+    private final RoleService roleService;
+    /** 跨实体：用户-角色关联服务（分配/清理/回填） */
+    private final UserRoleService userRoleService;
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
     public PageResult<UserVO> page(UserPageQueryDTO dto) {
         Page<SysUser> userPage = dto.toPage(SysUser.class);
-        IPage<SysUser> result = userMapper.selectPage(userPage,
+        IPage<SysUser> result = page(userPage,
                 Wrappers.<SysUser>lambdaQuery()
                         .and(StringUtils.hasText(dto.getKeyword()), w -> w
                                 .like(SysUser::getUsername, dto.getKeyword())
@@ -81,7 +84,7 @@ public class UserServiceImpl implements UserService {
         if (user.getStatus() == null) {
             user.setStatus(1);
         }
-        userMapper.insert(user);
+        save(user);
         return user.getId();
     }
 
@@ -97,7 +100,7 @@ public class UserServiceImpl implements UserService {
         } else {
             user.setPassword(null);
         }
-        userMapper.updateById(user);
+        updateById(user);
     }
 
     @Override
@@ -105,19 +108,14 @@ public class UserServiceImpl implements UserService {
     public void deleteUser(Long id) {
         getByIdOrThrow(id);
         // 物理删除该用户的角色分配记录，再逻辑删除用户本身
-        userRoleMapper.delete(Wrappers.<SysUserRole>lambdaQuery().eq(SysUserRole::getUserId, id));
-        userMapper.deleteById(id);
+        userRoleService.removeByUserId(id);
+        removeById(id);
     }
 
     @Override
     public List<Long> getUserRoleIds(Long userId) {
         getByIdOrThrow(userId);
-        List<SysUserRole> relations = userRoleMapper.selectList(
-                Wrappers.<SysUserRole>lambdaQuery().eq(SysUserRole::getUserId, userId));
-        if (relations.isEmpty()) {
-            return Collections.emptyList();
-        }
-        return relations.stream().map(SysUserRole::getRoleId).collect(Collectors.toList());
+        return userRoleService.roleIdsByUserId(userId);
     }
 
     @Override
@@ -126,17 +124,43 @@ public class UserServiceImpl implements UserService {
         getByIdOrThrow(userId);
         // 去重并校验角色全部存在
         List<Long> distinctRoleIds = roleIds.stream().distinct().collect(Collectors.toList());
-        checkRoleIdsExist(distinctRoleIds);
-        // 整体替换：先清旧，再插新
-        userRoleMapper.delete(Wrappers.<SysUserRole>lambdaQuery().eq(SysUserRole::getUserId, userId));
-        if (!distinctRoleIds.isEmpty()) {
-            for (Long roleId : distinctRoleIds) {
-                SysUserRole relation = new SysUserRole();
-                relation.setUserId(userId);
-                relation.setRoleId(roleId);
-                userRoleMapper.insert(relation);
-            }
+        if (!roleService.existsAll(distinctRoleIds)) {
+            throw new ServiceException("存在无效的角色ID");
         }
+        // 整体替换：先清旧，再插新
+        userRoleService.replaceByUser(userId, distinctRoleIds);
+    }
+
+    @Override
+    public PageResult<UserVO> unassignedUsersPage(Long roleId, RoleUnassignedUserPageQueryDTO dto) {
+        // 接口归属用户侧：候选用户仍是 User 主体内容；角色须存在校验经角色服务
+        roleService.detail(roleId);
+        // 该角色已分配的用户ID（排除候选）
+        List<Long> assignedUserIds = userRoleService.userIdsByRoleId(roleId);
+
+        Page<SysUser> userPage = dto.toPage(SysUser.class);
+        IPage<SysUser> result = page(userPage,
+                Wrappers.<SysUser>lambdaQuery()
+                        .notIn(!assignedUserIds.isEmpty(), SysUser::getId, assignedUserIds)
+                        .and(StringUtils.hasText(dto.getKeyword()), w -> w
+                                .like(SysUser::getUsername, dto.getKeyword())
+                                .or().like(SysUser::getNickname, dto.getKeyword())
+                                .or().like(SysUser::getPhone, dto.getKeyword()))
+                        .orderByDesc(SysUser::getId));
+
+        List<UserVO> records = result.getRecords().stream()
+                .map(this::toVO)
+                .collect(Collectors.toList());
+        return new PageResult<>(result.getTotal(), records);
+    }
+
+    @Override
+    public boolean existsAll(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return true;
+        }
+        List<Long> distinctIds = ids.stream().distinct().collect(Collectors.toList());
+        return count(Wrappers.<SysUser>lambdaQuery().in(SysUser::getId, distinctIds)) == distinctIds.size();
     }
 
     /**
@@ -146,7 +170,7 @@ public class UserServiceImpl implements UserService {
      * @return 用户实体
      */
     private SysUser getByIdOrThrow(Long id) {
-        SysUser user = userMapper.selectById(id);
+        SysUser user = getById(id);
         if (user == null) {
             throw new ServiceException("用户不存在");
         }
@@ -160,7 +184,7 @@ public class UserServiceImpl implements UserService {
      * @param excludeId 需要排除的用户ID（更新时排除自身），可为 null
      */
     private void checkUsernameDuplicate(String username, Long excludeId) {
-        Long count = userMapper.selectCount(
+        Long count = count(
                 Wrappers.<SysUser>lambdaQuery()
                         .eq(SysUser::getUsername, username)
                         .ne(excludeId != null, SysUser::getId, excludeId));
@@ -170,24 +194,8 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * 校验角色ID全部存在
-     *
-     * @param roleIds 角色ID集合
-     */
-    private void checkRoleIdsExist(List<Long> roleIds) {
-        if (roleIds.isEmpty()) {
-            return;
-        }
-        Long count = roleMapper.selectCount(
-                Wrappers.<SysRole>lambdaQuery().in(SysRole::getId, roleIds));
-        if (count != roleIds.size()) {
-            throw new ServiceException("存在无效的角色ID");
-        }
-    }
-
-    /**
      * 批量回填用户已分配的角色（供列表并排展示）。
-     * <p>两次批量查询（关联表 + 角色表），按角色 sort/id 排序后逐用户组装，无角色置空列表。</p>
+     * <p>两次批量查询（关联服务 + 角色服务），按角色 sort/id 排序后逐用户组装，无角色置空列表。</p>
      *
      * @param records 本页用户 VO 列表
      */
@@ -196,8 +204,7 @@ public class UserServiceImpl implements UserService {
             return;
         }
         List<Long> userIds = records.stream().map(UserVO::getId).collect(Collectors.toList());
-        List<SysUserRole> relations = userRoleMapper.selectList(
-                Wrappers.<SysUserRole>lambdaQuery().in(SysUserRole::getUserId, userIds));
+        List<SysUserRole> relations = userRoleService.listByUserIds(userIds);
         if (relations.isEmpty()) {
             records.forEach(vo -> vo.setRoles(Collections.emptyList()));
             return;
@@ -207,18 +214,11 @@ public class UserServiceImpl implements UserService {
                 .distinct()
                 .collect(Collectors.toList());
         // 角色按 sort/id 排序，保证每个用户内多角色展示顺序稳定
-        List<SysRole> roles = roleMapper.selectList(
-                Wrappers.<SysRole>lambdaQuery()
-                        .in(SysRole::getId, roleIds)
-                        .orderByAsc(SysRole::getSort)
-                        .orderByAsc(SysRole::getId));
-        // 外层遍历已按 sort/id 排序的 roles，保证每个用户内多角色顺序稳定
+        List<RoleVO> roles = roleService.listVOsByIdsSorted(roleIds);
         Map<Long, List<RoleVO>> rolesByUser = new HashMap<>();
-        for (SysRole role : roles) {
-            RoleVO vo = new RoleVO();
-            BeanUtils.copyProperties(role, vo);
+        for (RoleVO vo : roles) {
             for (SysUserRole relation : relations) {
-                if (role.getId().equals(relation.getRoleId())) {
+                if (vo.getId().equals(relation.getRoleId())) {
                     rolesByUser.computeIfAbsent(relation.getUserId(), k -> new ArrayList<>()).add(vo);
                 }
             }

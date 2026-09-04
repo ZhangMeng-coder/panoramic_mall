@@ -1,5 +1,6 @@
 package com.panoramic.admin.controller;
 
+import com.panoramic.admin.dto.RoleUnassignedUserPageQueryDTO;
 import com.panoramic.admin.dto.UserPageQueryDTO;
 import com.panoramic.admin.dto.UserRoleIdsDTO;
 import com.panoramic.admin.dto.UserSaveDTO;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -92,5 +94,15 @@ public class UserController {
                                       @RequestBody @Validated UserRoleIdsDTO dto) {
         userService.assignRoles(id, dto.getRoleIds());
         return RespData.success();
+    }
+
+    /**
+     * 分页查询“不在指定角色内”的用户（角色下分配用户页面用；候选用户归属用户侧）
+     */
+    @GetMapping("/unassigned/page")
+    public RespData<PageResult<UserVO>> unassignedUsersPage(
+            @RequestParam @NotNull(message = "角色ID不能为空") Long roleId,
+            @Validated RoleUnassignedUserPageQueryDTO dto) {
+        return RespData.success(userService.unassignedUsersPage(roleId, dto));
     }
 }

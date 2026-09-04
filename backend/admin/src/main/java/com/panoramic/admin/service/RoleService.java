@@ -1,19 +1,20 @@
 package com.panoramic.admin.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.admin.dto.RolePageQueryDTO;
 import com.panoramic.admin.dto.RoleSaveDTO;
-import com.panoramic.admin.dto.RoleUnassignedUserPageQueryDTO;
 import com.panoramic.admin.dto.RoleUpdateDTO;
+import com.panoramic.admin.entity.SysRole;
 import com.panoramic.admin.vo.PageResult;
 import com.panoramic.admin.vo.RoleVO;
-import com.panoramic.admin.vo.UserVO;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
  * 角色服务
  */
-public interface RoleService {
+public interface RoleService extends IService<SysRole> {
 
     /**
      * 角色分页查询
@@ -86,19 +87,26 @@ public interface RoleService {
     List<Long> getUserIds(Long roleId);
 
     /**
-     * 分页查询“不在该角色内”的用户（分配用户页面用）
-     *
-     * @param roleId 角色ID
-     * @param dto    分页查询参数（关键字）
-     * @return 分页结果
-     */
-    PageResult<UserVO> unassignedUsersPage(Long roleId, RoleUnassignedUserPageQueryDTO dto);
-
-    /**
      * 给角色分配用户（整体替换）
      *
      * @param roleId  角色ID
      * @param userIds 目标用户ID集合，可为空（清空）
      */
     void assignUsers(Long roleId, List<Long> userIds);
+
+    /**
+     * 按 ID 集合查询并转 VO（按 sort/id 升序排序，供用户侧角色徽标回填；逻辑删除的自动被过滤）
+     *
+     * @param ids 角色ID集合，可为空/null
+     * @return 排序后的角色VO列表
+     */
+    List<RoleVO> listVOsByIdsSorted(Collection<Long> ids);
+
+    /**
+     * 校验角色 ID 是否全部存在（去重后比较数量；逻辑删除的自动被过滤）
+     *
+     * @param ids 角色ID集合，可为空/null
+     * @return true=全部存在（或集合为空）
+     */
+    boolean existsAll(Collection<Long> ids);
 }

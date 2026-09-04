@@ -1,25 +1,29 @@
 package com.panoramic.goods.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.goods.dto.CategorySaveDTO;
 import com.panoramic.goods.dto.CategoryUpdateDTO;
 import com.panoramic.goods.entity.GoodsCategory;
-import com.panoramic.goods.entity.GoodsSpu;
 import com.panoramic.goods.mapper.GoodsCategoryMapper;
-import com.panoramic.goods.mapper.GoodsSpuMapper;
 import com.panoramic.goods.service.CategoryService;
+import com.panoramic.goods.service.SpuService;
 import com.panoramic.goods.vo.CategoryTreeVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -28,15 +32,16 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class CategoryServiceImpl implements CategoryService {
+public class CategoryServiceImpl extends ServiceImpl<GoodsCategoryMapper, GoodsCategory> implements CategoryService {
 
     /**
      * 最大分类层级
      */
     private static final int MAX_LEVEL = 3;
 
-    private final GoodsCategoryMapper categoryMapper;
-    private final GoodsSpuMapper spuMapper;
+    /** 跨实体：商品服务（删除时商品引用守卫；与 SPU→Category 形成循环引用，此处经 @Lazy 断环） */
+    @Lazy
+    private final SpuService spuService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -60,7 +65,7 @@ public class CategoryServiceImpl implements CategoryService {
         }
         checkNameDuplicate(category.getName(), category.getParentId(), null);
 
-        categoryMapper.insert(category);
+        save(category);
         return category.getId();
     }
 
@@ -73,7 +78,7 @@ public class CategoryServiceImpl implements CategoryService {
 
         category.setName(dto.getName());
         category.setSort(dto.getSort() == null ? 0 : dto.getSort());
-        categoryMapper.updateById(category);
+        updateById(category);
     }
 
     @Override
@@ -82,24 +87,22 @@ public class CategoryServiceImpl implements CategoryService {
         getByIdOrThrow(id);
 
         // 存在直接子分类即拦截（树形结构下必然拦截所有后代）
-        Long childCount = categoryMapper.selectCount(
+        Long childCount = count(
                 Wrappers.<GoodsCategory>lambdaQuery().eq(GoodsCategory::getParentId, id));
         if (childCount > 0) {
             throw new ServiceException("存在子分类，无法删除");
         }
         // 分类下有商品时拒绝删除
-        Long spuCount = spuMapper.selectCount(
-                Wrappers.<GoodsSpu>lambdaQuery().eq(GoodsSpu::getCategoryId, id));
-        if (spuCount > 0) {
+        if (spuService.countByCategoryId(id) > 0) {
             throw new ServiceException("该分类下存在商品，无法删除");
         }
-        categoryMapper.deleteById(id);
+        removeById(id);
     }
 
     @Override
     public List<CategoryTreeVO> tree() {
         // 平铺查询（排序后），再按 parentId 分组递归组装成树
-        List<GoodsCategory> categories = categoryMapper.selectList(
+        List<GoodsCategory> categories = list(
                 Wrappers.<GoodsCategory>lambdaQuery()
                         .orderByAsc(GoodsCategory::getSort)
                         .orderByAsc(GoodsCategory::getId));
@@ -113,7 +116,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public GoodsCategory getByIdOrThrow(Long id) {
-        GoodsCategory category = categoryMapper.selectById(id);
+        GoodsCategory category = getById(id);
         if (category == null) {
             throw new ServiceException("分类不存在");
         }
@@ -122,8 +125,36 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public boolean isLeaf(Long id) {
-        return categoryMapper.selectCount(
+        return count(
                 Wrappers.<GoodsCategory>lambdaQuery().eq(GoodsCategory::getParentId, id)) == 0;
+    }
+
+    @Override
+    public String pathNames(Long categoryId) {
+        if (categoryId == null) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        Set<Long> guard = new HashSet<>();
+        GoodsCategory cur = getById(categoryId);
+        while (cur != null && guard.add(cur.getId())) {
+            names.add(cur.getName());
+            if (cur.getParentId() == null || cur.getParentId() == 0) {
+                break;
+            }
+            cur = getById(cur.getParentId());
+        }
+        Collections.reverse(names);
+        return String.join(" / ", names);
+    }
+
+    @Override
+    public Map<Long, String> nameMap(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return listByIds(ids).stream()
+                .collect(Collectors.toMap(GoodsCategory::getId, GoodsCategory::getName, (a, b) -> a));
     }
 
     /**
@@ -151,7 +182,7 @@ public class CategoryServiceImpl implements CategoryService {
      * @param excludeId 需要排除的分类ID（更新时排除自身），可为 null
      */
     private void checkNameDuplicate(String name, Long parentId, Long excludeId) {
-        Long count = categoryMapper.selectCount(
+        Long count = count(
                 Wrappers.<GoodsCategory>lambdaQuery()
                         .eq(GoodsCategory::getParentId, parentId)
                         .eq(GoodsCategory::getName, name)

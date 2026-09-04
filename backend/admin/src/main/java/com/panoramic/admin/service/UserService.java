@@ -1,17 +1,21 @@
 package com.panoramic.admin.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
+import com.panoramic.admin.dto.RoleUnassignedUserPageQueryDTO;
 import com.panoramic.admin.dto.UserPageQueryDTO;
 import com.panoramic.admin.dto.UserSaveDTO;
 import com.panoramic.admin.dto.UserUpdateDTO;
+import com.panoramic.admin.entity.SysUser;
 import com.panoramic.admin.vo.PageResult;
 import com.panoramic.admin.vo.UserVO;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
  * 用户服务
  */
-public interface UserService {
+public interface UserService extends IService<SysUser> {
 
     /**
      * 用户分页查询
@@ -67,4 +71,21 @@ public interface UserService {
      * @param roleIds 目标角色ID集合，可为空（清空）
      */
     void assignRoles(Long userId, List<Long> roleIds);
+
+    /**
+     * 分页查询“不在该角色内”的用户（角色下分配用户页面用；接口归属用户侧）
+     *
+     * @param roleId 角色ID
+     * @param dto    分页查询参数（关键字）
+     * @return 分页结果
+     */
+    PageResult<UserVO> unassignedUsersPage(Long roleId, RoleUnassignedUserPageQueryDTO dto);
+
+    /**
+     * 校验用户 ID 是否全部存在（去重后比较数量；供角色侧分配用户校验，逻辑删除的用户自动被过滤）
+     *
+     * @param ids 用户ID集合，可为空/null
+     * @return true=全部存在（或集合为空）
+     */
+    boolean existsAll(Collection<Long> ids);
 }

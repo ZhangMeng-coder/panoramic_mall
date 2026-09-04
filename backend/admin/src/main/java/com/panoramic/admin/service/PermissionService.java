@@ -1,15 +1,18 @@
 package com.panoramic.admin.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.admin.dto.PermissionSaveDTO;
 import com.panoramic.admin.dto.PermissionUpdateDTO;
+import com.panoramic.admin.entity.SysPermission;
 import com.panoramic.admin.vo.PermissionTreeVO;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
  * 权限服务
  */
-public interface PermissionService {
+public interface PermissionService extends IService<SysPermission> {
 
     /**
      * 全量权限树（含按钮，权限管理页用）
@@ -66,4 +69,12 @@ public interface PermissionService {
      * @param id 权限ID
      */
     void deletePermission(Long id);
+
+    /**
+     * 校验权限 ID 是否全部存在（去重后比较数量；逻辑删除的自动被过滤）
+     *
+     * @param ids 权限ID集合，可为空/null
+     * @return true=全部存在（或集合为空）
+     */
+    boolean existsAll(Collection<Long> ids);
 }

@@ -149,7 +149,7 @@ async function loadCandidates() {
   if (!props.role) return
   loadingCandidates.value = true
   try {
-    const data = await roleApi.unassignedUsersPage(props.role.id, { ...candidateQuery.value })
+    const data = await userApi.unassignedUsersPage(props.role.id, { ...candidateQuery.value })
     candidates.value = data.records
     // 会话内新增了 x 个用户：总条数中它们仍被后端计入（保存前），减去保持分页一致
     const addedNew = assignedUsers.value.filter((u) => !originalAssignedIds.value.has(u.id)).length

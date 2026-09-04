@@ -1,5 +1,15 @@
 # 项目约定（Panoramic Mall）
 
+## 代码生成与分层约定
+
+生成/修改 Java 服务层代码时，一律遵循以下规则（admin 与 goods-center 均已按此重构）：
+
+- **CRUD 交给 MyBatis-Plus 基类**：每个实体有独立 service，接口 `extends IService<T>`、实现 `extends ServiceImpl<XxxMapper, Xxx>`。own-entity 的增删改查（`save`/`updateById`/`removeById`/`getById`/`list`/`page`/`count` 等）直接用基类内置方法，能用组件实现就不新写逻辑、不直接用 own Mapper。纯关联表（如 `sys_user_role`、`sys_role_permission`）也要建 service。
+- **跨实体只走 owner service**：Service 内禁止直接持有/调用其他实体的 Mapper；要读写别的实体，必须调用该实体自己的 service（对方缺能力时先在对方 service 上加方法再回来调）。
+- **内容归其所属实体的 controller**：不局限在实体 controller 里查询无关内容——要查什么内容，就调什么实体的 controller/service。例：不要在 RoleController/RoleService 里查 User 相关内容。
+- **数据验证层的循环引用**用 Spring `@Lazy` 断环（需在模块 `lombok.config` 加 `lombok.copyableAnnotations += org.springframework.context.annotation.Lazy` 使其进入构造参数）。
+- **歧义先问**：规则适用或归属有歧义时，先向用户确认，不要自己判断。
+
 ## 代码验证只到“编译通过”
 
 本仓库生成/修改代码后，验证一律**止步于编译通过**：

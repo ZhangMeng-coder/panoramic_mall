@@ -1,17 +1,21 @@
 package com.panoramic.goods.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.goods.dto.BrandPageQueryDTO;
 import com.panoramic.goods.dto.BrandSaveDTO;
 import com.panoramic.goods.dto.BrandUpdateDTO;
+import com.panoramic.goods.entity.GoodsBrand;
 import com.panoramic.goods.vo.BrandVO;
 import com.panoramic.goods.vo.PageResult;
 
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品品牌服务
  */
-public interface BrandService {
+public interface BrandService extends IService<GoodsBrand> {
 
     /**
      * 品牌分页查询
@@ -58,4 +62,12 @@ public interface BrandService {
      * @param id 品牌ID
      */
     void deleteBrand(Long id);
+
+    /**
+     * 品牌 ID 集合批量查名称（分页列表名称回填用）
+     *
+     * @param ids 品牌 ID 集合
+     * @return id -> 品牌名称映射
+     */
+    Map<Long, String> nameMap(Collection<Long> ids);
 }

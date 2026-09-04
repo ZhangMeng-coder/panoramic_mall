@@ -3,13 +3,11 @@ package com.panoramic.admin.controller;
 import com.panoramic.admin.dto.RolePageQueryDTO;
 import com.panoramic.admin.dto.RolePermissionIdsDTO;
 import com.panoramic.admin.dto.RoleSaveDTO;
-import com.panoramic.admin.dto.RoleUnassignedUserPageQueryDTO;
 import com.panoramic.admin.dto.RoleUpdateDTO;
 import com.panoramic.admin.dto.RoleUserIdsDTO;
 import com.panoramic.admin.service.RoleService;
 import com.panoramic.admin.vo.PageResult;
 import com.panoramic.admin.vo.RoleVO;
-import com.panoramic.admin.vo.UserVO;
 import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.constraints.NotNull;
@@ -111,16 +109,6 @@ public class RoleController {
     @GetMapping("/{id}/user-ids")
     public RespData<List<Long>> userRoleIds(@PathVariable @NotNull(message = "角色ID不能为空") Long id) {
         return RespData.success(roleService.getUserIds(id));
-    }
-
-    /**
-     * 分页查询“不在该角色内”的用户（分配用户页面用）
-     */
-    @GetMapping("/{id}/unassigned-users/page")
-    public RespData<PageResult<UserVO>> unassignedUsersPage(
-            @PathVariable @NotNull(message = "角色ID不能为空") Long id,
-            @Validated RoleUnassignedUserPageQueryDTO dto) {
-        return RespData.success(roleService.unassignedUsersPage(id, dto));
     }
 
     /**

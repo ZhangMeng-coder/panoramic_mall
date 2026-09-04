@@ -1,13 +1,13 @@
 package com.panoramic.admin.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.panoramic.admin.dto.PermissionSaveDTO;
 import com.panoramic.admin.dto.PermissionUpdateDTO;
 import com.panoramic.admin.entity.SysPermission;
-import com.panoramic.admin.entity.SysRolePermission;
 import com.panoramic.admin.mapper.SysPermissionMapper;
-import com.panoramic.admin.mapper.SysRolePermissionMapper;
 import com.panoramic.admin.service.PermissionService;
+import com.panoramic.admin.service.RolePermissionService;
 import com.panoramic.admin.vo.PermissionTreeVO;
 import com.panoramic.common.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PermissionServiceImpl implements PermissionService {
+public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysPermission> implements PermissionService {
 
     /** 类型：目录 */
     private static final int TYPE_DIR = 1;
@@ -40,8 +41,8 @@ public class PermissionServiceImpl implements PermissionService {
     /** 类型：按钮 */
     private static final int TYPE_BUTTON = 3;
 
-    private final SysPermissionMapper permissionMapper;
-    private final SysRolePermissionMapper rolePermissionMapper;
+    /** 跨实体：角色-权限关联服务（菜单按角色过滤、删除权限引用守卫） */
+    private final RolePermissionService rolePermissionService;
 
     @Override
     public List<PermissionTreeVO> tree() {
@@ -71,17 +72,11 @@ public class PermissionServiceImpl implements PermissionService {
         } else {
             // 预留：仅返回这些角色拥有的 目录+页面。
             // TODO 鉴权接入后复核：为保证菜单树完整，还需向上补全所返回页面的祖先目录。
-            List<Long> ownedIds = rolePermissionMapper.selectList(
-                            Wrappers.<SysRolePermission>lambdaQuery()
-                                    .in(SysRolePermission::getRoleId, roleIds))
-                    .stream()
-                    .map(SysRolePermission::getPermissionId)
-                    .distinct()
-                    .collect(Collectors.toList());
+            List<Long> ownedIds = rolePermissionService.permissionIdsByRoleIds(roleIds);
             if (ownedIds.isEmpty()) {
                 return new ArrayList<>();
             }
-            menus = permissionMapper.selectList(
+            menus = list(
                     Wrappers.<SysPermission>lambdaQuery()
                             .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
                             .in(SysPermission::getId, ownedIds)
@@ -102,7 +97,7 @@ public class PermissionServiceImpl implements PermissionService {
      * @return 目录/页面列表
      */
     private List<SysPermission> selectDirAndPages() {
-        return permissionMapper.selectList(
+        return list(
                 Wrappers.<SysPermission>lambdaQuery()
                         .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
                         .orderByAsc(SysPermission::getSort)
@@ -143,7 +138,7 @@ public class PermissionServiceImpl implements PermissionService {
         if (permission.getSort() == null) {
             permission.setSort(0);
         }
-        permissionMapper.insert(permission);
+        save(permission);
         return permission.getId();
     }
 
@@ -163,7 +158,7 @@ public class PermissionServiceImpl implements PermissionService {
         permission.setIcon(dto.getIcon());
         permission.setRoute(dto.getRoute());
         permission.setSort(dto.getSort() == null ? 0 : dto.getSort());
-        permissionMapper.updateById(permission);
+        updateById(permission);
     }
 
     @Override
@@ -171,18 +166,25 @@ public class PermissionServiceImpl implements PermissionService {
     public void deletePermission(Long id) {
         getByIdOrThrow(id);
         // 存在直接子权限即拦截（树形结构下必然拦截所有后代）
-        Long childCount = permissionMapper.selectCount(
+        long childCount = count(
                 Wrappers.<SysPermission>lambdaQuery().eq(SysPermission::getParentId, id));
         if (childCount > 0) {
             throw new ServiceException("存在子权限，无法删除");
         }
         // 已被角色引用时拒绝删除
-        Long refCount = rolePermissionMapper.selectCount(
-                Wrappers.<SysRolePermission>lambdaQuery().eq(SysRolePermission::getPermissionId, id));
-        if (refCount > 0) {
+        if (rolePermissionService.countByPermissionId(id) > 0) {
             throw new ServiceException("该权限已分配给角色，无法删除");
         }
-        permissionMapper.deleteById(id);
+        removeById(id);
+    }
+
+    @Override
+    public boolean existsAll(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return true;
+        }
+        List<Long> distinctIds = ids.stream().distinct().collect(Collectors.toList());
+        return count(Wrappers.<SysPermission>lambdaQuery().in(SysPermission::getId, distinctIds)) == distinctIds.size();
     }
 
     /**
@@ -191,7 +193,7 @@ public class PermissionServiceImpl implements PermissionService {
      * @return 权限列表
      */
     private List<SysPermission> selectAll() {
-        return permissionMapper.selectList(
+        return list(
                 Wrappers.<SysPermission>lambdaQuery()
                         .orderByAsc(SysPermission::getSort)
                         .orderByAsc(SysPermission::getId));
@@ -204,7 +206,7 @@ public class PermissionServiceImpl implements PermissionService {
      * @return 权限实体
      */
     private SysPermission getByIdOrThrow(Long id) {
-        SysPermission permission = permissionMapper.selectById(id);
+        SysPermission permission = getById(id);
         if (permission == null) {
             throw new ServiceException("权限不存在");
         }
@@ -235,7 +237,7 @@ public class PermissionServiceImpl implements PermissionService {
      * @param excludeId 需要排除的权限ID（更新时排除自身），可为 null
      */
     private void checkNameDuplicate(String name, Long parentId, Long excludeId) {
-        Long count = permissionMapper.selectCount(
+        long count = count(
                 Wrappers.<SysPermission>lambdaQuery()
                         .eq(SysPermission::getParentId, parentId)
                         .eq(SysPermission::getName, name)
