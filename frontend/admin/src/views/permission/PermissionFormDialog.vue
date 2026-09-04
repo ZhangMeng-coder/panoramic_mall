@@ -24,6 +24,9 @@
           :placeholder="type === 1 ? '目录可不填' : '如 system:user:list'"
         />
       </el-form-item>
+      <el-form-item v-if="type === 2" label="路由地址" prop="route">
+        <el-input v-model="form.route" maxlength="200" placeholder="页面路由地址，如 /user" />
+      </el-form-item>
       <el-form-item label="图标" prop="icon">
         <el-input v-model="form.icon" maxlength="128" placeholder="菜单图标标识，如 setting/user" />
       </el-form-item>
@@ -58,11 +61,15 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'save'])
 
 const formRef = ref(null)
-const form = ref({ parentId: 0, name: '', type: 1, perms: '', icon: '', sort: 0 })
+const form = ref({ parentId: 0, name: '', type: 1, perms: '', route: '', icon: '', sort: 0 })
 
-const rules = {
-  name: [{ required: true, message: '请输入名称', trigger: 'blur' }]
-}
+// 页面级权限必须填写路由地址（前端菜单据此导航），目录/按钮不要求
+const rules = computed(() => ({
+  name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  ...(type.value === 2
+    ? { route: [{ required: true, message: '页面需要填写路由地址', trigger: 'blur' }] }
+    : {})
+}))
 
 const title = computed(() => (props.type === 'edit' ? '编辑权限' : props.parent ? '新增子权限' : '新增顶级目录'))
 
@@ -89,6 +96,7 @@ function initForm() {
     form.value = {
       name: props.permission.name,
       perms: props.permission.perms || '',
+      route: props.permission.route || '',
       icon: props.permission.icon || '',
       sort: props.permission.sort ?? 0
     }
@@ -98,6 +106,7 @@ function initForm() {
       name: '',
       type: type.value,
       perms: '',
+      route: '',
       icon: '',
       sort: 0
     }
@@ -112,11 +121,20 @@ async function handleSubmit() {
     return
   }
   if (props.type === 'edit') {
-    // 编辑仅允许更新名称/权限字符串/图标/排序，父级与类型不可变更
-    const { name, perms, icon, sort } = form.value
-    emit('save', { name, perms: perms || null, icon: icon || null, sort })
+    // 编辑仅允许更新名称/权限字符串/图标/路由地址/排序，父级与类型不可变更
+    const { name, perms, route, icon, sort } = form.value
+    const routeVal = (route || '').trim()
+    emit('save', {
+      name,
+      perms: perms || null,
+      route: routeVal || null,
+      icon: icon || null,
+      sort
+    })
   } else {
-    emit('save', { ...form.value, perms: form.value.perms || null })
+    const { perms, route } = form.value
+    const routeVal = (route || '').trim()
+    emit('save', { ...form.value, perms: perms || null, route: routeVal || null })
   }
 }
 </script>

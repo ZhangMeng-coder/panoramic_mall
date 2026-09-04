@@ -19,8 +19,8 @@
         <el-col :span="12">
           <el-form-item label="状态" prop="status">
             <el-radio-group v-model="form.status">
-              <el-radio :value="1">上架</el-radio>
-              <el-radio :value="0">下架</el-radio>
+              <el-radio :value="1">展示</el-radio>
+              <el-radio :value="0">隐藏</el-radio>
             </el-radio-group>
           </el-form-item>
         </el-col>
@@ -83,9 +83,28 @@
         />
       </el-form-item>
 
-      <!-- SKU 编辑区 -->
-      <el-divider content-position="left">SKU 规格</el-divider>
-      <SkuEditor ref="skuEditorRef" :skus="form.skus" />
+      <!-- 规格属性配置：定义该商品规格维度及各自可选项（SKU 组合在「规格」管理中按此生成） -->
+      <el-divider content-position="left">规格属性配置</el-divider>
+      <div class="spec-config-block">
+        <div v-for="(dim, idx) in form.specConfig" :key="idx" class="spec-config-row">
+          <el-input v-model="dim.spec" maxlength="32" placeholder="规格名，如 颜色" class="spec-name-input" />
+          <el-select
+            v-model="dim.values"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            :reserve-keyword="false"
+            placeholder="可选项（输入后回车添加），如 黑色"
+            class="spec-values-select"
+          />
+          <el-button type="danger" link @click="removeSpecDim(idx)">删除</el-button>
+        </div>
+        <div class="spec-config-actions">
+          <el-button type="primary" plain size="small" @click="addSpecDim">添加规格维度</el-button>
+          <span class="spec-config-tip">可选项供「规格」生成 SKU 组合；商品可暂不维护 SKU</span>
+        </div>
+      </div>
     </el-form>
 
     <template #footer>
@@ -99,21 +118,19 @@
 import { ref, onMounted } from 'vue'
 import { brandApi } from '../../api/brand'
 import { categoryApi } from '../../api/category'
-import SkuEditor from './SkuEditor.vue'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
   modelValue: { type: Boolean, default: false },
   /** add | edit */
   type: { type: String, default: 'add' },
-  /** 编辑时的商品数据（SpuDetailVO） */
+  /** 编辑时的商品数据（SpuDetailVO，含规格属性配置 specConfig） */
   spu: { type: Object, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
 const formRef = ref(null)
-const skuEditorRef = ref(null)
 const brands = ref([])
 const categoryOptions = ref([])
 
@@ -125,7 +142,7 @@ const form = ref({
   imageList: [],
   description: '',
   status: 0,
-  skus: []
+  specConfig: []
 })
 
 const rules = {
@@ -142,6 +159,14 @@ function removeImage(idx) {
   form.value.imageList.splice(idx, 1)
 }
 
+function addSpecDim() {
+  form.value.specConfig.push({ spec: '', values: [] })
+}
+
+function removeSpecDim(idx) {
+  form.value.specConfig.splice(idx, 1)
+}
+
 async function initForm() {
   await Promise.all([loadBrands(), loadCategories()])
 
@@ -156,10 +181,8 @@ async function initForm() {
       imageList: [...(spu.imageList || [])],
       description: spu.description || '',
       status: spu.status,
-      skus: []
+      specConfig: (spu.specConfig || []).map((d) => ({ spec: d.spec, values: [...(d.values || [])] }))
     }
-    form.value.skus = spu.skus || []
-    skuEditorRef.value?.reset(spu.skus || [])
   } else {
     form.value = {
       name: '',
@@ -169,9 +192,8 @@ async function initForm() {
       imageList: [],
       description: '',
       status: 0,
-      skus: []
+      specConfig: []
     }
-    skuEditorRef.value?.reset(null)
   }
   formRef.value?.clearValidate()
 }
@@ -199,8 +221,14 @@ async function handleSubmit() {
   } catch {
     return
   }
-  // 清理空白轮播图与空白规格值
+  // 清理空白轮播图与空白规格维度；SKU 不在本弹窗维护（见「规格」管理）
   form.value.imageList = form.value.imageList.filter((u) => u && u.trim())
+  const specConfig = form.value.specConfig
+    .filter((d) => d.spec && d.spec.trim() && d.values && d.values.some((v) => v && v.trim()))
+    .map((d) => ({
+      spec: d.spec.trim(),
+      values: [...new Set(d.values.map((v) => (v || '').trim()).filter((v) => v))]
+    }))
   const payload = {
     name: form.value.name,
     categoryId: form.value.categoryId,
@@ -209,14 +237,7 @@ async function handleSubmit() {
     imageList: form.value.imageList,
     description: form.value.description || null,
     status: form.value.status,
-    skus: form.value.skus
-      .filter((s) => s.specAttrs && s.specAttrs.length)
-      .map((s) => ({
-        id: s.id,
-        specAttrs: s.specAttrs,
-        skuCode: s.skuCode || null,
-        mainImage: s.mainImage || null
-      }))
+    specConfig
   }
   emit('save', payload)
 }
@@ -243,5 +264,36 @@ onMounted(() => {
   width: 48px;
   height: 32px;
   flex-shrink: 0;
+}
+
+.spec-config-block {
+  width: 100%;
+}
+
+.spec-config-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.spec-name-input {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.spec-values-select {
+  flex: 1;
+}
+
+.spec-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spec-config-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

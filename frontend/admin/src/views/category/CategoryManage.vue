@@ -4,35 +4,38 @@
       <el-button type="primary" @click="openAdd(null)">新增顶级分类</el-button>
     </div>
 
-    <el-tree
+    <!-- 树形数据用 el-table 的树类型展示（整棵一次加载，非懒加载） -->
+    <el-table
       v-loading="loading"
-      :data="treeData"
-      node-key="id"
-      :props="{ label: 'name', children: 'children' }"
+      class="category-table"
+      :data="tableData"
+      row-key="id"
       default-expand-all
-      class="category-tree"
-      @mouseleave="hoverId = null"
     >
-      <template #default="{ node, data }">
-        <div
-          class="tree-node"
-          :class="{ 'is-hover': hoverId === data.id }"
-          @mouseenter="hoverId = data.id"
-        >
-          <span class="tree-node-label">
-            {{ node.label }}
-            <el-tag v-if="data.level === 3" size="small" type="info" effect="plain">末级</el-tag>
+      <el-table-column label="分类名称" min-width="360">
+        <template #default="{ row }">
+          <span class="cat-name">{{ row.name }}</span>
+          <el-tag v-if="row.level === 3" size="small" type="info" effect="plain">末级</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="sort" label="排序" width="120" align="center" />
+      <el-table-column label="操作" width="250" align="center">
+        <template #default="{ row }">
+          <span class="row-actions">
+            <el-button
+              v-if="row.level < 3"
+              link
+              type="primary"
+              size="small"
+              @click="openAdd(row)"
+            >新增子分类</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </span>
-          <span v-if="hoverId === data.id" class="tree-node-actions" @click.stop>
-            <el-button v-if="data.level < 3" link type="primary" size="small" @click="openAdd(data)">新增子分类</el-button>
-            <el-button link type="primary" size="small" @click="openEdit(data)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(data)">删除</el-button>
-          </span>
-        </div>
-      </template>
-    </el-tree>
-
-    <el-empty v-if="!loading && !treeData.length" description="暂无分类，点击上方按钮新增" />
+        </template>
+      </el-table-column>
+      <template #empty>暂无分类，点击上方按钮新增</template>
+    </el-table>
 
     <CategoryFormDialog
       v-model="dialogVisible"
@@ -51,8 +54,7 @@ import { categoryApi } from '../../api/category'
 import CategoryFormDialog from './CategoryFormDialog.vue'
 
 const loading = ref(false)
-const treeData = ref([])
-const hoverId = ref(null)
+const tableData = ref([])
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
@@ -63,7 +65,7 @@ const dialogCategory = ref(null)
 async function loadTree() {
   loading.value = true
   try {
-    treeData.value = await categoryApi.tree()
+    tableData.value = await categoryApi.tree()
   } finally {
     loading.value = false
   }
@@ -132,31 +134,23 @@ onMounted(loadTree)
   margin-bottom: 12px;
 }
 
-.category-tree {
+.category-table {
   min-height: 60px;
 }
 
-.tree-node {
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-  padding-right: 8px;
-  border-radius: 4px;
+.cat-name {
+  font-weight: 500;
+  margin-right: 6px;
+}
+</style>
+
+<!-- 行操作仅在鼠标悬停当前行时显示（slot 内容带 scoped 属性，需放开作用域） -->
+<style>
+.category-table .row-actions {
+  visibility: hidden;
 }
 
-.tree-node.is-hover {
-  background-color: #ecf5ff;
-}
-
-.tree-node-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-}
-
-.tree-node-actions {
-  flex-shrink: 0;
-  padding-left: 12px;
+.category-table .el-table__row:hover .row-actions {
+  visibility: visible;
 }
 </style>

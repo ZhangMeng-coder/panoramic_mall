@@ -49,6 +49,12 @@ public class PermissionSaveDTO {
     private String icon;
 
     /**
+     * 页面路由地址（type=2 页面必填，如 /user）
+     */
+    @Size(max = 200, message = "路由地址不能超过200个字符", groups = ValidationGroups.Create.class)
+    private String route;
+
+    /**
      * 排序值，越小越靠前
      */
     private Integer sort;

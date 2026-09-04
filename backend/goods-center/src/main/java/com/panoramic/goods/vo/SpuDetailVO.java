@@ -1,6 +1,7 @@
 package com.panoramic.goods.vo;
 
 import com.panoramic.goods.dto.SpecAttr;
+import com.panoramic.goods.dto.SpecConfigItem;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -58,14 +59,24 @@ public class SpuDetailVO {
     private String description;
 
     /**
-     * 状态：0 下架，1 上架
+     * 展示状态：0 隐藏，1 展示
      */
     private Integer status;
+
+    /**
+     * 规格属性配置（JSON → List）
+     */
+    private List<SpecConfigItem> specConfig;
 
     /**
      * SKU 列表
      */
     private List<SkuVO> skus;
+
+    /**
+     * 分类完整链条（根→叶子名称，如 "服饰 / 男装 / T恤"）
+     */
+    private String categoryPath;
 
     /**
      * 创建时间

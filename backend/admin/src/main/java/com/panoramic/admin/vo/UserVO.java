@@ -3,6 +3,7 @@ package com.panoramic.admin.vo;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 用户响应
@@ -50,4 +51,9 @@ public class UserVO {
      * 创建时间
      */
     private LocalDateTime createTime;
+
+    /**
+     * 该用户已分配的角色（仅列表接口批量回填，详情接口可为空）
+     */
+    private List<RoleVO> roles;
 }

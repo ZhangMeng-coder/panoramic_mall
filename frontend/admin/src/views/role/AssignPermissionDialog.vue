@@ -93,7 +93,7 @@ async function handleSubmit() {
 
 <style scoped>
 .assign-tip {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   margin-bottom: 10px;
 }
@@ -102,7 +102,7 @@ async function handleSubmit() {
   min-height: 120px;
   max-height: 420px;
   overflow-y: auto;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   padding: 8px;
 }
@@ -118,7 +118,7 @@ async function handleSubmit() {
 }
 
 .perm-code {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -56,18 +57,56 @@ public class PermissionServiceImpl implements PermissionService {
 
     @Override
     public List<PermissionTreeVO> menus() {
-        // 前端目录接口：仅 目录+页面
-        List<SysPermission> menus = permissionMapper.selectList(
-                Wrappers.<SysPermission>lambdaQuery()
-                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
-                        .orderByAsc(SysPermission::getSort)
-                        .orderByAsc(SysPermission::getId));
+        // 临时目录接口：全量返回（目录+页面），供前端动态生成侧边菜单。
+        // TODO 鉴权接入后：改为传入当前登录用户拥有的角色ID集合 —— menusByRoleIds(userRoleIds)
+        return menusByRoleIds(null);
+    }
+
+    @Override
+    public List<PermissionTreeVO> menusByRoleIds(List<Long> roleIds) {
+        List<SysPermission> menus;
+        if (roleIds == null || roleIds.isEmpty()) {
+            // 全量：目录+页面
+            menus = selectDirAndPages();
+        } else {
+            // 预留：仅返回这些角色拥有的 目录+页面。
+            // TODO 鉴权接入后复核：为保证菜单树完整，还需向上补全所返回页面的祖先目录。
+            List<Long> ownedIds = rolePermissionMapper.selectList(
+                            Wrappers.<SysRolePermission>lambdaQuery()
+                                    .in(SysRolePermission::getRoleId, roleIds))
+                    .stream()
+                    .map(SysRolePermission::getPermissionId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (ownedIds.isEmpty()) {
+                return new ArrayList<>();
+            }
+            menus = permissionMapper.selectList(
+                    Wrappers.<SysPermission>lambdaQuery()
+                            .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
+                            .in(SysPermission::getId, ownedIds)
+                            .orderByAsc(SysPermission::getSort)
+                            .orderByAsc(SysPermission::getId));
+        }
         if (menus.isEmpty()) {
             return new ArrayList<>();
         }
         Map<Long, List<SysPermission>> byParent = menus.stream()
                 .collect(Collectors.groupingBy(SysPermission::getParentId));
         return buildChildren(byParent, 0L);
+    }
+
+    /**
+     * 查询全部 目录+页面 节点（排序后）
+     *
+     * @return 目录/页面列表
+     */
+    private List<SysPermission> selectDirAndPages() {
+        return permissionMapper.selectList(
+                Wrappers.<SysPermission>lambdaQuery()
+                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
+                        .orderByAsc(SysPermission::getSort)
+                        .orderByAsc(SysPermission::getId));
     }
 
     @Override
@@ -93,6 +132,10 @@ public class PermissionServiceImpl implements PermissionService {
                 throw new ServiceException("权限层级不合法：子类型必须是父类型下一级（目录→页面→按钮）");
             }
         }
+        // 页面级权限供前端菜单导航，必须携带路由地址
+        if (type == TYPE_MENU && !StringUtils.hasText(dto.getRoute())) {
+            throw new ServiceException("页面权限需要填写路由地址");
+        }
         checkNameDuplicate(dto.getName(), parentId, null);
 
         SysPermission permission = new SysPermission();
@@ -108,12 +151,17 @@ public class PermissionServiceImpl implements PermissionService {
     @Transactional(rollbackFor = Exception.class)
     public void updatePermission(Long id, PermissionUpdateDTO dto) {
         SysPermission permission = getByIdOrThrow(id);
-        // 保持原有父级与类型，仅更新名称/权限字符串/图标/排序
+        // 保持原有父级与类型，仅更新名称/权限字符串/图标/路由地址/排序
+        // 页面级权限供前端菜单导航，必须携带路由地址
+        if (permission.getType() == TYPE_MENU && !StringUtils.hasText(dto.getRoute())) {
+            throw new ServiceException("页面权限需要填写路由地址");
+        }
         checkNameDuplicate(dto.getName(), permission.getParentId(), id);
 
         permission.setName(dto.getName());
         permission.setPerms(dto.getPerms());
         permission.setIcon(dto.getIcon());
+        permission.setRoute(dto.getRoute());
         permission.setSort(dto.getSort() == null ? 0 : dto.getSort());
         permissionMapper.updateById(permission);
     }

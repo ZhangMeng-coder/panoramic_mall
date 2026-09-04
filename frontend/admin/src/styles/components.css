@@ -1,0 +1,169 @@
+/* ============================================================================
+   Component Presets — 高频“兜底”组件类
+   纯 Token 驱动：不出现硬编码色值/字号/间距，可随 tokens.css 换肤。
+   供后续不依赖 Element Plus 的自定义区域直接套用类名即可。
+   ========================================================================== */
+
+/* ---------------------------- 容器 ---------------------------- */
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+/* 纵向区块统一间距：py-12(48px)，宽屏 lg:py-20(80px) */
+.container-section {
+  padding-block: var(--space-12);
+}
+@media (min-width: 1024px) {
+  .container-section {
+    padding-block: var(--space-20);
+  }
+}
+
+/* ---------------------------- 按钮 ---------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    filter var(--duration-fast) var(--ease-standard);
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(0.96);
+  box-shadow: var(--shadow-md);
+}
+.btn-primary:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  border-color: var(--color-border-strong);
+  color: var(--color-text);
+}
+.btn-ghost:hover:not(:disabled) {
+  background-color: var(--color-hover);
+  border-color: var(--color-border-strong);
+  color: var(--color-text-strong);
+}
+.btn-ghost:active:not(:disabled) {
+  background-color: var(--color-neutral-200);
+}
+
+.btn-sm {
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.btn-lg {
+  font-size: var(--text-base);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-lg);
+}
+
+/* ---------------------------- 卡片 ---------------------------- */
+.card {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-6);
+}
+
+/* ---------------------------- 输入框 ---------------------------- */
+.input {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--color-text-strong);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+.input::placeholder {
+  color: var(--color-text-faint);
+}
+.input:hover {
+  border-color: var(--color-neutral-400);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---------------------------- 徽标（语义色变体） ---------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+}
+
+.badge--neutral {
+  color: var(--color-neutral-700);
+  background-color: var(--color-neutral-100);
+}
+.badge--success {
+  color: var(--color-success);
+  background-color: var(--color-success-soft);
+}
+.badge--warning {
+  color: var(--color-warning);
+  background-color: var(--color-warning-soft);
+}
+.badge--error {
+  color: var(--color-error);
+  background-color: var(--color-error-soft);
+}
+.badge--info {
+  color: var(--color-info);
+  background-color: var(--color-info-soft);
+}
+
+/* 深色下 neutral 徽标取反相层次 */
+html.dark .badge--neutral {
+  color: var(--color-neutral-300);
+  background-color: var(--color-neutral-700);
+}

@@ -46,7 +46,7 @@ public class SpuPageItemVO {
     private String mainImage;
 
     /**
-     * 状态：0 下架，1 上架
+     * 展示状态：0 隐藏，1 展示
      */
     private Integer status;
 

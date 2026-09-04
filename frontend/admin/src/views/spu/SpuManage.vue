@@ -22,8 +22,8 @@
       </el-form-item>
       <el-form-item label="状态">
         <el-select v-model="query.status" clearable placeholder="全部状态" style="width: 120px">
-          <el-option label="上架中" :value="1" />
-          <el-option label="已下架" :value="0" />
+          <el-option label="展示中" :value="1" />
+          <el-option label="已隐藏" :value="0" />
         </el-select>
       </el-form-item>
       <el-form-item label="名称">
@@ -65,16 +65,18 @@
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
           <el-tag :type="row.status === 1 ? 'success' : 'info'">
-            {{ row.status === 1 ? '上架中' : '已下架' }}
+            {{ row.status === 1 ? '展示中' : '已隐藏' }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" width="170" />
-      <el-table-column label="操作" width="210" fixed="right">
+      <el-table-column label="操作" width="330" fixed="right">
         <template #default="{ row }">
+          <el-button link type="info" @click="openPreview(row)">预览</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-if="row.status === 0" link type="success" @click="handleToggleStatus(row)">上架</el-button>
-          <el-button v-else link type="warning" @click="handleToggleStatus(row)">下架</el-button>
+          <el-button link type="success" @click="openSku(row)">规格</el-button>
+          <el-button v-if="row.status === 0" link type="success" @click="handleToggleStatus(row)">展示</el-button>
+          <el-button v-else link type="warning" @click="handleToggleStatus(row)">隐藏</el-button>
           <el-button link type="danger" :disabled="row.status === 1" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -97,6 +99,8 @@
       :spu="dialogSpu"
       @save="handleSave"
     />
+    <SpuSkuManageDialog v-model="skuDialogVisible" :spu="dialogSpu" @saved="handleSkuSaved" />
+    <SpuPreviewDialog v-model="previewDialogVisible" :spu="dialogSpu" />
   </el-card>
 </template>
 
@@ -107,6 +111,8 @@ import { spuApi } from '../../api/spu'
 import { brandApi } from '../../api/brand'
 import { categoryApi } from '../../api/category'
 import SpuFormDialog from './SpuFormDialog.vue'
+import SpuSkuManageDialog from './SpuSkuManageDialog.vue'
+import SpuPreviewDialog from './SpuPreviewDialog.vue'
 
 const loading = ref(false)
 const records = ref([])
@@ -116,10 +122,12 @@ const categoryOptions = ref([])
 
 const query = reactive({ pageNum: 1, pageSize: 10, categoryId: null, brandId: null, status: null, keyword: '' })
 
-// 表单弹窗状态
+// 弹窗状态：编辑（基本信息+规格配置） / 规格（SKU 管理） / 预览
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogSpu = ref(null)
+const dialogSpu = ref(null) // 共享的 SpuDetailVO（三个弹窗复用，打开前各自刷新拉取）
+const skuDialogVisible = ref(false)
+const previewDialogVisible = ref(false)
 
 async function loadOptions() {
   const [brandList, tree] = await Promise.all([brandApi.list(), categoryApi.tree()])
@@ -174,6 +182,32 @@ async function openEdit(row) {
   }
 }
 
+/** 打开 SKU/规格管理弹窗（每次拉最新详情，避免 SKU 与规格配置陈旧） */
+async function openSku(row) {
+  try {
+    dialogSpu.value = await spuApi.detail(row.id)
+    skuDialogVisible.value = true
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+/** 打开只读预览弹窗 */
+async function openPreview(row) {
+  try {
+    dialogSpu.value = await spuApi.detail(row.id)
+    previewDialogVisible.value = true
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+/** 规格/SKU 保存成功：关闭弹窗并刷新列表 */
+function handleSkuSaved() {
+  skuDialogVisible.value = false
+  loadPage()
+}
+
 async function handleSave(payload) {
   try {
     if (dialogType.value === 'add') {
@@ -194,7 +228,7 @@ async function handleToggleStatus(row) {
   const target = row.status === 1 ? 0 : 1
   try {
     await spuApi.updateStatus(row.id, target)
-    ElMessage.success(target === 1 ? '商品已上架' : '商品已下架')
+    ElMessage.success(target === 1 ? '商品已设为展示' : '商品已设为隐藏')
     loadPage()
   } catch {
     // 拦截器已提示
@@ -204,7 +238,7 @@ async function handleToggleStatus(row) {
 async function handleDelete(row) {
   try {
     await ElMessageBox.confirm(
-      `确定删除商品「${row.name}」吗？上架中的商品需先下架`,
+      `确定删除商品「${row.name}」吗？展示中的商品需先隐藏`,
       '删除确认',
       { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
     )

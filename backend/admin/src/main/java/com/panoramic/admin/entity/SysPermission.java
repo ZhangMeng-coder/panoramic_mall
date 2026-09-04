@@ -47,6 +47,11 @@ public class SysPermission extends BaseEntity {
     private String icon;
 
     /**
+     * 页面路由地址（仅 type=2 页面填写，如 /user，前端菜单据此导航）
+     */
+    private String route;
+
+    /**
      * 排序值，越小越靠前
      */
     private Integer sort;

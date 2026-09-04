@@ -14,7 +14,7 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 连接信息通过环境变量注入（默认本机 127.0.0.1 root/root，库 panoramic_mall，与 goods-center 同库）
-    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://123.56.117.17:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
 

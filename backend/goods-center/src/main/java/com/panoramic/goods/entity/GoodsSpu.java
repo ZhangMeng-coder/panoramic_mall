@@ -52,7 +52,12 @@ public class GoodsSpu extends BaseEntity {
     private String description;
 
     /**
-     * 状态：0 下架，1 上架
+     * 规格属性配置 JSON 字符串，如 [{"spec":"颜色","values":["黑色","白色"]}]
+     */
+    private String specConfig;
+
+    /**
+     * 展示状态：0 隐藏，1 展示（商品中台商品为商城商品信息模板，无上下架概念）
      */
     private Integer status;
 }

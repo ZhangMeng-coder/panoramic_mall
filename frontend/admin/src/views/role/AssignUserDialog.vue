@@ -189,7 +189,7 @@ async function handleSubmit() {
 .panel {
   flex: 1;
   min-width: 0;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   padding: 10px;
 }
@@ -224,7 +224,7 @@ async function handleSubmit() {
   align-items: center;
   justify-content: space-between;
   padding: 6px 4px;
-  border-bottom: 1px dashed #ebeef5;
+  border-bottom: 1px dashed var(--el-border-color-lighter);
 }
 
 .assigned-row:last-child {
@@ -243,7 +243,7 @@ async function handleSubmit() {
 }
 
 .assigned-sub {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;

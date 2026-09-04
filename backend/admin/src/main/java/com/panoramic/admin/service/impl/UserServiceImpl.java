@@ -14,6 +14,7 @@ import com.panoramic.admin.mapper.SysUserMapper;
 import com.panoramic.admin.mapper.SysUserRoleMapper;
 import com.panoramic.admin.service.UserService;
 import com.panoramic.admin.vo.PageResult;
+import com.panoramic.admin.vo.RoleVO;
 import com.panoramic.admin.vo.UserVO;
 import com.panoramic.common.exception.ServiceException;
 import lombok.RequiredArgsConstructor;
@@ -24,8 +25,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -57,6 +61,8 @@ public class UserServiceImpl implements UserService {
         List<UserVO> records = result.getRecords().stream()
                 .map(this::toVO)
                 .collect(Collectors.toList());
+        // 批量回填本页用户的角色（多角色并排展示），避免逐行查询
+        attachRoles(records);
         return new PageResult<>(result.getTotal(), records);
     }
 
@@ -177,6 +183,48 @@ public class UserServiceImpl implements UserService {
         if (count != roleIds.size()) {
             throw new ServiceException("存在无效的角色ID");
         }
+    }
+
+    /**
+     * 批量回填用户已分配的角色（供列表并排展示）。
+     * <p>两次批量查询（关联表 + 角色表），按角色 sort/id 排序后逐用户组装，无角色置空列表。</p>
+     *
+     * @param records 本页用户 VO 列表
+     */
+    private void attachRoles(List<UserVO> records) {
+        if (records.isEmpty()) {
+            return;
+        }
+        List<Long> userIds = records.stream().map(UserVO::getId).collect(Collectors.toList());
+        List<SysUserRole> relations = userRoleMapper.selectList(
+                Wrappers.<SysUserRole>lambdaQuery().in(SysUserRole::getUserId, userIds));
+        if (relations.isEmpty()) {
+            records.forEach(vo -> vo.setRoles(Collections.emptyList()));
+            return;
+        }
+        List<Long> roleIds = relations.stream()
+                .map(SysUserRole::getRoleId)
+                .distinct()
+                .collect(Collectors.toList());
+        // 角色按 sort/id 排序，保证每个用户内多角色展示顺序稳定
+        List<SysRole> roles = roleMapper.selectList(
+                Wrappers.<SysRole>lambdaQuery()
+                        .in(SysRole::getId, roleIds)
+                        .orderByAsc(SysRole::getSort)
+                        .orderByAsc(SysRole::getId));
+        // 外层遍历已按 sort/id 排序的 roles，保证每个用户内多角色顺序稳定
+        Map<Long, List<RoleVO>> rolesByUser = new HashMap<>();
+        for (SysRole role : roles) {
+            RoleVO vo = new RoleVO();
+            BeanUtils.copyProperties(role, vo);
+            for (SysUserRole relation : relations) {
+                if (role.getId().equals(relation.getRoleId())) {
+                    rolesByUser.computeIfAbsent(relation.getUserId(), k -> new ArrayList<>()).add(vo);
+                }
+            }
+        }
+        records.forEach(vo ->
+                vo.setRoles(rolesByUser.getOrDefault(vo.getId(), Collections.emptyList())));
     }
 
     /**

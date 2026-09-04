@@ -4,6 +4,7 @@ import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.goods.dto.SpuPageQueryDTO;
 import com.panoramic.goods.dto.SpuSaveDTO;
+import com.panoramic.goods.dto.SpuSkuReplaceDTO;
 import com.panoramic.goods.dto.SpuStatusDTO;
 import com.panoramic.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.service.SpuService;
@@ -41,7 +42,7 @@ public class SpuController {
     }
 
     /**
-     * 商品详情（含 SKU 列表）
+     * 商品详情（含 SKU 列表、规格属性配置、分类完整链条）
      */
     @GetMapping("/{id}")
     public RespData<SpuDetailVO> detail(@PathVariable @NotNull(message = "商品ID不能为空") Long id) {
@@ -49,7 +50,7 @@ public class SpuController {
     }
 
     /**
-     * 新建商品（SPU + SKU 级联保存）
+     * 新建商品（基础信息 + 规格属性配置；SKU 由 /{id}/skus 单独维护）
      */
     @PostMapping
     public RespData<Long> save(@Validated(ValidationGroups.Create.class) @RequestBody SpuSaveDTO dto) {
@@ -57,7 +58,7 @@ public class SpuController {
     }
 
     /**
-     * 更新商品（SKU diff 级联更新）
+     * 更新商品（仅基础信息 + 规格属性配置）
      */
     @PutMapping("/{id}")
     public RespData<Void> update(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
@@ -67,7 +68,17 @@ public class SpuController {
     }
 
     /**
-     * 商品上下架
+     * 全量替换商品 SKU（规格管理专用；空 skus = 清空全部 SKU）
+     */
+    @PutMapping("/{id}/skus")
+    public RespData<Void> replaceSkus(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
+                                      @RequestBody SpuSkuReplaceDTO dto) {
+        spuService.replaceSkus(id, dto);
+        return RespData.success();
+    }
+
+    /**
+     * 商品展示/隐藏切换
      */
     @PutMapping("/{id}/status")
     public RespData<Void> updateStatus(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
@@ -77,7 +88,7 @@ public class SpuController {
     }
 
     /**
-     * 删除商品（上架中拒绝）
+     * 删除商品（展示中拒绝）
      */
     @DeleteMapping("/{id}")
     public RespData<Void> delete(@PathVariable @NotNull(message = "商品ID不能为空") Long id) {

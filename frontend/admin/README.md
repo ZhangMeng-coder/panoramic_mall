@@ -2,16 +2,27 @@
 
 后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用后端商品中心与用户管理（admin）接口。
 
+## 主题与设计令牌（Design Tokens）
+
+- **集中换肤**：`src/styles/tokens.css` 顶部 `:root` 即换肤入口（主色 `#4F46E5` / 语义色 / 圆角等），文件头有「可调整变量」注释
+- **Element Plus 主题映射**：同一文件内把 EP 的 `--el-color-*` 色板（含 light-3/5/7/8/9 与 dark-2）映射到令牌色，全站按钮/标签/表格等自动随主色走；`info` 保留中性灰以维持“灰=次要”语义
+- **明暗双主题**：加载 `element-plus/theme-chalk/dark/css-vars.css`，`.dark` 挂在 `<html>`；EP 暗色结构变量 + 令牌暗色层联动。`index.html` 首帧内联脚本先应用主题，避免切换闪烁
+- **亮/暗切换**：顶栏右上角图标按钮，选择写入 `localStorage['pm-admin-theme']`，未设置时跟随系统 `prefers-color-scheme`
+- **排版/间距/圆角/阴影/动效**：按 8px 网格与 Modular Scale 提供 `--space-*`、`--text-*`、`--radius-*`、`--shadow-*`、`--duration-*`
+- **组件预设**：`src/styles/components.css` 提供 `.btn/.btn-primary/.btn-ghost/.btn-sm/.btn-lg`、`.card`、`.input`、`.badge`（语义变体）、`.container-section`，供非 EP 自定义区域直接套用
+
 ## 功能页面
 
 | 页面 | 路由 | 功能 |
 |---|---|---|
-| 分类管理 | `/category` | 分类多级树展示；节点悬停操作：新增子分类 / 编辑 / 删除；删除受后端保护（有子分类或有商品时提示失败原因） |
+| 分类管理 | `/category` | 分类多级树展示（el-table 树形数据，一次加载全展开，非懒加载）；行悬停操作：新增子分类 / 编辑 / 删除；删除受后端保护（有子分类或有商品时提示失败原因） |
 | 品牌管理 | `/brand` | 品牌列表分页 + 名称关键字搜索；新增/编辑弹窗（LOGO 实时预览）；删除 |
-| 商品管理 | `/spu` | 商品分页筛选（分类树下拉/品牌/上下架状态/名称关键字）；新增/编辑/上下架/删除（上架中禁止删除） |
-| 用户管理 | `/user` | 用户分页（关键字/状态筛选）+ CRUD；密码 BCrypt 存储，编辑留空不改密码；分配角色（全角色勾选回显、可整体替换/清空） |
+| 商品管理 | `/spu` | 商品为商城商品的信息模板（无上下架概念，以 展示/隐藏 表示对商城是否可见）；分页筛选（分类树下拉/品牌/展示状态/名称关键字）。**编辑**＝基本信息+规格属性配置（各规格维度可选项）；「规格」弹窗独立管理 SKU（展示编码/图片/规格组合，组合取值来自规格属性配置，可一键生成缺失组合）；「预览」只读查看 名称/分类完整链条/主图/轮播图/详情/规格配置/SKU 明细 |
+| 用户管理 | `/user` | 列表内联展示已分配角色（多角色并排标签）；用户分页（关键字/状态筛选）+ CRUD；密码 BCrypt 存储，编辑留空不改密码；分配角色（全角色勾选回显、可整体替换/清空） |
 | 角色管理 | `/role` | 角色分页 + CRUD；分配权限（权限树勾选，父节点级联全选子级、可清空）；分配用户（左侧展示“不在该角色内”的用户分页可加，右侧已分配可移除） |
-| 权限管理 | `/permission` | 权限树展示（目录/页面/按钮逐级递减，含权限字符串）；新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；目录接口 `/admin/permissions/menus` 亦由此功能提供 |
+| 权限管理 | `/permission` | 权限树表格展示（el-table 树形数据：目录/页面/按钮逐级递减，含权限字符串、页面级路由地址）；行悬停新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；页面(2)级权限带路由地址 `route`，供前端菜单导航 |
+
+> 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（商品中台 / 系统管理 两组：目录→页面，页面携带 `route`）；当前**全量返回（临时）**，后端已预留按当前登录用户角色过滤（`menusByRoleIds`），接入鉴权后可无缝切换。
 
 ## 商品编辑的 SKU 规格编辑器（SkuEditor）
 
@@ -40,13 +51,17 @@ npm run build     # 产物输出 dist/
 src/
 ├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限接口模块
 ├── router/              # 路由（默认跳转分类管理）
+├── styles/              # Design Token 基础层（换肤/EP主题映射/组件预设）
+│   ├── tokens.css       #   可调变量色板 + 浅/暗令牌 + EP --el-* 主题映射
+│   ├── base.css         #   Reset + 排版 + 滚动条（纯 var 驱动）
+│   └── components.css   #   .btn/.card/.input/.badge/.container-section 预设
 ├── views/
 │   ├── category/        # CategoryManage + CategoryFormDialog
 │   ├── brand/           # BrandManage + BrandFormDialog
-│   ├── spu/             # SpuManage + SpuFormDialog + SkuEditor
+│   ├── spu/             # SpuManage + SpuFormDialog(基础+规格配置) + SpuSkuManageDialog + SpuPreviewDialog
 │   ├── user/            # UserManage + UserFormDialog + AssignRoleDialog
 │   ├── role/            # RoleManage + RoleFormDialog + AssignPermissionDialog + AssignUserDialog
 │   └── permission/      # PermissionManage + PermissionFormDialog
-├── App.vue              # 侧边导航（商品/系统管理分组）+ 内容区布局
-└── main.js              # Element Plus（zh-cn）+ 路由挂载
+├── App.vue              # 布局壳：侧边导航（商品/系统管理）+ 顶栏（页名/明暗切换）
+└── main.js              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
 ```

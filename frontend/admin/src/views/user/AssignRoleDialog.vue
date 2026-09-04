@@ -109,7 +109,7 @@ async function handleSubmit() {
   min-height: 120px;
   max-height: 320px;
   overflow-y: auto;
-  border: 1px solid #e4e7ed;
+  border: 1px solid var(--el-border-color-light);
   border-radius: 4px;
   padding: 8px 12px;
 }
@@ -125,7 +125,7 @@ async function handleSubmit() {
 }
 
 .role-code {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

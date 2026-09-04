@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS sys_permission (
   type        TINYINT         NOT NULL              COMMENT '类型：1=目录，2=页面，3=按钮',
   perms       VARCHAR(128)    DEFAULT NULL          COMMENT '权限字符串，如 system:user:list',
   icon        VARCHAR(128)    DEFAULT NULL          COMMENT '菜单图标',
+  route       VARCHAR(200)    DEFAULT NULL          COMMENT '页面路由地址（仅 type=2 页面，如 /user）',
   sort        INT             NOT NULL DEFAULT 0    COMMENT '排序值，越小越靠前',
   create_user INT             DEFAULT NULL          COMMENT '创建人ID',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -86,16 +87,46 @@ CREATE TABLE IF NOT EXISTS sys_role_permission (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='角色权限关联表';
 
 -- ============================================================
--- 幂等权限种子：系统管理目录 → 用户/角色/权限 页面 → 功能按钮
--- 使用显式 ID + INSERT IGNORE，重复执行不会产生重复数据。
+-- 兼容已建表：sys_permission 缺 route 列则补齐（重复执行安全）
 -- ============================================================
-INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
+SET @has_route := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                   WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sys_permission' AND COLUMN_NAME = 'route');
+SET @ddl := IF(@has_route = 0,
+  'ALTER TABLE sys_permission ADD COLUMN route VARCHAR(200) DEFAULT NULL COMMENT ''页面路由地址（仅 type=2 页面，如 /user）'' AFTER icon',
+  'SELECT 1');
+PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ============================================================
+-- 幂等权限种子：商品中台 / 系统管理 两目录 → 页面（带路由地址）→ 功能按钮
+-- 使用显式 ID + INSERT IGNORE，重复执行不会产生重复数据；
+-- 已存在页面（旧种子无 route）由文件尾部 UPDATE 幂等回填路由地址。
+-- ============================================================
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
   -- 目录（type=1，parent=0）
-  (1,   0,  '系统管理', 1, NULL,             'setting', 1),
+  (2,   0,  '商品中台', 1, NULL,             'folder-opened', 0, NULL),
+  (1,   0,  '系统管理', 1, NULL,             'setting',       1, NULL),
+  -- 页面（type=2，parent=商品中台，供前端动态菜单导航）
+  (21,  2,  '分类管理', 2, 'goods:category',   'menu',  1, '/category'),
+  (22,  2,  '品牌管理', 2, 'goods:brand',      'goods', 2, '/brand'),
+  (23,  2,  '商品管理', 2, 'goods:spu',        'box',   3, '/spu'),
   -- 页面（type=2，parent=系统管理）
-  (11,  1,  '用户管理', 2, 'system:user',       'user',     1),
-  (12,  1,  '角色管理', 2, 'system:role',       'team',     2),
-  (13,  1,  '权限管理', 2, 'system:permission', 'lock',     3),
+  (11,  1,  '用户管理', 2, 'system:user',       'user',  1, '/user'),
+  (12,  1,  '角色管理', 2, 'system:role',       'team',  2, '/role'),
+  (13,  1,  '权限管理', 2, 'system:permission', 'lock',  3, '/permission');
+
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
+  -- 按钮（type=3，parent=分类管理）
+  (211, 21, '分类新增', 3, 'goods:category:add',    NULL, 1),
+  (212, 21, '分类编辑', 3, 'goods:category:edit',   NULL, 2),
+  (213, 21, '分类删除', 3, 'goods:category:delete', NULL, 3),
+  -- 按钮（type=3，parent=品牌管理）
+  (221, 22, '品牌新增', 3, 'goods:brand:add',    NULL, 1),
+  (222, 22, '品牌编辑', 3, 'goods:brand:edit',   NULL, 2),
+  (223, 22, '品牌删除', 3, 'goods:brand:delete', NULL, 3),
+  -- 按钮（type=3，parent=商品管理）
+  (231, 23, '商品新增', 3, 'goods:spu:add',    NULL, 1),
+  (232, 23, '商品编辑', 3, 'goods:spu:edit',   NULL, 2),
+  (233, 23, '商品删除', 3, 'goods:spu:delete', NULL, 3),
   -- 按钮（type=3，parent=用户管理）
   (111, 11, '用户查询', 3, 'system:user:list',   NULL, 1),
   (112, 11, '用户新增', 3, 'system:user:add',    NULL, 2),
@@ -114,3 +145,8 @@ INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort)
   (132, 13, '权限新增', 3, 'system:permission:add',    NULL, 2),
   (133, 13, '权限编辑', 3, 'system:permission:edit',   NULL, 3),
   (134, 13, '权限删除', 3, 'system:permission:delete', NULL, 4);
+
+-- 回填旧种子中页面缺失的路由地址（INSERT IGNORE 不改已存在行，仅补空值）
+UPDATE sys_permission SET route = '/user'       WHERE id = 11 AND route IS NULL;
+UPDATE sys_permission SET route = '/role'       WHERE id = 12 AND route IS NULL;
+UPDATE sys_permission SET route = '/permission' WHERE id = 13 AND route IS NULL;

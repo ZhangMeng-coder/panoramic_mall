@@ -5,40 +5,53 @@
       <span class="toolbar-tip">层级：目录 → 页面 → 按钮（逐级递减，按钮下不能再加子级）</span>
     </div>
 
-    <el-tree
+    <!-- 树形数据用 el-table 的树类型展示（整棵一次加载，非懒加载） -->
+    <el-table
       v-loading="loading"
-      :data="treeData"
-      node-key="id"
-      :props="{ label: 'name', children: 'children' }"
+      class="permission-table"
+      :data="tableData"
+      row-key="id"
       default-expand-all
-      class="perm-tree"
-      @mouseleave="hoverId = null"
     >
-      <template #default="{ data }">
-        <div
-          class="tree-node"
-          :class="{ 'is-hover': hoverId === data.id }"
-          @mouseenter="hoverId = data.id"
-        >
-          <span class="tree-node-label">
-            <span class="node-name">{{ data.name }}</span>
-            <el-tag v-if="data.type === 1" size="small" type="warning" effect="plain">目录</el-tag>
-            <el-tag v-else-if="data.type === 2" size="small" type="success" effect="plain">页面</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">按钮</el-tag>
-            <span v-if="data.perms" class="node-perms">{{ data.perms }}</span>
+      <el-table-column label="权限名称" min-width="300">
+        <template #default="{ row }">
+          <span class="perm-name">{{ row.name }}</span>
+          <el-tag v-if="row.type === 1" size="small" type="warning" effect="plain">目录</el-tag>
+          <el-tag v-else-if="row.type === 2" size="small" type="success" effect="plain">页面</el-tag>
+          <el-tag v-else size="small" type="info" effect="plain">按钮</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column prop="perms" label="权限字符串" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">
+          <code v-if="row.perms" class="perm-perms">{{ row.perms }}</code>
+          <span v-else class="perm-no-perms">—</span>
+        </template>
+      </el-table-column>
+      <!-- 页面级权限才需要路由地址（供前端菜单导航） -->
+      <el-table-column label="路由地址" min-width="150">
+        <template #default="{ row }">
+          <code v-if="row.type === 2 && row.route" class="perm-route">{{ row.route }}</code>
+          <span v-else class="perm-no-perms">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="sort" label="排序" width="90" align="center" />
+      <el-table-column label="操作" width="250" align="center">
+        <template #default="{ row }">
+          <span class="row-actions">
+            <el-button
+              v-if="row.type < 3"
+              link
+              type="primary"
+              size="small"
+              @click="openAdd(row)"
+            >新增{{ row.type === 1 ? '页面' : '按钮' }}</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </span>
-          <span v-if="hoverId === data.id" class="tree-node-actions" @click.stop>
-            <el-button v-if="data.type < 3" link type="primary" size="small" @click="openAdd(data)">
-              新增{{ data.type === 1 ? '页面' : '按钮' }}
-            </el-button>
-            <el-button link type="primary" size="small" @click="openEdit(data)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(data)">删除</el-button>
-          </span>
-        </div>
-      </template>
-    </el-tree>
-
-    <el-empty v-if="!loading && !treeData.length" description="暂无权限，点击上方按钮新增顶级目录" />
+        </template>
+      </el-table-column>
+      <template #empty>暂无权限，点击上方按钮新增顶级目录</template>
+    </el-table>
 
     <PermissionFormDialog
       v-model="dialogVisible"
@@ -57,8 +70,7 @@ import { permissionApi } from '../../api/permission'
 import PermissionFormDialog from './PermissionFormDialog.vue'
 
 const loading = ref(false)
-const treeData = ref([])
-const hoverId = ref(null)
+const tableData = ref([])
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
@@ -69,7 +81,7 @@ const dialogPermission = ref(null)
 async function loadTree() {
   loading.value = true
   try {
-    treeData.value = await permissionApi.tree()
+    tableData.value = await permissionApi.tree()
   } finally {
     loading.value = false
   }
@@ -136,45 +148,47 @@ onMounted(loadTree)
 }
 
 .toolbar-tip {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 
-.perm-tree {
+.permission-table {
   min-height: 60px;
 }
 
-.tree-node {
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-  padding-right: 8px;
-  border-radius: 4px;
-}
-
-.tree-node.is-hover {
-  background-color: #ecf5ff;
-}
-
-.tree-node-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-}
-
-.node-name {
+.perm-name {
   font-weight: 500;
+  margin-right: 6px;
 }
 
-.node-perms {
-  color: #909399;
+.perm-perms {
   font-size: 12px;
+  color: var(--el-text-color-regular);
+  background-color: var(--el-fill-color-light);
+  border-radius: 3px;
+  padding: 1px 6px;
 }
 
-.tree-node-actions {
-  flex-shrink: 0;
-  padding-left: 12px;
+.perm-no-perms {
+  color: var(--el-text-color-disabled);
+}
+
+.perm-route {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  background-color: var(--el-fill-color-light);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+</style>
+
+<!-- 行操作仅在鼠标悬停当前行时显示（slot 内容带 scoped 属性，需放开作用域） -->
+<style>
+.permission-table .row-actions {
+  visibility: hidden;
+}
+
+.permission-table .el-table__row:hover .row-actions {
+  visibility: visible;
 }
 </style>

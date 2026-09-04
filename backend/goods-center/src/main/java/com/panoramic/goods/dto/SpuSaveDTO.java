@@ -1,9 +1,7 @@
 package com.panoramic.goods.dto;
 
 import com.panoramic.common.valid.ValidationGroups;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -51,14 +49,13 @@ public class SpuSaveDTO {
     private String description;
 
     /**
-     * 状态：0 下架，1 上架
+     * 展示状态：0 隐藏，1 展示
      */
     private Integer status;
 
     /**
-     * SKU 列表（至少 1 个）
+     * 规格属性配置（可选，空 = 无规格的商品）。形如 [{"spec":"颜色","values":["黑色","白色"]}]
+     * 结构校验由服务层完成
      */
-    @Valid
-    @NotEmpty(message = "商品至少需要一个 SKU", groups = ValidationGroups.Create.class)
-    private List<SkuDTO> skus;
+    private List<SpecConfigItem> specConfig;
 }

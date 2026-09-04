@@ -7,7 +7,7 @@ import lombok.Data;
 
 /**
  * 更新权限请求参数
- * <p>仅允许更新名称/权限字符串/图标/排序；父级与类型不可变更（树形约束）。</p>
+ * <p>仅允许更新名称/权限字符串/图标/路由地址/排序；父级与类型不可变更（树形约束）。</p>
  */
 @Data
 public class PermissionUpdateDTO {
@@ -30,6 +30,12 @@ public class PermissionUpdateDTO {
      */
     @Size(max = 128, message = "图标不能超过128个字符", groups = ValidationGroups.Update.class)
     private String icon;
+
+    /**
+     * 页面路由地址（type=2 页面必填，如 /user）
+     */
+    @Size(max = 200, message = "路由地址不能超过200个字符", groups = ValidationGroups.Update.class)
+    private String route;
 
     /**
      * 排序值，越小越靠前

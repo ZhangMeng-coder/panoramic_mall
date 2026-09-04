@@ -2,6 +2,7 @@ package com.panoramic.goods.service;
 
 import com.panoramic.goods.dto.SpuPageQueryDTO;
 import com.panoramic.goods.dto.SpuSaveDTO;
+import com.panoramic.goods.dto.SpuSkuReplaceDTO;
 import com.panoramic.goods.dto.SpuStatusDTO;
 import com.panoramic.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.vo.PageResult;
@@ -22,7 +23,7 @@ public interface SpuService {
     PageResult<SpuPageItemVO> page(SpuPageQueryDTO dto);
 
     /**
-     * 商品详情（含 SKU 列表）
+     * 商品详情（含 SKU 列表、规格属性配置、分类完整链条）
      *
      * @param id 商品ID
      * @return 商品详情
@@ -30,7 +31,7 @@ public interface SpuService {
     SpuDetailVO detail(Long id);
 
     /**
-     * 新建商品（SPU + SKU 级联保存）
+     * 新建商品（基础信息 + 规格属性配置；不携带 SKU，SKU 由 replaceSkus 单独维护）
      *
      * @param dto 新建请求
      * @return 商品ID
@@ -38,8 +39,8 @@ public interface SpuService {
     Long saveSpu(SpuSaveDTO dto);
 
     /**
-     * 更新商品（SPU + SKU diff 级联更新：无 id 的新 SKU 插入，带 id 的更新，
-     * 存量中缺失的 SKU 逻辑删除，保证 SKU ID 稳定）
+     * 更新商品（仅基础信息 + 规格属性配置；对仍被存量 SKU 使用的规格/属性值做防孤立守卫，
+     * 不涉及 SKU 行的变更）
      *
      * @param id  商品ID
      * @param dto 更新请求
@@ -47,15 +48,25 @@ public interface SpuService {
     void updateSpu(Long id, SpuUpdateDTO dto);
 
     /**
-     * 商品上下架
+     * 全量替换商品 SKU（规格管理专用）：校验入参组合必须匹配该商品已存的规格属性配置；
+     * 无 id 的新 SKU 插入，带 id 的更新，存量中缺失的 SKU 逻辑删除，保证 SKU ID 稳定。
+     * 空 skus 表示清空该商品全部 SKU
      *
      * @param id  商品ID
-     * @param dto 状态请求（0 下架，1 上架）
+     * @param dto 全量替换请求
+     */
+    void replaceSkus(Long id, SpuSkuReplaceDTO dto);
+
+    /**
+     * 商品展示/隐藏切换（1 展示，0 隐藏）
+     *
+     * @param id  商品ID
+     * @param dto 状态请求（0 隐藏，1 展示）
      */
     void updateStatus(Long id, SpuStatusDTO dto);
 
     /**
-     * 删除商品（上架中拒绝；级联逻辑删除全部 SKU）
+     * 删除商品（展示中拒绝；级联逻辑删除全部 SKU）
      *
      * @param id 商品ID
      */

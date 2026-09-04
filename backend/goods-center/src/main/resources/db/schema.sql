@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS goods_spu (
   main_image  VARCHAR(255)    DEFAULT NULL          COMMENT '主图 URL',
   image_list  JSON            DEFAULT NULL          COMMENT '轮播图 URL 数组，如 ["url1","url2"]',
   description TEXT            DEFAULT NULL          COMMENT '商品详情（富文本 HTML）',
-  status      TINYINT         NOT NULL DEFAULT 0    COMMENT '状态：0 下架，1 上架',
+  spec_config JSON            DEFAULT NULL          COMMENT '规格属性配置：[{"spec":"颜色","values":["黑色","白色"]}]',
+  status      TINYINT         NOT NULL DEFAULT 0    COMMENT '展示状态：0 隐藏，1 展示（信息模板，无上下架概念）',
   create_user INT             DEFAULT NULL          COMMENT '创建人ID',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user INT             DEFAULT NULL          COMMENT '更新人ID',
@@ -76,3 +77,11 @@ CREATE TABLE IF NOT EXISTS goods_sku (
   PRIMARY KEY (id),
   KEY idx_spu_id (spu_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品SKU表（规格属性组合，无价格库存）';
+
+-- 4.1 幂等加列：为已存在的 goods_spu 表补充 spec_config（规格属性配置）列，可重复执行
+SET @goods_has_spec := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'goods_spu' AND COLUMN_NAME = 'spec_config');
+SET @goods_ddl := IF(@goods_has_spec = 0,
+  'ALTER TABLE goods_spu ADD COLUMN spec_config JSON DEFAULT NULL COMMENT ''规格属性配置：[{"spec":"颜色","values":["黑色","白色"]}]'' AFTER description',
+  'SELECT 1');
+PREPARE goods_stmt FROM @goods_ddl; EXECUTE goods_stmt; DEALLOCATE PREPARE goods_stmt;

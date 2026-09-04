@@ -23,6 +23,16 @@
       <el-table-column prop="nickname" label="昵称" min-width="120">
         <template #default="{ row }">{{ row.nickname || '-' }}</template>
       </el-table-column>
+      <el-table-column label="角色" min-width="150">
+        <template #default="{ row }">
+          <span v-if="row.roles && row.roles.length" class="role-tags">
+            <el-tag v-for="r in row.roles" :key="r.id" size="small" effect="plain" class="role-tag">
+              {{ r.name }}
+            </el-tag>
+          </span>
+          <span v-else class="no-roles">—</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="phone" label="手机号" min-width="130">
         <template #default="{ row }">{{ row.phone || '-' }}</template>
       </el-table-column>
@@ -173,5 +183,15 @@ onMounted(loadPage)
 .pager {
   margin-top: 12px;
   justify-content: flex-end;
+}
+
+.role-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.no-roles {
+  color: var(--el-text-color-disabled);
 }
 </style>

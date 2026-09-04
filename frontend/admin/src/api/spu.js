@@ -9,22 +9,27 @@ export const spuApi = {
     return request.get('/goods/spu/page', { params })
   },
 
-  /** 商品详情（含 SKU 列表） */
+  /** 商品详情（含 SKU 列表、规格属性配置、分类完整链条） */
   detail(id) {
     return request.get(`/goods/spu/${id}`)
   },
 
-  /** 新建商品（SPU + SKU） */
+  /** 新建商品（基础信息 + 规格属性配置，不含 SKU） */
   add(data) {
     return request.post('/goods/spu', data)
   },
 
-  /** 更新商品（SKU diff） */
+  /** 更新商品（仅基础信息 + 规格属性配置，不含 SKU） */
   update(id, data) {
     return request.put(`/goods/spu/${id}`, data)
   },
 
-  /** 商品上下架 */
+  /** 全量替换商品 SKU（规格管理弹窗保存；空 skus = 清空该商品全部 SKU） */
+  updateSkus(id, skus) {
+    return request.put(`/goods/spu/${id}/skus`, { skus })
+  },
+
+  /** 商品展示/隐藏切换（1 展示，0 隐藏） */
   updateStatus(id, status) {
     return request.put(`/goods/spu/${id}/status`, { status })
   },

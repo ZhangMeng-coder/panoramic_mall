@@ -9,8 +9,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.goods.dto.SkuDTO;
 import com.panoramic.goods.dto.SpecAttr;
+import com.panoramic.goods.dto.SpecConfigItem;
 import com.panoramic.goods.dto.SpuPageQueryDTO;
 import com.panoramic.goods.dto.SpuSaveDTO;
+import com.panoramic.goods.dto.SpuSkuReplaceDTO;
 import com.panoramic.goods.dto.SpuStatusDTO;
 import com.panoramic.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.entity.GoodsBrand;
@@ -37,6 +39,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -91,8 +94,8 @@ public class SpuServiceImpl implements SpuService {
     public SpuDetailVO detail(Long id) {
         GoodsSpu spu = getByIdOrThrow(id);
         SpuDetailVO vo = new SpuDetailVO();
-        // imageList 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
-        BeanUtils.copyProperties(spu, vo, "imageList");
+        // imageList/specConfig 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
+        BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
         // 分类/品牌名称
         GoodsCategory category = categoryMapper.selectById(spu.getCategoryId());
         GoodsBrand brand = brandMapper.selectById(spu.getBrandId());
@@ -100,6 +103,9 @@ public class SpuServiceImpl implements SpuService {
         vo.setBrandName(brand == null ? "" : brand.getName());
         // 轮播图 JSON -> List
         vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
+        // 规格属性配置 JSON -> List；分类完整链条（根→叶子）
+        vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
+        vo.setCategoryPath(categoryPath(category));
         // SKU 列表
         List<GoodsSku> skus = skuMapper.selectList(
                 Wrappers.<GoodsSku>lambdaQuery()
@@ -119,16 +125,16 @@ public class SpuServiceImpl implements SpuService {
     @Transactional(rollbackFor = Exception.class)
     public Long saveSpu(SpuSaveDTO dto) {
         checkCategoryAndBrand(dto.getCategoryId(), dto.getBrandId());
-        validateSkus(dto.getSkus());
+        validateSpecConfig(dto.getSpecConfig());
 
         GoodsSpu spu = new GoodsSpu();
-        // imageList DTO 为 List、实体为 String(JSON)，排除后手动转换
-        BeanUtils.copyProperties(dto, spu, "imageList");
+        // imageList/specConfig DTO 为 List、实体为 String(JSON)，排除后手动转换
+        BeanUtils.copyProperties(dto, spu, "imageList", "specConfig");
         spu.setImageList(writeJson(dto.getImageList()));
+        spu.setSpecConfig(writeJson(dto.getSpecConfig()));
         spu.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
         spuMapper.insert(spu);
-
-        insertSkus(spu.getId(), dto.getSkus());
+        // 新建商品不携带 SKU（0 SKU 起步），SKU 由 replaceSkus 在「规格」管理中单独维护
         return spu.getId();
     }
 
@@ -137,23 +143,79 @@ public class SpuServiceImpl implements SpuService {
     public void updateSpu(Long id, SpuUpdateDTO dto) {
         GoodsSpu spu = getByIdOrThrow(id);
         checkCategoryAndBrand(dto.getCategoryId(), dto.getBrandId());
-        validateSkus(dto.getSkus());
+        validateSpecConfig(dto.getSpecConfig());
 
-        // status 仅在显式传值时更新，避免编辑时未带上架状态导致误下架
-        BeanUtils.copyProperties(dto, spu, "imageList", "status");
+        // 防孤立守卫：存量 SKU 仍使用的规格/属性值不得从配置中移除
+        guardConfigAgainstSkus(id, dto.getSpecConfig());
+
+        // status 仅在显式传值时更新，避免编辑时未带展示状态导致误隐藏；
+        // imageList/specConfig DTO 为 List、实体为 String(JSON)，排除后手动转换
+        BeanUtils.copyProperties(dto, spu, "imageList", "specConfig", "status");
         spu.setImageList(writeJson(dto.getImageList()));
+        spu.setSpecConfig(writeJson(dto.getSpecConfig()));
         if (dto.getStatus() != null) {
             spu.setStatus(dto.getStatus());
         }
         spuMapper.updateById(spu);
+        // SKU 不再随基础信息更新；由 replaceSkus 在「规格」管理中单独维护
+    }
 
-        // SKU diff：无 id 插入，带 id 更新，存量缺失的逻辑删除（保证 SKU ID 稳定）
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void replaceSkus(Long id, SpuSkuReplaceDTO dto) {
+        GoodsSpu spu = getByIdOrThrow(id);
+        List<SkuDTO> skus = dto.getSkus() == null ? new ArrayList<>() : dto.getSkus();
+        // 商品规格属性配置（空/null 均视为无规格）
+        List<SpecConfigItem> config = readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {});
+        Map<String, SpecConfigItem> configIndex = indexConfig(config);
+
+        // ---- 校验：SKU 组合须来源于该商品的规格属性配置 ----
+        if (configIndex.isEmpty() && !skus.isEmpty()) {
+            throw new ServiceException("该商品未配置规格属性，请先在「编辑」中配置规格属性后再添加 SKU");
+        }
+        if (!skus.isEmpty()) {
+            Set<String> seenKeys = new HashSet<>();
+            for (SkuDTO sku : skus) {
+                List<SpecAttr> attrs = sku.getSpecAttrs();
+                if (attrs == null || attrs.isEmpty()) {
+                    throw new ServiceException("SKU 至少需要一个规格属性");
+                }
+                Set<String> attrSpecs = new HashSet<>();
+                for (SpecAttr attr : attrs) {
+                    if (!StringUtils.hasText(attr.getSpec())) {
+                        throw new ServiceException("规格名不能为空");
+                    }
+                    if (!StringUtils.hasText(attr.getValue())) {
+                        throw new ServiceException("规格值不能为空");
+                    }
+                    if (!attrSpecs.add(attr.getSpec())) {
+                        throw new ServiceException("SKU 内规格名重复：" + attr.getSpec());
+                    }
+                }
+                // 无序比较：SKU 规格集合须与商品规格属性配置一致（各维度各取一个值）
+                if (!attrSpecs.equals(configIndex.keySet())) {
+                    throw new ServiceException("SKU 规格必须与商品规格属性配置一致");
+                }
+                for (SpecAttr attr : attrs) {
+                    SpecConfigItem item = configIndex.get(attr.getSpec());
+                    if (item == null || item.getValues() == null || !item.getValues().contains(attr.getValue())) {
+                        throw new ServiceException("SKU 属性值「" + attr.getSpec() + "=" + attr.getValue() + "」不在规格属性配置中");
+                    }
+                }
+                String key = comboKey(attrs);
+                if (!seenKeys.add(key)) {
+                    throw new ServiceException("SKU 规格组合重复：" + key.replace("|", "，"));
+                }
+            }
+        }
+
+        // ---- diff：无 id 插入，带 id 更新，存量缺失的逻辑删除（保证 SKU ID 稳定）----
         Map<Long, GoodsSku> existing = skuMapper.selectList(
                         Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, id))
                 .stream().collect(Collectors.toMap(GoodsSku::getId, Function.identity()));
 
         Set<Long> incomingIds = new HashSet<>();
-        for (SkuDTO skuDto : dto.getSkus()) {
+        for (SkuDTO skuDto : skus) {
             if (skuDto.getId() == null) {
                 // 新增 SKU
                 insertSku(id, skuDto);
@@ -191,7 +253,7 @@ public class SpuServiceImpl implements SpuService {
     public void deleteSpu(Long id) {
         GoodsSpu spu = getByIdOrThrow(id);
         if (spu.getStatus() == 1) {
-            throw new ServiceException("商品上架中，请先下架再删除");
+            throw new ServiceException("商品展示中，请先隐藏再删除");
         }
         spuMapper.deleteById(id);
         // 级联逻辑删除该商品全部 SKU
@@ -213,6 +275,59 @@ public class SpuServiceImpl implements SpuService {
     }
 
     /**
+     * 防孤立守卫：更新规格属性配置前，校验存量 SKU 仍使用的每个 (spec, value) 都保留在新配置中。
+     * 配置被清空但仍有 SKU 时同样拒绝
+     *
+     * @param spuId  商品ID
+     * @param config 新的规格属性配置（null 视为清空配置）
+     */
+    private void guardConfigAgainstSkus(Long spuId, List<SpecConfigItem> config) {
+        List<GoodsSku> existing = skuMapper.selectList(
+                Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, spuId));
+        if (existing == null || existing.isEmpty()) {
+            return;
+        }
+        Map<String, SpecConfigItem> newIndex = indexConfig(config);
+        if (newIndex.isEmpty()) {
+            throw new ServiceException("商品仍存在 SKU，请先在「规格」中删除或调整 SKU 后再清空规格属性配置");
+        }
+        for (GoodsSku sku : existing) {
+            List<SpecAttr> attrs = readJsonList(sku.getSpecAttrs(), new TypeReference<List<SpecAttr>>() {});
+            for (SpecAttr attr : attrs) {
+                SpecConfigItem item = newIndex.get(attr.getSpec());
+                if (item == null || item.getValues() == null || !item.getValues().contains(attr.getValue())) {
+                    throw new ServiceException("规格属性配置已变更，现有 SKU 使用了「" + attr.getSpec() + "=" + attr.getValue()
+                            + "」；请先在「规格」中调整相关 SKU 后再保存基础信息");
+                }
+            }
+        }
+    }
+
+    /**
+     * 分类完整链条（根→叶子名称拼接）。叶子分类不存在时返回空串
+     *
+     * @param leaf 叶子分类
+     * @return 如 "服饰 / 男装 / T恤"
+     */
+    private String categoryPath(GoodsCategory leaf) {
+        if (leaf == null) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        Set<Long> guard = new HashSet<>();
+        GoodsCategory cur = leaf;
+        while (cur != null && guard.add(cur.getId())) {
+            names.add(cur.getName());
+            if (cur.getParentId() == null || cur.getParentId() == 0) {
+                break;
+            }
+            cur = categoryMapper.selectById(cur.getParentId());
+        }
+        Collections.reverse(names);
+        return String.join(" / ", names);
+    }
+
+    /**
      * 校验分类与品牌：分类存在且为叶子分类、品牌存在
      *
      * @param categoryId 分类ID
@@ -227,38 +342,53 @@ public class SpuServiceImpl implements SpuService {
     }
 
     /**
-     * 校验 SKU 结构与组合唯一性：
-     * 每个 SKU 至少 1 个规格属性；规格名/值非空；SKU 内规格名不重复；请求内组合不重复
+     * 校验规格属性配置结构：规格名非空且不重复、每项至少一个属性值、值非空且不重复
      *
-     * @param skus SKU 列表
+     * @param config 规格属性配置（null 表示未配置，直接放行）
      */
-    private void validateSkus(List<SkuDTO> skus) {
-        if (skus == null || skus.isEmpty()) {
-            throw new ServiceException("商品至少需要一个 SKU");
+    private void validateSpecConfig(List<SpecConfigItem> config) {
+        if (config == null) {
+            return;
         }
-        Set<String> seenKeys = new HashSet<>();
-        for (SkuDTO sku : skus) {
-            List<SpecAttr> attrs = sku.getSpecAttrs();
-            if (attrs == null || attrs.isEmpty()) {
-                throw new ServiceException("SKU 至少需要一个规格属性");
+        Set<String> seenSpecs = new HashSet<>();
+        for (SpecConfigItem item : config) {
+            if (!StringUtils.hasText(item.getSpec())) {
+                throw new ServiceException("规格名不能为空");
             }
-            Set<String> specNames = new HashSet<>();
-            for (SpecAttr attr : attrs) {
-                if (!StringUtils.hasText(attr.getSpec())) {
-                    throw new ServiceException("规格名不能为空");
-                }
-                if (!StringUtils.hasText(attr.getValue())) {
-                    throw new ServiceException("规格值不能为空");
-                }
-                if (!specNames.add(attr.getSpec())) {
-                    throw new ServiceException("SKU 内规格名重复：" + attr.getSpec());
-                }
+            if (!seenSpecs.add(item.getSpec())) {
+                throw new ServiceException("规格名重复：" + item.getSpec());
             }
-            String key = comboKey(attrs);
-            if (!seenKeys.add(key)) {
-                throw new ServiceException("SKU 规格组合重复：" + key.replace("|", "，"));
+            List<String> values = item.getValues();
+            if (values == null || values.isEmpty()) {
+                throw new ServiceException("规格「" + item.getSpec() + "」至少需要一个属性值");
+            }
+            Set<String> seenVals = new HashSet<>();
+            for (String v : values) {
+                if (!StringUtils.hasText(v)) {
+                    throw new ServiceException("规格「" + item.getSpec() + "」存在空的属性值");
+                }
+                if (!seenVals.add(v)) {
+                    throw new ServiceException("规格「" + item.getSpec() + "」属性值重复：" + v);
+                }
             }
         }
+    }
+
+    /**
+     * 规格属性配置建索引（规格名 → 配置项）
+     *
+     * @param config 规格属性配置
+     * @return spec -> item 映射；空/未配置返回空 Map
+     */
+    private Map<String, SpecConfigItem> indexConfig(List<SpecConfigItem> config) {
+        if (config == null || config.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, SpecConfigItem> index = new HashMap<>();
+        for (SpecConfigItem item : config) {
+            index.put(item.getSpec(), item);
+        }
+        return index;
     }
 
     /**
@@ -272,18 +402,6 @@ public class SpuServiceImpl implements SpuService {
                 .sorted((a, b) -> a.getSpec().compareTo(b.getSpec()))
                 .map(a -> a.getSpec() + "=" + a.getValue())
                 .collect(Collectors.joining("|"));
-    }
-
-    /**
-     * 批量插入 SKU（回填 spuId）
-     *
-     * @param spuId 商品ID
-     * @param skus  SKU 请求列表
-     */
-    private void insertSkus(Long spuId, List<SkuDTO> skus) {
-        for (SkuDTO skuDto : skus) {
-            insertSku(spuId, skuDto);
-        }
     }
 
     /**

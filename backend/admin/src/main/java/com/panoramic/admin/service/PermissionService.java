@@ -19,11 +19,22 @@ public interface PermissionService {
     List<PermissionTreeVO> tree();
 
     /**
-     * 前端目录/菜单树（仅目录+页面，供前端目录接口）
+     * 前端目录/菜单树（仅目录+页面，供前端目录接口）。
+     * <p>临时实现：全量返回；待鉴权接入后改为按当前登录用户角色过滤。</p>
      *
      * @return 目录树
      */
     List<PermissionTreeVO> menus();
+
+    /**
+     * 按角色过滤的菜单树（仅目录+页面）。
+     * <p>预留能力：roleIds 为 null/空 时等价于全量返回。
+     * 鉴权接入后，前端目录接口应传入当前登录用户拥有的角色ID集合。</p>
+     *
+     * @param roleIds 当前用户的角色ID集合（可空）
+     * @return 目录树
+     */
+    List<PermissionTreeVO> menusByRoleIds(List<Long> roleIds);
 
     /**
      * 权限详情
