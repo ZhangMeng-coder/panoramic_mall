@@ -43,6 +43,9 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
     /** 类型：按钮 */
     private static final int TYPE_BUTTON = 3;
 
+    /** 主页页面路由（type=2 页面的 route 字段）：对任意已登录用户恒可见 */
+    private static final String HOME_ROUTE = "/home";
+
     /** 跨实体：角色-权限关联服务（菜单按角色过滤、删除权限引用守卫） */
     private final RolePermissionService rolePermissionService;
 
@@ -60,37 +63,45 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
 
     @Override
     public List<PermissionTreeVO> menusByRoleIds(List<Long> roleIds) {
-        if (roleIds == null || roleIds.isEmpty()) {
-            return new ArrayList<>();
-        }
-        List<Long> ownedIds = rolePermissionService.permissionIdsByRoleIds(roleIds);
-        if (ownedIds.isEmpty()) {
-            return new ArrayList<>();
-        }
-        // 全量 目录+页面（有序）：既作候选过滤，又作查父链依据
-        List<SysPermission> allDirAndPages = list(
+        // 全量权限（目录/页面/按钮，有序）：目录/页面作菜单候选，全量作向上找父链依据
+        List<SysPermission> allPermissions = list(
                 Wrappers.<SysPermission>lambdaQuery()
-                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
                         .orderByAsc(SysPermission::getSort)
                         .orderByAsc(SysPermission::getId));
-        if (allDirAndPages.isEmpty()) {
+        if (allPermissions.isEmpty()) {
             return new ArrayList<>();
         }
-        Map<Long, SysPermission> byId = allDirAndPages.stream()
+        Map<Long, SysPermission> allById = allPermissions.stream()
                 .collect(Collectors.toMap(SysPermission::getId, p -> p));
-        // 用户拥有的 目录/页面 节点
-        Set<Long> keep = ownedIds.stream()
-                .filter(byId::containsKey)
-                .collect(Collectors.toSet());
+
+        // 主页对任意已登录用户恒可见（含无角色/无权限用户），先入 keep
+        Set<Long> keep = new HashSet<>();
+        addHomepage(allPermissions, keep, allById);
+
+        List<Long> ownedIds = (roleIds == null || roleIds.isEmpty())
+                ? Collections.emptyList()
+                : rolePermissionService.permissionIdsByRoleIds(roleIds);
+        if (!ownedIds.isEmpty()) {
+            // 拥有的 目录/页面 节点本身入菜单
+            for (Long id : ownedIds) {
+                SysPermission node = allById.get(id);
+                if (node != null && node.getType() != TYPE_BUTTON) {
+                    keep.add(id);
+                }
+            }
+            // 向上补全祖先目录/页面：角色只要拥有任意节点（含只授查询按钮），
+            // 其挂接的页面与目录链即完整 → 只读角色（仅持 goods:*:list）菜单可见
+            for (Long id : ownedIds) {
+                addAncestors(allById, keep, id);
+            }
+        }
+
         if (keep.isEmpty()) {
             return new ArrayList<>();
         }
-        // 向上补全祖先目录，保证页面挂接的目录链完整（角色可能只被授予页面而漏授目录）
-        for (Long id : new HashSet<>(keep)) {
-            addAncestors(byId, keep, id);
-        }
-        List<SysPermission> menus = allDirAndPages.stream()
-                .filter(p -> keep.contains(p.getId()))
+        // 仅取 目录/页面 且命中 keep 的节点，按序组树
+        List<SysPermission> menus = allPermissions.stream()
+                .filter(p -> p.getType() != TYPE_BUTTON && keep.contains(p.getId()))
                 .collect(Collectors.toList());
         Map<Long, List<SysPermission>> byParent = menus.stream()
                 .collect(Collectors.groupingBy(SysPermission::getParentId));
@@ -98,9 +109,28 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
     }
 
     /**
+     * 主页（route=HOME_ROUTE 的页面及其祖先目录）加入 keep，实现“人人可见”
+     *
+     * @param allPermissions 全量权限（有序）
+     * @param keep           已选中的节点 id 集合（原地扩展）
+     * @param allById        全量权限 id → 节点
+     */
+    private void addHomepage(List<SysPermission> allPermissions, Set<Long> keep, Map<Long, SysPermission> allById) {
+        SysPermission homePage = allPermissions.stream()
+                .filter(p -> p.getType() == TYPE_MENU && HOME_ROUTE.equals(p.getRoute()))
+                .findFirst()
+                .orElse(null);
+        if (homePage == null) {
+            return;
+        }
+        keep.add(homePage.getId());
+        addAncestors(allById, keep, homePage.getId());
+    }
+
+    /**
      * 把 nodeId 的所有祖先（目录）补进 keep 集合，保证菜单树从根目录到页面完整
      *
-     * @param byId   全量 目录/页面 id → 节点
+     * @param byId   全量权限（含按钮）id → 节点
      * @param keep   已选中的节点 id 集合（原地扩展）
      * @param nodeId 当前节点 id
      */

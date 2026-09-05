@@ -41,7 +41,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     public AuthGlobalFilter(ReactiveStringRedisTemplate redisTemplate,
                             @Value("${panoramic.auth.jwt-secret}") String secret,
-                            @Value("${panoramic.auth.redis-prefix:panoramic:login:user:}") String redisPrefix,
+                            @Value("${panoramic.auth.redis-prefix:panoramic:login:user}") String redisPrefix,
                             @Value("${panoramic.auth.header-name:X-User-Id}") String headerName,
                             @Value("${panoramic.auth.whitelist-paths:/admin/auth/login,/discovery/**}") String whitelistPaths) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

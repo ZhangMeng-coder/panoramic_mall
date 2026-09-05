@@ -29,6 +29,11 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
+        <!-- Nacos 配置中心（spring.config.import 拉取共享 datasource-redis/auth 配置） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
         <!-- 响应式 Redis：校验登录用户上下文（Redis user_id 键有效即放行，键被删/过期即 401） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

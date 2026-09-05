@@ -103,8 +103,11 @@ PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- ============================================================
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
   -- 目录（type=1，parent=0）
+  (3,   0,  '主页', 1, NULL,             'home',         -1, NULL),
   (2,   0,  '商品中台', 1, NULL,             'folder-opened', 0, NULL),
   (1,   0,  '系统管理', 1, NULL,             'setting',       1, NULL),
+  -- 页面（type=2，parent=主页；人人可见，内容暂空）
+  (31,  3,  '主页', 2, NULL,             'home',          0, '/home'),
   -- 页面（type=2，parent=商品中台，供前端动态菜单导航）
   (21,  2,  '分类管理', 2, 'goods:category',   'menu',  1, '/category'),
   (22,  2,  '品牌管理', 2, 'goods:brand',      'goods', 2, '/brand'),
@@ -115,15 +118,18 @@ INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort,
   (13,  1,  '权限管理', 2, 'system:permission', 'lock',  3, '/permission');
 
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
-  -- 按钮（type=3，parent=分类管理）
+  -- 按钮（type=3，parent=分类管理；查询在前，与 system:*:list 同模式）
+  (214, 21, '分类查询', 3, 'goods:category:list', NULL, 0),
   (211, 21, '分类新增', 3, 'goods:category:add',    NULL, 1),
   (212, 21, '分类编辑', 3, 'goods:category:edit',   NULL, 2),
   (213, 21, '分类删除', 3, 'goods:category:delete', NULL, 3),
   -- 按钮（type=3，parent=品牌管理）
+  (224, 22, '品牌查询', 3, 'goods:brand:list',    NULL, 0),
   (221, 22, '品牌新增', 3, 'goods:brand:add',    NULL, 1),
   (222, 22, '品牌编辑', 3, 'goods:brand:edit',   NULL, 2),
   (223, 22, '品牌删除', 3, 'goods:brand:delete', NULL, 3),
   -- 按钮（type=3，parent=商品管理）
+  (234, 23, '商品查询', 3, 'goods:spu:list',      NULL, 0),
   (231, 23, '商品新增', 3, 'goods:spu:add',    NULL, 1),
   (232, 23, '商品编辑', 3, 'goods:spu:edit',   NULL, 2),
   (233, 23, '商品删除', 3, 'goods:spu:delete', NULL, 3),

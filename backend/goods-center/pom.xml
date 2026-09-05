@@ -36,6 +36,11 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
+        <!-- Nacos 配置中心（spring.config.import 拉取共享 datasource-mysql/redis/auth 配置） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
         <!-- MyBatis-Plus（Spring Boot 4 专用 starter，版本由父 POM 管理） -->
         <dependency>
             <groupId>com.baomidou</groupId>

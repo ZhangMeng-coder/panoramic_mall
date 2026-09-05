@@ -37,7 +37,7 @@ public class BrandController {
      * 品牌分页查询
      */
     @GetMapping("/page")
-    @PreAuthorize("hasAuthority('goods:brand')")
+    @PreAuthorize("hasAuthority('goods:brand:list')")
     public RespData<PageResult<BrandVO>> page(@Validated BrandPageQueryDTO dto) {
         return RespData.success(brandService.page(dto));
     }
@@ -46,7 +46,7 @@ public class BrandController {
      * 全量品牌列表（商品表单下拉选择用）
      */
     @GetMapping("/list")
-    @PreAuthorize("hasAuthority('goods:brand')")
+    @PreAuthorize("hasAuthority('goods:brand:list')")
     public RespData<List<BrandVO>> list() {
         return RespData.success(brandService.listAll());
     }
@@ -55,7 +55,7 @@ public class BrandController {
      * 品牌详情
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('goods:brand')")
+    @PreAuthorize("hasAuthority('goods:brand:list')")
     public RespData<BrandVO> detail(@PathVariable @NotNull(message = "品牌ID不能为空") Long id) {
         return RespData.success(brandService.detail(id));
     }

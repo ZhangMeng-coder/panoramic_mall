@@ -9,7 +9,7 @@
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       />
-      <el-button v-perm="'goods:brand'" type="primary" @click="handleSearch">查询</el-button>
+      <el-button v-perm="'goods:brand:list'" type="primary" @click="handleSearch">查询</el-button>
       <el-button v-perm="'goods:brand:add'" type="success" @click="openAdd">新增品牌</el-button>
     </div>
 

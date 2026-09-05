@@ -1,0 +1,11 @@
+# ============================================================
+# Nacos 共享配置：Redis（data-id: datasource-redis.yml, GROUP: DEFAULT_GROUP）
+# 由 admin / gateway / goods-center 三个服务经 spring.config.import 加载（登录态缓存同实例）。
+# 连接信息可用环境变量覆盖（默认值即当前部署实例）；不设 database，走默认 0。
+# ============================================================
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:123.56.117.17}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}

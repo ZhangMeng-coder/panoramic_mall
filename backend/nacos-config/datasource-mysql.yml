@@ -1,0 +1,26 @@
+# ============================================================
+# Nacos 共享配置：MySQL 数据源 + MyBatis-Plus（data-id: datasource-mysql.yml, GROUP: DEFAULT_GROUP）
+# 由 admin / goods-center 通过 spring.config.import 加载（gateway 不加载）。
+# mybatis-plus 与 MySQL 强绑定：有数据源的服务(admin/goods-center)才有 mybatis-plus，
+# gateway 两者皆无，故二者并入同一 data-id，与数据源同生共死。
+# 连接信息可用环境变量覆盖（默认值即当前部署实例）；host 端口库名均可覆写。
+# ============================================================
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:123.56.117.17}:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+
+mybatis-plus:
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      # 逻辑删除：is_delete 字段（见 common BaseEntity 的 @TableLogic）
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+  configuration:
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL 日志，上线前移除
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl

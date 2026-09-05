@@ -15,6 +15,12 @@ const routes = [
     redirect: () => getDefaultPath(),
     children: [
       {
+        path: '/home',
+        name: 'home',
+        component: () => import('../views/home/HomeView.vue'),
+        meta: { title: '主页' }
+      },
+      {
         path: '/category',
         name: 'category',
         component: () => import('../views/category/CategoryManage.vue'),

@@ -38,7 +38,7 @@ public class SpuController {
      * 商品分页查询
      */
     @GetMapping("/page")
-    @PreAuthorize("hasAuthority('goods:spu')")
+    @PreAuthorize("hasAuthority('goods:spu:list')")
     public RespData<PageResult<SpuPageItemVO>> page(@Validated SpuPageQueryDTO dto) {
         return RespData.success(spuService.page(dto));
     }
@@ -47,7 +47,7 @@ public class SpuController {
      * 商品详情（含 SKU 列表、规格属性配置、分类完整链条）
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('goods:spu')")
+    @PreAuthorize("hasAuthority('goods:spu:list')")
     public RespData<SpuDetailVO> detail(@PathVariable @NotNull(message = "商品ID不能为空") Long id) {
         return RespData.success(spuService.detail(id));
     }

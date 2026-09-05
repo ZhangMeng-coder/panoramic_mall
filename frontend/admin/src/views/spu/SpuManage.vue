@@ -37,7 +37,7 @@
         />
       </el-form-item>
       <el-form-item>
-        <el-button v-perm="'goods:spu'" type="primary" @click="handleSearch">查询</el-button>
+        <el-button v-perm="'goods:spu:list'" type="primary" @click="handleSearch">查询</el-button>
         <el-button @click="handleReset">重置</el-button>
         <el-button v-perm="'goods:spu:add'" type="success" @click="openAdd">新增商品</el-button>
       </el-form-item>
@@ -72,7 +72,7 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="330" fixed="right">
         <template #default="{ row }">
-          <el-button v-perm="'goods:spu'" link type="info" @click="openPreview(row)">预览</el-button>
+          <el-button v-perm="'goods:spu:list'" link type="info" @click="openPreview(row)">预览</el-button>
           <el-button v-perm="'goods:spu:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button v-perm="'goods:spu:edit'" link type="success" @click="openSku(row)">规格</el-button>
           <el-button

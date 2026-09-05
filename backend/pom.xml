@@ -31,19 +31,16 @@
         <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
         <!-- MyBatis-Plus 版本（Spring Boot 4 需用专用 starter，3.5.15 起正式兼容） -->
         <mybatis-plus.version>3.5.16</mybatis-plus.version>
-        <!-- Nacos 注册中心统一配置：子模块 application.yml 中以 @nacos.xxx@ 引用，
+        <!-- Nacos 注册/配置中心统一连接：子模块 application.yml 中以 @nacos.xxx@ 引用，
              由 spring-boot-starter-parent 自带的 Maven 资源过滤在构建时替换 -->
         <nacos.server-addr>127.0.0.1:8848</nacos.server-addr>
         <nacos.username>nacos</nacos.username>
         <nacos.password>nacos</nacos.password>
         <!-- JWT 库版本（admin/goods-center 经 common、gateway 单独引用，统一管理） -->
         <jjwt.version>0.12.6</jjwt.version>
-        <!-- 鉴权统一配置：各服务/网关 application.yml 以 @panoramic.auth.xxx@ 引用，
-             保证签发(admin)、校验(gateway)、解析(common)三方一致；生产以环境变量覆盖时请三端同步改 -->
-        <panoramic.auth.jwt-secret>panoramic-mall-auth-jwt-secret-dev-0123456789abcdef0123456789</panoramic.auth.jwt-secret>
-        <panoramic.auth.jwt-expire-seconds>7200</panoramic.auth.jwt-expire-seconds>
-        <panoramic.auth.redis-prefix>panoramic:login:user</panoramic.auth.redis-prefix>
-        <panoramic.auth.header-name>X-User-Id</panoramic.auth.header-name>
+        <!-- 鉴权统一值（jwt-secret/jwt-expire-seconds/redis-prefix/header-name）已收敛到
+             Nacos 共享配置 nacos-config/auth.yml，签发(admin)/校验(gateway)/解析(goods-center+common)
+             三端同源，此处不再重复定义（见 nacos-config/ 目录） -->
     </properties>
 
     <dependencyManagement>

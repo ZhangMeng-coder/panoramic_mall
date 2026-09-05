@@ -1,0 +1,17 @@
+# ============================================================
+# Nacos 共享配置：鉴权统一参数（data-id: auth.yml, GROUP: DEFAULT_GROUP）
+# 由 admin / gateway / goods-center 三个服务经 spring.config.import 加载。
+# 签发端(admin)、校验端(gateway)、解析端(goods-center/common) 三者必须一致；
+# 原父 pom properties 中 @panoramic.auth.*@ 已移除，统一收敛到本文件。
+# 生产需要覆盖时请在此处整体修改（三端同源，不再散落各处）。
+# ============================================================
+panoramic:
+  auth:
+    # JWT 签发/验签密钥（长度 >= 32 字节）
+    jwt-secret: panoramic-mall-auth-jwt-secret-dev-0123456789abcdef0123456789
+    # 登录态有效期（秒）：admin 签发设 TTL，common 兜底读取；gateway 不签发，忽略本键
+    jwt-expire-seconds: 7200
+    # Redis 登录用户缓存键前缀（实际键 = 前缀 + ":" + userId）
+    redis-prefix: panoramic:login:user
+    # 网关透传用户头名（下游 common 优先读此头，缺失再回落解析 Bearer token）
+    header-name: X-User-Id

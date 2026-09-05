@@ -69,7 +69,8 @@ export function resolveFirstRoute(menus) {
 }
 
 export function getDefaultPath() {
-  return defaultPath.value || '/category'
+  // 主页对任意已登录用户可见，作为“/”落地页兜底（刷新/直达首页时用）
+  return defaultPath.value || '/home'
 }
 
 export function setDefaultPath(path) {

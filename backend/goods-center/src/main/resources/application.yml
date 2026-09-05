@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: goods-center
+  config:
+    # 共享配置统一收敛到 Nacos：本服务按需引入 datasource-mysql(含 mybatis-plus) / datasource-redis / auth
+    # optional: 前缀——配置中心未就绪或某 dataId 缺失时服务仍能启动（用到对应能力时才报错）
+    import:
+      - optional:nacos:datasource-mysql.yml
+      - optional:nacos:datasource-redis.yml
+      - optional:nacos:auth.yml
   cloud:
     nacos:
       # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
@@ -11,37 +18,10 @@ spring:
       password: @nacos.password@
       discovery:
         server-addr: @nacos.server-addr@
-  datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    # 连接信息通过环境变量注入（默认本机 127.0.0.1 root/root，库 panoramic_mall）
-    url: jdbc:mysql://123.56.117.17:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:root}
-  data:
-    redis:
-      # 登录用户上下文缓存（默认本机，可用 REDIS_HOST/REDIS_PORT/REDIS_PASSWORD 覆盖；与 gateway/admin 同一实例）
-      host: 123.56.117.17
-      port: 6379
-      password:
+      config:
+        # 配置中心与注册中心同址
+        server-addr: @nacos.server-addr@
 
-mybatis-plus:
-  global-config:
-    banner: false
-    db-config:
-      id-type: auto
-      # 逻辑删除：is_delete 字段（见 common BaseEntity 的 @TableLogic）
-      logic-delete-value: 1
-      logic-not-delete-value: 0
-  configuration:
-    map-underscore-to-camel-case: true
-    # 开发期打印 SQL 日志，上线前移除
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-
-# 鉴权统一配置（值由父 pom properties 的 @...@ 资源过滤注入，与 gateway/admin/common 保持一致；
-# goods-center 无登录接口，白名单沿用默认 /auth/login 恒不命中，实际所有业务接口均需认证）
-panoramic:
-  auth:
-    jwt-secret: @panoramic.auth.jwt-secret@
-    jwt-expire-seconds: @panoramic.auth.jwt-expire-seconds@
-    redis-prefix: @panoramic.auth.redis-prefix@
-    header-name: @panoramic.auth.header-name@
+# goods-center 无登录接口：数据源/mybatis-plus/jwt-secret 等由 Nacos 共享配置提供
+# （datasource-mysql.yml / datasource-redis.yml / auth.yml）。无本地白名单，
+# SecurityConfig 兜底默认 /auth/login 恒不命中，实际所有业务接口均需认证。

@@ -44,7 +44,7 @@ public class CategoryController {
      * 查询全量分类树
      */
     @GetMapping("/tree")
-    @PreAuthorize("hasAuthority('goods:category')")
+    @PreAuthorize("hasAuthority('goods:category:list')")
     public RespData<List<CategoryTreeVO>> tree() {
         return RespData.success(categoryService.tree());
     }
