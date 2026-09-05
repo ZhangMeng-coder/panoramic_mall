@@ -37,9 +37,9 @@
         />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" @click="handleSearch">查询</el-button>
+        <el-button v-perm="'goods:spu'" type="primary" @click="handleSearch">查询</el-button>
         <el-button @click="handleReset">重置</el-button>
-        <el-button type="success" @click="openAdd">新增商品</el-button>
+        <el-button v-perm="'goods:spu:add'" type="success" @click="openAdd">新增商品</el-button>
       </el-form-item>
     </el-form>
 
@@ -72,12 +72,24 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="330" fixed="right">
         <template #default="{ row }">
-          <el-button link type="info" @click="openPreview(row)">预览</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="success" @click="openSku(row)">规格</el-button>
-          <el-button v-if="row.status === 0" link type="success" @click="handleToggleStatus(row)">展示</el-button>
-          <el-button v-else link type="warning" @click="handleToggleStatus(row)">隐藏</el-button>
-          <el-button link type="danger" :disabled="row.status === 1" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'goods:spu'" link type="info" @click="openPreview(row)">预览</el-button>
+          <el-button v-perm="'goods:spu:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-perm="'goods:spu:edit'" link type="success" @click="openSku(row)">规格</el-button>
+          <el-button
+            v-if="row.status === 0"
+            v-perm="'goods:spu:edit'"
+            link
+            type="success"
+            @click="handleToggleStatus(row)"
+          >展示</el-button>
+          <el-button
+            v-else
+            v-perm="'goods:spu:edit'"
+            link
+            type="warning"
+            @click="handleToggleStatus(row)"
+          >隐藏</el-button>
+          <el-button v-perm="'goods:spu:delete'" link type="danger" :disabled="row.status === 1" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

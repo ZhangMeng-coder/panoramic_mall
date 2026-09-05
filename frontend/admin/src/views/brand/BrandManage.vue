@@ -9,8 +9,8 @@
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       />
-      <el-button type="primary" @click="handleSearch">查询</el-button>
-      <el-button type="success" @click="openAdd">新增品牌</el-button>
+      <el-button v-perm="'goods:brand'" type="primary" @click="handleSearch">查询</el-button>
+      <el-button v-perm="'goods:brand:add'" type="success" @click="openAdd">新增品牌</el-button>
     </div>
 
     <el-table v-loading="loading" :data="records" stripe>
@@ -34,8 +34,8 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'goods:brand:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-perm="'goods:brand:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

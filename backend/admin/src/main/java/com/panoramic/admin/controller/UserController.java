@@ -12,6 +12,7 @@ import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,6 +40,7 @@ public class UserController {
      * 用户分页查询
      */
     @GetMapping("/page")
+    @PreAuthorize("hasAuthority('system:user:list')")
     public RespData<PageResult<UserVO>> page(@Validated UserPageQueryDTO dto) {
         return RespData.success(userService.page(dto));
     }
@@ -47,6 +49,7 @@ public class UserController {
      * 用户详情
      */
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:user:list')")
     public RespData<UserVO> detail(@PathVariable @NotNull(message = "用户ID不能为空") Long id) {
         return RespData.success(userService.detail(id));
     }
@@ -55,6 +58,7 @@ public class UserController {
      * 新建用户
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('system:user:add')")
     public RespData<Long> save(@Validated(ValidationGroups.Create.class) @RequestBody UserSaveDTO dto) {
         return RespData.success(userService.saveUser(dto));
     }
@@ -63,6 +67,7 @@ public class UserController {
      * 更新用户
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:user:edit')")
     public RespData<Void> update(@PathVariable @NotNull(message = "用户ID不能为空") Long id,
                                  @Validated(ValidationGroups.Update.class) @RequestBody UserUpdateDTO dto) {
         userService.updateUser(id, dto);
@@ -73,6 +78,7 @@ public class UserController {
      * 删除用户（同时清理其角色分配）
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('system:user:delete')")
     public RespData<Void> delete(@PathVariable @NotNull(message = "用户ID不能为空") Long id) {
         userService.deleteUser(id);
         return RespData.success();
@@ -82,6 +88,7 @@ public class UserController {
      * 查询用户已分配的角色ID集合
      */
     @GetMapping("/{id}/roles")
+    @PreAuthorize("hasAuthority('system:user:assignRole')")
     public RespData<List<Long>> roleIds(@PathVariable @NotNull(message = "用户ID不能为空") Long id) {
         return RespData.success(userService.getUserRoleIds(id));
     }
@@ -90,6 +97,7 @@ public class UserController {
      * 给用户分配角色（整体替换）
      */
     @PutMapping("/{id}/roles")
+    @PreAuthorize("hasAuthority('system:user:assignRole')")
     public RespData<Void> assignRoles(@PathVariable @NotNull(message = "用户ID不能为空") Long id,
                                       @RequestBody @Validated UserRoleIdsDTO dto) {
         userService.assignRoles(id, dto.getRoleIds());
@@ -100,6 +108,7 @@ public class UserController {
      * 分页查询“不在指定角色内”的用户（角色下分配用户页面用；候选用户归属用户侧）
      */
     @GetMapping("/unassigned/page")
+    @PreAuthorize("hasAuthority('system:user:list')")
     public RespData<PageResult<UserVO>> unassignedUsersPage(
             @RequestParam @NotNull(message = "角色ID不能为空") Long roleId,
             @Validated RoleUnassignedUserPageQueryDTO dto) {

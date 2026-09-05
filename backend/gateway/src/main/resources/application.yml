@@ -27,3 +27,19 @@ spring:
                 - StripPrefix=1
               predicates:
                 - Path=/admin/**
+  data:
+    redis:
+      # 与 admin/goods-center 同一 Redis（默认本机，可用 REDIS_HOST/REDIS_PORT/REDIS_PASSWORD 覆盖）
+      host: 123.56.117.17
+      port: 6379
+      password:
+
+# 鉴权统一配置（值由父 pom properties 的 @...@ 资源过滤注入，与 admin/goods-center/common 保持一致）
+panoramic:
+  auth:
+    # JWT 验签密钥与 Redis 键前缀（签发端 admin、校验端 gateway、解析端 common 三者必须一致）
+    jwt-secret: @panoramic.auth.jwt-secret@
+    redis-prefix: @panoramic.auth.redis-prefix@
+    header-name: @panoramic.auth.header-name@
+    # 网关白名单（带路由前缀；逗号分隔）：登录接口放行，其余先验 JWT+Redis
+    whitelist-paths: /admin/auth/login,/discovery/**

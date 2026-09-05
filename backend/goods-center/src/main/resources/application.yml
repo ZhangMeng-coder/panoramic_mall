@@ -17,6 +17,12 @@ spring:
     url: jdbc:mysql://123.56.117.17:${MYSQL_PORT:3306}/${MYSQL_DB:panoramic_mall}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:root}
+  data:
+    redis:
+      # 登录用户上下文缓存（默认本机，可用 REDIS_HOST/REDIS_PORT/REDIS_PASSWORD 覆盖；与 gateway/admin 同一实例）
+      host: 123.56.117.17
+      port: 6379
+      password:
 
 mybatis-plus:
   global-config:
@@ -30,3 +36,12 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     # 开发期打印 SQL 日志，上线前移除
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# 鉴权统一配置（值由父 pom properties 的 @...@ 资源过滤注入，与 gateway/admin/common 保持一致；
+# goods-center 无登录接口，白名单沿用默认 /auth/login 恒不命中，实际所有业务接口均需认证）
+panoramic:
+  auth:
+    jwt-secret: @panoramic.auth.jwt-secret@
+    jwt-expire-seconds: @panoramic.auth.jwt-expire-seconds@
+    redis-prefix: @panoramic.auth.redis-prefix@
+    header-name: @panoramic.auth.header-name@

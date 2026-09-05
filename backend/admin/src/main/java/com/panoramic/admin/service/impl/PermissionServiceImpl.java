@@ -20,8 +20,10 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -57,51 +59,76 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
     }
 
     @Override
-    public List<PermissionTreeVO> menus() {
-        // 临时目录接口：全量返回（目录+页面），供前端动态生成侧边菜单。
-        // TODO 鉴权接入后：改为传入当前登录用户拥有的角色ID集合 —— menusByRoleIds(userRoleIds)
-        return menusByRoleIds(null);
-    }
-
-    @Override
     public List<PermissionTreeVO> menusByRoleIds(List<Long> roleIds) {
-        List<SysPermission> menus;
         if (roleIds == null || roleIds.isEmpty()) {
-            // 全量：目录+页面
-            menus = selectDirAndPages();
-        } else {
-            // 预留：仅返回这些角色拥有的 目录+页面。
-            // TODO 鉴权接入后复核：为保证菜单树完整，还需向上补全所返回页面的祖先目录。
-            List<Long> ownedIds = rolePermissionService.permissionIdsByRoleIds(roleIds);
-            if (ownedIds.isEmpty()) {
-                return new ArrayList<>();
-            }
-            menus = list(
-                    Wrappers.<SysPermission>lambdaQuery()
-                            .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
-                            .in(SysPermission::getId, ownedIds)
-                            .orderByAsc(SysPermission::getSort)
-                            .orderByAsc(SysPermission::getId));
-        }
-        if (menus.isEmpty()) {
             return new ArrayList<>();
         }
+        List<Long> ownedIds = rolePermissionService.permissionIdsByRoleIds(roleIds);
+        if (ownedIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 全量 目录+页面（有序）：既作候选过滤，又作查父链依据
+        List<SysPermission> allDirAndPages = list(
+                Wrappers.<SysPermission>lambdaQuery()
+                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
+                        .orderByAsc(SysPermission::getSort)
+                        .orderByAsc(SysPermission::getId));
+        if (allDirAndPages.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<Long, SysPermission> byId = allDirAndPages.stream()
+                .collect(Collectors.toMap(SysPermission::getId, p -> p));
+        // 用户拥有的 目录/页面 节点
+        Set<Long> keep = ownedIds.stream()
+                .filter(byId::containsKey)
+                .collect(Collectors.toSet());
+        if (keep.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 向上补全祖先目录，保证页面挂接的目录链完整（角色可能只被授予页面而漏授目录）
+        for (Long id : new HashSet<>(keep)) {
+            addAncestors(byId, keep, id);
+        }
+        List<SysPermission> menus = allDirAndPages.stream()
+                .filter(p -> keep.contains(p.getId()))
+                .collect(Collectors.toList());
         Map<Long, List<SysPermission>> byParent = menus.stream()
                 .collect(Collectors.groupingBy(SysPermission::getParentId));
         return buildChildren(byParent, 0L);
     }
 
     /**
-     * 查询全部 目录+页面 节点（排序后）
+     * 把 nodeId 的所有祖先（目录）补进 keep 集合，保证菜单树从根目录到页面完整
      *
-     * @return 目录/页面列表
+     * @param byId   全量 目录/页面 id → 节点
+     * @param keep   已选中的节点 id 集合（原地扩展）
+     * @param nodeId 当前节点 id
      */
-    private List<SysPermission> selectDirAndPages() {
-        return list(
-                Wrappers.<SysPermission>lambdaQuery()
-                        .in(SysPermission::getType, TYPE_DIR, TYPE_MENU)
-                        .orderByAsc(SysPermission::getSort)
-                        .orderByAsc(SysPermission::getId));
+    private void addAncestors(Map<Long, SysPermission> byId, Set<Long> keep, Long nodeId) {
+        SysPermission node = byId.get(nodeId);
+        if (node == null || node.getParentId() == null || node.getParentId() == 0L) {
+            return;
+        }
+        Long parentId = node.getParentId();
+        if (!keep.contains(parentId) && byId.containsKey(parentId)) {
+            keep.add(parentId);
+            addAncestors(byId, keep, parentId);
+        }
+    }
+
+    @Override
+    public List<String> permsOfIds(Collection<Long> permissionIds) {
+        if (permissionIds == null || permissionIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return list(Wrappers.<SysPermission>lambdaQuery()
+                        .in(SysPermission::getId, permissionIds)
+                        .isNotNull(SysPermission::getPerms))
+                .stream()
+                .map(SysPermission::getPerms)
+                .filter(StringUtils::hasText)
+                .distinct()
+                .collect(Collectors.toList());
     }
 
     @Override

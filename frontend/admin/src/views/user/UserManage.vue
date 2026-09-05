@@ -13,8 +13,8 @@
         <el-option label="启用" :value="1" />
         <el-option label="停用" :value="0" />
       </el-select>
-      <el-button type="primary" @click="handleSearch">查询</el-button>
-      <el-button type="success" @click="openAdd">新增用户</el-button>
+      <el-button v-perm="'system:user:list'" type="primary" @click="handleSearch">查询</el-button>
+      <el-button v-perm="'system:user:add'" type="success" @click="openAdd">新增用户</el-button>
     </div>
 
     <el-table v-loading="loading" :data="records" stripe>
@@ -49,9 +49,9 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="warning" @click="openAssignRole(row)">分配角色</el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'system:user:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-perm="'system:user:assignRole'" link type="warning" @click="openAssignRole(row)">分配角色</el-button>
+          <el-button v-perm="'system:user:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

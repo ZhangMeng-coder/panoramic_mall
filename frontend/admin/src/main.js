@@ -9,8 +9,11 @@ import './styles/base.css'
 import './styles/components.css'
 import App from './App.vue'
 import router from './router'
+import perm from './directives/perm'
 
 const app = createApp(App)
 app.use(ElementPlus, { locale: zhCn })
 app.use(router)
+// v-perm 按钮权限指令（无权限自动移除元素）
+app.directive('perm', perm)
 app.mount('#app')

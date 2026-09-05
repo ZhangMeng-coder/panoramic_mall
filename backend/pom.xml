@@ -36,6 +36,14 @@
         <nacos.server-addr>127.0.0.1:8848</nacos.server-addr>
         <nacos.username>nacos</nacos.username>
         <nacos.password>nacos</nacos.password>
+        <!-- JWT 库版本（admin/goods-center 经 common、gateway 单独引用，统一管理） -->
+        <jjwt.version>0.12.6</jjwt.version>
+        <!-- 鉴权统一配置：各服务/网关 application.yml 以 @panoramic.auth.xxx@ 引用，
+             保证签发(admin)、校验(gateway)、解析(common)三方一致；生产以环境变量覆盖时请三端同步改 -->
+        <panoramic.auth.jwt-secret>panoramic-mall-auth-jwt-secret-dev-0123456789abcdef0123456789</panoramic.auth.jwt-secret>
+        <panoramic.auth.jwt-expire-seconds>7200</panoramic.auth.jwt-expire-seconds>
+        <panoramic.auth.redis-prefix>panoramic:login:user</panoramic.auth.redis-prefix>
+        <panoramic.auth.header-name>X-User-Id</panoramic.auth.header-name>
     </properties>
 
     <dependencyManagement>
@@ -67,6 +75,22 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-jsqlparser</artifactId>
                 <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!-- JWT（jjwt 0.12.x：api/impl/jackson 三件套） -->
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-api</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-impl</artifactId>
+                <version>${jjwt.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.jsonwebtoken</groupId>
+                <artifactId>jjwt-jackson</artifactId>
+                <version>${jjwt.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -88,4 +88,21 @@ public interface UserService extends IService<SysUser> {
      * @return true=全部存在（或集合为空）
      */
     boolean existsAll(Collection<Long> ids);
+
+    /**
+     * 按用户名取登录用用户（显式把密码列带出，供登录校验；查询/返回均不暴露密码）
+     *
+     * @param username 用户名
+     * @return 用户实体（含 password/status/nickname/avatar），不存在返回 null
+     */
+    SysUser getForAuthByUsername(String username);
+
+    /**
+     * 修改密码（当前登录用户本人）：校验原密码正确后更新为新密码的 BCrypt 摘要
+     *
+     * @param userId      用户ID
+     * @param oldPassword 原密码
+     * @param newPassword 新密码（明文，由本方法加密存储）
+     */
+    void changePassword(Long userId, String oldPassword, String newPassword);
 }

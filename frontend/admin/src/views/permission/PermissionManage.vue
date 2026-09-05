@@ -1,7 +1,7 @@
 <template>
   <el-card shadow="never">
     <div class="toolbar">
-      <el-button type="primary" @click="openAdd(null)">新增顶级目录</el-button>
+      <el-button v-perm="'system:permission:add'" type="primary" @click="openAdd(null)">新增顶级目录</el-button>
       <span class="toolbar-tip">层级：目录 → 页面 → 按钮（逐级递减，按钮下不能再加子级）</span>
     </div>
 
@@ -40,13 +40,14 @@
           <span class="row-actions">
             <el-button
               v-if="row.type < 3"
+              v-perm="'system:permission:add'"
               link
               type="primary"
               size="small"
               @click="openAdd(row)"
             >新增{{ row.type === 1 ? '页面' : '按钮' }}</el-button>
-            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'system:permission:edit'" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button v-perm="'system:permission:delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </span>
         </template>
       </el-table-column>

@@ -9,8 +9,8 @@
         @keyup.enter="handleSearch"
         @clear="handleSearch"
       />
-      <el-button type="primary" @click="handleSearch">查询</el-button>
-      <el-button type="success" @click="openAdd">新增角色</el-button>
+      <el-button v-perm="'system:role:list'" type="primary" @click="handleSearch">查询</el-button>
+      <el-button v-perm="'system:role:add'" type="success" @click="openAdd">新增角色</el-button>
     </div>
 
     <el-table v-loading="loading" :data="records" stripe>
@@ -28,10 +28,10 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="warning" @click="openAssignPermission(row)">分配权限</el-button>
-          <el-button link type="success" @click="openAssignUser(row)">分配用户</el-button>
-          <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'system:role:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-perm="'system:role:assignPermission'" link type="warning" @click="openAssignPermission(row)">分配权限</el-button>
+          <el-button v-perm="'system:role:assignUser'" link type="success" @click="openAssignUser(row)">分配用户</el-button>
+          <el-button v-perm="'system:role:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

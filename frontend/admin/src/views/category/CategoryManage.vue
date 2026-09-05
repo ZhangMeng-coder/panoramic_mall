@@ -1,7 +1,7 @@
 <template>
   <el-card shadow="never">
     <div class="toolbar">
-      <el-button type="primary" @click="openAdd(null)">新增顶级分类</el-button>
+      <el-button v-perm="'goods:category:add'" type="primary" @click="openAdd(null)">新增顶级分类</el-button>
     </div>
 
     <!-- 树形数据用 el-table 的树类型展示（整棵一次加载，非懒加载） -->
@@ -24,13 +24,14 @@
           <span class="row-actions">
             <el-button
               v-if="row.level < 3"
+              v-perm="'goods:category:add'"
               link
               type="primary"
               size="small"
               @click="openAdd(row)"
             >新增子分类</el-button>
-            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'goods:category:edit'" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button v-perm="'goods:category:delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
           </span>
         </template>
       </el-table-column>

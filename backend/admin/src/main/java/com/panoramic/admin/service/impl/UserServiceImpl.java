@@ -163,6 +163,34 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return count(Wrappers.<SysUser>lambdaQuery().in(SysUser::getId, distinctIds)) == distinctIds.size();
     }
 
+    @Override
+    public SysUser getForAuthByUsername(String username) {
+        // 显式 select 带上 password 列（实体上 @TableField(select=false) 默认不查），供登录校验使用
+        return getOne(Wrappers.<SysUser>lambdaQuery()
+                .select(SysUser::getId, SysUser::getUsername, SysUser::getPassword,
+                        SysUser::getNickname, SysUser::getAvatar, SysUser::getStatus)
+                .eq(SysUser::getUsername, username));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void changePassword(Long userId, String oldPassword, String newPassword) {
+        SysUser user = getOne(Wrappers.<SysUser>lambdaQuery()
+                .select(SysUser::getId, SysUser::getUsername, SysUser::getPassword, SysUser::getStatus)
+                .eq(SysUser::getId, userId));
+        if (user == null) {
+            throw new ServiceException("用户不存在");
+        }
+        if (!StringUtils.hasText(user.getPassword()) || !passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw new ServiceException("原密码不正确");
+        }
+        SysUser update = new SysUser();
+        update.setId(userId);
+        update.setPassword(passwordEncoder.encode(newPassword));
+        // 仅更新密码，公共字段（update_user/update_time）由 MP 自动填充
+        updateById(update);
+    }
+
     /**
      * 根据 ID 查询用户（不存在抛出业务异常）
      *

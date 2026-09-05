@@ -22,22 +22,20 @@ public interface PermissionService extends IService<SysPermission> {
     List<PermissionTreeVO> tree();
 
     /**
-     * 前端目录/菜单树（仅目录+页面，供前端目录接口）。
-     * <p>临时实现：全量返回；待鉴权接入后改为按当前登录用户角色过滤。</p>
+     * 按角色过滤的菜单树（仅目录+页面，供登录用户侧边导航；会向上补全页面所属祖先目录保证树完整）。
      *
-     * @return 目录树
-     */
-    List<PermissionTreeVO> menus();
-
-    /**
-     * 按角色过滤的菜单树（仅目录+页面）。
-     * <p>预留能力：roleIds 为 null/空 时等价于全量返回。
-     * 鉴权接入后，前端目录接口应传入当前登录用户拥有的角色ID集合。</p>
-     *
-     * @param roleIds 当前用户的角色ID集合（可空）
+     * @param roleIds 当前登录用户拥有的角色ID集合（为空则返回空树）
      * @return 目录树
      */
     List<PermissionTreeVO> menusByRoleIds(List<Long> roleIds);
+
+    /**
+     * 取这些权限 ID 对应的权限字符串集合（仅取非空的 perms，登录用户权限快照用）
+     *
+     * @param permissionIds 权限ID集合，可为空/null
+     * @return 去重后的权限字符串列表
+     */
+    List<String> permsOfIds(Collection<Long> permissionIds);
 
     /**
      * 权限详情

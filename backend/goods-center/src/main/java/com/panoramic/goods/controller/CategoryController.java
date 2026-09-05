@@ -8,6 +8,7 @@ import com.panoramic.goods.service.CategoryService;
 import com.panoramic.goods.vo.CategoryTreeVO;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +35,7 @@ public class CategoryController {
      * 新建分类
      */
     @PostMapping
+    @PreAuthorize("hasAuthority('goods:category:add')")
     public RespData<Long> save(@Validated(ValidationGroups.Create.class) @RequestBody CategorySaveDTO dto) {
         return RespData.success(categoryService.saveCategory(dto));
     }
@@ -42,6 +44,7 @@ public class CategoryController {
      * 查询全量分类树
      */
     @GetMapping("/tree")
+    @PreAuthorize("hasAuthority('goods:category')")
     public RespData<List<CategoryTreeVO>> tree() {
         return RespData.success(categoryService.tree());
     }
@@ -50,6 +53,7 @@ public class CategoryController {
      * 更新分类（仅名称与排序）
      */
     @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('goods:category:edit')")
     public RespData<Void> update(@PathVariable @NotNull(message = "分类ID不能为空") Long id,
                                  @Validated(ValidationGroups.Update.class) @RequestBody CategoryUpdateDTO dto) {
         categoryService.updateCategory(id, dto);
@@ -60,6 +64,7 @@ public class CategoryController {
      * 删除分类（存在子分类或商品时拒绝）
      */
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('goods:category:delete')")
     public RespData<Void> delete(@PathVariable @NotNull(message = "分类ID不能为空") Long id) {
         categoryService.deleteCategory(id);
         return RespData.success();
