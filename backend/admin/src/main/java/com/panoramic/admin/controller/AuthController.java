@@ -44,7 +44,10 @@ public class AuthController {
      */
     @PostMapping("/logout")
     public RespData<Void> logout() {
-        authService.logout(UserContext.getUserId());
+        LoginUser loginUser = UserContext.getLoginUser();
+        authService.logout(
+                loginUser == null ? LoginUser.USER_TYPE_ADMIN : loginUser.getUserType(),
+                UserContext.getUserId());
         return RespData.success();
     }
 

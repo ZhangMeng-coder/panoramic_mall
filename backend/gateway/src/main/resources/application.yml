@@ -36,9 +36,15 @@ spring:
                 - StripPrefix=1
               predicates:
                 - Path=/admin/**
+            - id: store-center-route
+              uri: lb://store-center
+              filters:
+                - StripPrefix=1
+              predicates:
+                - Path=/store/**
 
-# 网关白名单（带路由前缀；逗号分隔）：登录接口放行，其余先验 JWT+Redis。
+# 网关白名单（带路由前缀；逗号分隔）：登录/注册接口放行，其余先验 JWT+Redis。
 # jwt-secret/redis-prefix/header-name 由 Nacos auth.yml 统一提供，不再重复。
 panoramic:
   auth:
-    whitelist-paths: /admin/auth/login,/discovery/**
+    whitelist-paths: /admin/auth/login,/store/auth/login,/store/auth/register,/discovery/**

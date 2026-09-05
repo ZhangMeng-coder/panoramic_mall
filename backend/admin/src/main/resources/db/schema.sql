@@ -97,17 +97,16 @@ SET @ddl := IF(@has_route = 0,
 PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- ============================================================
--- 幂等权限种子：商品中台 / 系统管理 两目录 → 页面（带路由地址）→ 功能按钮
+-- 幂等权限种子：商品中台 / 系统管理 / 店铺管理 目录 → 页面（带路由地址）→ 功能按钮
 -- 使用显式 ID + INSERT IGNORE，重复执行不会产生重复数据；
 -- 已存在页面（旧种子无 route）由文件尾部 UPDATE 幂等回填路由地址。
+-- 注：主页（/home）不再入权限表，由 admin/店铺端 前端各自写死置顶菜单；
+--     历史种子中的 主页 目录(id 3)/页面(id 31) 见 db/remove-home-permission.sql。
 -- ============================================================
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
   -- 目录（type=1，parent=0）
-  (3,   0,  '主页', 1, NULL,             'home',         -1, NULL),
   (2,   0,  '商品中台', 1, NULL,             'folder-opened', 0, NULL),
   (1,   0,  '系统管理', 1, NULL,             'setting',       1, NULL),
-  -- 页面（type=2，parent=主页；人人可见，内容暂空）
-  (31,  3,  '主页', 2, NULL,             'home',          0, '/home'),
   -- 页面（type=2，parent=商品中台，供前端动态菜单导航）
   (21,  2,  '分类管理', 2, 'goods:category',   'menu',  1, '/category'),
   (22,  2,  '品牌管理', 2, 'goods:brand',      'goods', 2, '/brand'),
@@ -156,3 +155,16 @@ INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort)
 UPDATE sys_permission SET route = '/user'       WHERE id = 11 AND route IS NULL;
 UPDATE sys_permission SET route = '/role'       WHERE id = 12 AND route IS NULL;
 UPDATE sys_permission SET route = '/permission' WHERE id = 13 AND route IS NULL;
+
+-- ============================================================
+-- 幂等权限种子：店铺管理（平台 admin 后台，业务落在 store-center /store/admin/**）
+--   顶级目录(4) → 页面 店铺列表(41, 带路由 /shop，perms=store:shop) → 按钮 查询/审核
+-- 角色授权见 db/backfill-store-permission.sql（自动补发给后端管理角色）或「角色管理→分配权限」UI。
+-- ============================================================
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
+  (4,  0, '店铺管理', 1, NULL,        'shop', 0, NULL),
+  (41, 4, '店铺列表', 2, 'store:shop', 'shop', 1, '/shop');
+
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
+  (411, 41, '店铺查询', 3, 'store:shop:list',  NULL, 0),
+  (412, 41, '店铺审核', 3, 'store:shop:audit', NULL, 1);

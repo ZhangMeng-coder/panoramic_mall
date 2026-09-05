@@ -10,7 +10,7 @@ import java.util.Set;
 
 /**
  * 登录用户上下文（登录成功后写入 Redis，各业务服务按 user_id 查出后填充 {@code UserContext} 与方法安全主体）
- * <p>仅存需要跨服务携带的快照字段：身份、角色 ID、权限字符串集合。
+ * <p>仅存需要跨服务携带的快照字段：用户类型、身份、角色 ID、权限字符串集合。
  * 权限为登录时快照——改动角色/权限后需重新登录刷新（Redis 缓存 + JWT）。</p>
  */
 @Data
@@ -18,6 +18,24 @@ public class LoginUser implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /** 平台管理员用户类型（默认） */
+    public static final String USER_TYPE_ADMIN = "admin";
+
+    /** 店主用户类型 */
+    public static final String USER_TYPE_STORE = "store";
+
+    /** JWT type claim 名 */
+    public static final String CLAIM_USER_TYPE = "type";
+
+    /** gateway 透传用户类型的请求头名 */
+    public static final String HEADER_USER_TYPE = "X-User-Type";
+
+    /**
+     * 用户类型：admin=平台管理员 / store=店主。缺省 admin（老 token/旧快照兼容）。
+     * 参与 Redis 键拼装（{prefix}:{userType}:{userId}），与 JWT type claim 对齐。
+     */
+    private String userType = USER_TYPE_ADMIN;
 
     /**
      * 用户ID（JWT 的 subject，也是 Redis 键与跨服务传递的 X-User-Id）

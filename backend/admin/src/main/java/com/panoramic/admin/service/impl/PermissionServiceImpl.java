@@ -43,9 +43,6 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
     /** 类型：按钮 */
     private static final int TYPE_BUTTON = 3;
 
-    /** 主页页面路由（type=2 页面的 route 字段）：对任意已登录用户恒可见 */
-    private static final String HOME_ROUTE = "/home";
-
     /** 跨实体：角色-权限关联服务（菜单按角色过滤、删除权限引用守卫） */
     private final RolePermissionService rolePermissionService;
 
@@ -74,9 +71,7 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
         Map<Long, SysPermission> allById = allPermissions.stream()
                 .collect(Collectors.toMap(SysPermission::getId, p -> p));
 
-        // 主页对任意已登录用户恒可见（含无角色/无权限用户），先入 keep
         Set<Long> keep = new HashSet<>();
-        addHomepage(allPermissions, keep, allById);
 
         List<Long> ownedIds = (roleIds == null || roleIds.isEmpty())
                 ? Collections.emptyList()
@@ -106,25 +101,6 @@ public class PermissionServiceImpl extends ServiceImpl<SysPermissionMapper, SysP
         Map<Long, List<SysPermission>> byParent = menus.stream()
                 .collect(Collectors.groupingBy(SysPermission::getParentId));
         return buildChildren(byParent, 0L);
-    }
-
-    /**
-     * 主页（route=HOME_ROUTE 的页面及其祖先目录）加入 keep，实现“人人可见”
-     *
-     * @param allPermissions 全量权限（有序）
-     * @param keep           已选中的节点 id 集合（原地扩展）
-     * @param allById        全量权限 id → 节点
-     */
-    private void addHomepage(List<SysPermission> allPermissions, Set<Long> keep, Map<Long, SysPermission> allById) {
-        SysPermission homePage = allPermissions.stream()
-                .filter(p -> p.getType() == TYPE_MENU && HOME_ROUTE.equals(p.getRoute()))
-                .findFirst()
-                .orElse(null);
-        if (homePage == null) {
-            return;
-        }
-        keep.add(homePage.getId());
-        addAncestors(allById, keep, homePage.getId());
     }
 
     /**

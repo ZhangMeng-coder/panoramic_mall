@@ -1,0 +1,244 @@
+/* ============================================================================
+   Design Tokens — 全景商城后台
+   ----------------------------------------------------------------------------
+   可调整变量 — 修改此处即可全局换肤
+   以下 :root 顶部即为全站换肤入口：改 主色 / 语义色 / 中性色 / 圆角 后，
+   业务组件样式（EP 主题变量、.btn/.card/.badge 等预设类）自动跟随，无需再改动。
+   注意：Element Plus 组件读的是下面「EP 主题映射」区块的 --el-* 变量，
+   该区块的取值来自顶部色板；暗色模式另有一套按 EP 语义反相生成的值。
+   ========================================================================== */
+
+:root {
+  /* ---- 可调整 · 品牌色（60-30-10 法则） ---- */
+  --color-primary: #4f46e5; /* 主色（靛蓝）：主按钮 / 焦点环 / 品牌强调 */
+  --color-secondary: #0ea5e9; /* 辅色（天青）：次级信息 / 链接悬停 */
+
+  /* ---- 可调整 · 语义色 ---- */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #6366f1;
+
+  /* ---- 可调整 · 中性色（#F8FAFC → #0F172A，含 950） ---- */
+  --color-neutral-50: #f8fafc;
+  --color-neutral-100: #f1f5f9;
+  --color-neutral-200: #e2e8f0;
+  --color-neutral-300: #cbd5e1;
+  --color-neutral-400: #94a3b8;
+  --color-neutral-500: #64748b;
+  --color-neutral-600: #475569;
+  --color-neutral-700: #334155;
+  --color-neutral-800: #1e293b;
+  --color-neutral-900: #0f172a;
+  --color-neutral-950: #020617;
+
+  /* 中性色便捷别名（映射 EP info 用中性灰以保持“灰=次要”的直觉） */
+  --color-neutral: var(--color-neutral-500);
+
+  /* ---- 可调整 · 圆角 / 阴影 / 动效 ----
+     shadow 颜色基于中性 900(15,23,42) 投影，令牌文件即色板唯一来源 */
+  --radius-none: 0;
+  --radius-sm: 4px;
+  --radius-base: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 28px -6px rgba(15, 23, 42, 0.14);
+  --shadow-xl: 0 24px 48px -12px rgba(15, 23, 42, 0.2);
+
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- 排版（Modular Scale） ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 18px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 30px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+  --text-5xl: 60px;
+
+  --leading-tight: 1.2; /* 标题 */
+  --leading-normal: 1.6; /* 正文 */
+  --leading-code: 2; /* 代码 */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- 间距与尺寸（8px 网格）----
+     0,4,8,12,16,20,24,32,40,48,64,80,96,128 px
+     命名沿用 Tailwind 数值键，便于直觉换算 */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  /* 容器最大宽度 */
+  --container-max: 1280px;
+
+  /* ---- 界面语义（浅色） ---- */
+  --color-bg: var(--color-neutral-100);
+  --color-surface: #ffffff;
+  --color-text-strong: var(--color-neutral-900);
+  --color-text: var(--color-neutral-700);
+  --color-text-muted: var(--color-neutral-500);
+  --color-text-faint: var(--color-neutral-400);
+  --color-border: var(--color-neutral-200);
+  --color-border-strong: var(--color-neutral-300);
+  --color-hover: var(--color-neutral-100);
+
+  /* ---- 语义柔色底（chip/浅底/焦点环，随主题自动适配） ---- */
+  --color-primary-soft: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  --color-success-soft: color-mix(in srgb, var(--color-success) 12%, var(--color-surface));
+  --color-warning-soft: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface));
+  --color-error-soft: color-mix(in srgb, var(--color-error) 12%, var(--color-surface));
+  --color-info-soft: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
+}
+
+/* 暗色模式的语义表面 / 文本 / 边框覆盖 */
+.dark,
+html.dark {
+  --color-bg: var(--color-neutral-950);
+  --color-surface: var(--color-neutral-800);
+  --color-text-strong: var(--color-neutral-100);
+  --color-text: var(--color-neutral-300);
+  --color-text-muted: var(--color-neutral-400);
+  --color-text-faint: var(--color-neutral-500);
+  --color-border: var(--color-neutral-700);
+  --color-border-strong: var(--color-neutral-600);
+  --color-hover: var(--color-neutral-700);
+}
+
+/* ============================================================================
+   EP 主题映射 — 浅色
+   覆盖 Element Plus 默认蓝为主题靛蓝；中性 info 保留中性灰（EP 语义中的灰=次要）。
+   ========================================================================== */
+:root {
+  --el-color-primary: var(--color-primary);
+  --el-color-primary-light-3: #847eed;
+  --el-color-primary-light-5: #a7a3f2;
+  --el-color-primary-light-7: #cac8f7;
+  --el-color-primary-light-8: #dcdafa;
+  --el-color-primary-light-9: #ededfc;
+  --el-color-primary-dark-2: #3f38b7;
+
+  --el-color-success: var(--color-success);
+  --el-color-success-light-3: #58cea7;
+  --el-color-success-light-5: #88dcc0;
+  --el-color-success-light-7: #b7ead9;
+  --el-color-success-light-8: #cff1e6;
+  --el-color-success-light-9: #e7f8f2;
+  --el-color-success-dark-2: #0d9467;
+
+  --el-color-warning: var(--color-warning);
+  --el-color-warning-light-3: #f8bb54;
+  --el-color-warning-light-5: #facf85;
+  --el-color-warning-light-7: #fce2b6;
+  --el-color-warning-light-8: #fdecce;
+  --el-color-warning-light-9: #fef5e7;
+  --el-color-warning-dark-2: #c47e09;
+
+  --el-color-error: var(--color-error);
+  --el-color-error-light-3: #f47c7c;
+  --el-color-error-light-5: #f7a2a2;
+  --el-color-error-light-7: #fac7c7;
+  --el-color-error-light-8: #fcdada;
+  --el-color-error-light-9: #fdecec;
+  --el-color-error-dark-2: #bf3636;
+
+  --el-color-danger: var(--color-error);
+  --el-color-danger-light-3: #f47c7c;
+  --el-color-danger-light-5: #f7a2a2;
+  --el-color-danger-light-7: #fac7c7;
+  --el-color-danger-light-8: #fcdada;
+  --el-color-danger-light-9: #fdecec;
+  --el-color-danger-dark-2: #bf3636;
+
+  --el-color-info: var(--color-neutral-500);
+  --el-color-info-light-3: #939eae;
+  --el-color-info-light-5: #b2bac5;
+  --el-color-info-light-7: #d1d5dc;
+  --el-color-info-light-8: #e0e3e8;
+  --el-color-info-light-9: #f0f1f3;
+  --el-color-info-dark-2: #505d6f;
+}
+
+/* ============================================================================
+   EP 主题映射 — 暗色
+   按 Element Plus 暗色反相语义取值（向 #141414 底混合得到 light-N 暗调，
+   dark-2 用于 hover/强调，需提亮），保证纯色/浅色/幽灵态在深底下仍协调。
+   ========================================================================== */
+html.dark {
+  --el-color-primary: var(--color-primary);
+  --el-color-primary-light-3: #3d37a6;
+  --el-color-primary-light-5: #322d7d;
+  --el-color-primary-light-7: #262353;
+  --el-color-primary-light-8: #201e3e;
+  --el-color-primary-light-9: #1a1929;
+  --el-color-primary-dark-2: #7b74ec;
+
+  --el-color-success: var(--color-success);
+  --el-color-success-light-3: #118860;
+  --el-color-success-light-5: #12674b;
+  --el-color-success-light-7: #134635;
+  --el-color-success-light-8: #13352a;
+  --el-color-success-light-9: #14251f;
+  --el-color-success-dark-2: #4ccba1;
+
+  --el-color-warning: var(--color-warning);
+  --el-color-warning-light-3: #b2750e;
+  --el-color-warning-light-5: #855910;
+  --el-color-warning-light-7: #583d11;
+  --el-color-warning-light-8: #413012;
+  --el-color-warning-light-9: #2b2213;
+  --el-color-warning-dark-2: #f8b648;
+
+  --el-color-error: var(--color-error);
+  --el-color-error-light-3: #ad3636;
+  --el-color-error-light-5: #822c2c;
+  --el-color-error-light-7: #562222;
+  --el-color-error-light-8: #401e1e;
+  --el-color-error-light-9: #2a1919;
+  --el-color-error-dark-2: #f37373;
+
+  --el-color-danger: var(--color-error);
+  --el-color-danger-light-3: #ad3636;
+  --el-color-danger-light-5: #822c2c;
+  --el-color-danger-light-7: #562222;
+  --el-color-danger-light-8: #401e1e;
+  --el-color-danger-light-9: #2a1919;
+  --el-color-danger-dark-2: #f37373;
+
+  --el-color-info: var(--color-neutral-500);
+  --el-color-info-light-3: #4c5767;
+  --el-color-info-light-5: #3c4450;
+  --el-color-info-light-7: #2c3138;
+  --el-color-info-light-8: #24272c;
+  --el-color-info-light-9: #1c1e20;
+  --el-color-info-dark-2: #8b97a8;
+}

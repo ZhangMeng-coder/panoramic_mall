@@ -48,14 +48,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { authApi } from '../../api/auth'
-import { permissionApi } from '../../api/permission'
-import {
-  setToken,
-  setUser,
-  getDefaultPath,
-  setDefaultPath,
-  resolveFirstRoute
-} from '../../store/auth'
+import { setToken, setUser, getDefaultPath } from '../../store/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -83,14 +76,6 @@ async function handleSubmit() {
     const data = await authApi.login({ username: form.username, password: form.password })
     setToken(data.token)
     setUser(data.user)
-
-    // 登录后拉菜单树，把第一个可见页面作为默认落地页（按用户权限）
-    try {
-      const menus = await permissionApi.menus()
-      setDefaultPath(resolveFirstRoute(menus))
-    } catch {
-      /* 菜单拉取失败则用兜底默认页 */
-    }
 
     ElMessage.success(`欢迎回来，${(data.user && (data.user.nickname || data.user.username)) || '管理员'}`)
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''

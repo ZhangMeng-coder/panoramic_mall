@@ -10,7 +10,8 @@ import java.time.Duration;
 
 /**
  * 登录用户上下文缓存（Redis）
- * <p>key = {@code redis-prefix + userId}，value 为 {@link LoginUser} 的 JSON 快照，TTL 与 token 有效期对齐。
+ * <p>key = {@code redis-prefix:userType:userId}，value 为 {@link LoginUser} 的 JSON 快照，TTL 与 token 有效期对齐。
+ * userType 维度隔离平台管理员（admin）与店主（store）两套用户 id 空间，避免 id 冲突串上下文。
  * 删除 key 即强制下线/登出（gateway 与各业务服务下一请求因查无此键而回 401）。</p>
  */
 @Slf4j
@@ -33,7 +34,7 @@ public class LoginUserCacheService {
     }
 
     /**
-     * 保存登录用户（写入即刷新 TTL）
+     * 保存登录用户（写入即刷新 TTL；userType 取快照字段，缺省 admin）
      *
      * @param loginUser 登录用户
      */
@@ -42,49 +43,61 @@ public class LoginUserCacheService {
             return;
         }
         try {
-            redisTemplate.opsForValue().set(key(loginUser.getId()),
+            redisTemplate.opsForValue().set(key(typeOf(loginUser.getUserType()), loginUser.getId()),
                     objectMapper.writeValueAsString(loginUser),
                     Duration.ofSeconds(expireSeconds));
         } catch (Exception e) {
-            log.error("写入登录用户缓存失败, userId={}", loginUser.getId(), e);
+            log.error("写入登录用户缓存失败, userType={}, userId={}",
+                    loginUser.getUserType(), loginUser.getId(), e);
             throw new IllegalStateException("登录状态写入失败，请稍后重试", e);
         }
     }
 
     /**
-     * 按 userId 读取登录用户
+     * 按用户类型 + userId 读取登录用户
      *
-     * @param userId 用户ID
+     * @param userType 用户类型（admin/store；null 视为 admin）
+     * @param userId   用户ID
      * @return 登录用户；不存在/解析失败返回 null
      */
-    public LoginUser get(Long userId) {
+    public LoginUser get(String userType, Long userId) {
         if (userId == null) {
             return null;
         }
+        String ut = typeOf(userType);
         try {
-            String json = redisTemplate.opsForValue().get(key(userId));
+            String json = redisTemplate.opsForValue().get(key(ut, userId));
             if (json == null) {
                 return null;
             }
-            return objectMapper.readValue(json, LoginUser.class);
+            LoginUser loginUser = objectMapper.readValue(json, LoginUser.class);
+            if (loginUser != null && loginUser.getUserType() == null) {
+                loginUser.setUserType(ut);
+            }
+            return loginUser;
         } catch (Exception e) {
-            log.warn("读取登录用户缓存失败, userId={}", userId, e);
+            log.warn("读取登录用户缓存失败, userType={}, userId={}", ut, userId, e);
             return null;
         }
     }
 
     /**
-     * 删除登录用户缓存（登出/强制下线）
+     * 按用户类型 + userId 删除登录用户缓存（登出/强制下线）
      *
-     * @param userId 用户ID
+     * @param userType 用户类型（admin/store；null 视为 admin）
+     * @param userId   用户ID
      */
-    public void delete(Long userId) {
+    public void delete(String userType, Long userId) {
         if (userId != null) {
-            redisTemplate.delete(key(userId));
+            redisTemplate.delete(key(typeOf(userType), userId));
         }
     }
 
-    private String key(Long userId) {
-        return keyPrefix+":"+ userId;
+    private String typeOf(String userType) {
+        return userType == null || userType.isBlank() ? LoginUser.USER_TYPE_ADMIN : userType;
+    }
+
+    private String key(String userType, Long userId) {
+        return keyPrefix + ":" + userType + ":" + userId;
     }
 }

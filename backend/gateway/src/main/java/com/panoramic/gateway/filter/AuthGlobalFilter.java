@@ -21,9 +21,10 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * 网关鉴权过滤器（WebFlux，不依赖 common）
- * <p>对非白名单请求：① 验 JWT 签名/有效期 → ② 校验 Redis 中 {prefix}:{userId} 登录用户上下文仍有效。
- * 任一环失效一律回 HTTP 401（与业务服务安全链的 401 语义一致）；通过则把 userId 写入
- * {@code X-User-Id} 请求头透传给下游业务服务作为「查用户上下文」的 key。</p>
+ * <p>对非白名单请求：① 验 JWT 签名/有效期 → ② 解析 type claim（缺省 admin）
+ * → ③ 校验 Redis 中 {prefix}:{type}:{userId} 登录用户上下文仍有效。
+ * 任一环失效一律回 HTTP 401（与业务服务安全链的 401 语义一致）；通过则把 userId、userType 分别写入
+ * {@code X-User-Id} / {@code X-User-Type} 请求头透传给下游业务服务作为「查用户上下文」的 key。</p>
  */
 @Component
 public class AuthGlobalFilter implements GlobalFilter, Ordered {
@@ -32,6 +33,11 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     private static final String MSG_UNAUTHORIZED = "未登录或登录已失效";
 
     private static final String BEARER_PREFIX = "Bearer ";
+
+    /** JWT type claim 名 / X-User-Type 头名（与 common LoginUser 常量对齐） */
+    private static final String CLAIM_USER_TYPE = "type";
+    private static final String DEFAULT_USER_TYPE = "admin";
+    private static final String HEADER_USER_TYPE = "X-User-Type";
 
     private final SecretKey secretKey;
     private final ReactiveStringRedisTemplate redisTemplate;
@@ -59,21 +65,26 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
             return chain.filter(exchange);
         }
 
-        Long userId = resolveUserId(exchange.getRequest().getHeaders().getFirst("Authorization"));
-        if (userId == null) {
+        Claims claims = parseClaims(exchange.getRequest().getHeaders().getFirst("Authorization"));
+        if (claims == null || claims.getSubject() == null) {
             return unauthorized(exchange, MSG_UNAUTHORIZED);
         }
+        Long userId = Long.valueOf(claims.getSubject());
+        String userType = typeOf(claims.get(CLAIM_USER_TYPE));
 
-        String key = redisPrefix+ ":" + userId;
+        String key = redisPrefix + ":" + userType + ":" + userId;
         return redisTemplate.opsForValue().get(key)
                 .flatMap(saved -> {
                     if (saved == null) {
                         // Redis 无此登录用户（登出/超时/强制下线）→ 401
                         return unauthorized(exchange, MSG_UNAUTHORIZED);
                     }
-                    // 通过：透传 userId，供业务服务查用户上下文
+                    // 通过：透传 userId + userType，供业务服务查用户上下文
                     return chain.filter(exchange.mutate()
-                            .request(builder -> builder.headers(headers -> headers.set(headerName, String.valueOf(userId))))
+                            .request(builder -> builder.headers(headers -> {
+                                headers.set(headerName, String.valueOf(userId));
+                                headers.set(HEADER_USER_TYPE, userType);
+                            }))
                             .build());
                 })
                 .switchIfEmpty(Mono.defer(() -> unauthorized(exchange, MSG_UNAUTHORIZED)));
@@ -86,26 +97,35 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * 从 Authorization 头解析 userId（验签 + 过期校验）
+     * 解析 token 的 payload（验签 + 过期校验）
      *
      * @param authorization Authorization 头值
-     * @return userId；缺失/非法返回 null
+     * @return Claims；缺失/非法返回 null
      */
-    private Long resolveUserId(String authorization) {
+    private Claims parseClaims(String authorization) {
         if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
             return null;
         }
         String token = authorization.substring(BEARER_PREFIX.length()).trim();
         try {
-            Claims claims = Jwts.parser()
+            return Jwts.parser()
                     .verifyWith(secretKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
-            return Long.valueOf(claims.getSubject());
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * 用户类型兜底：type claim 缺失/空 → admin
+     */
+    private String typeOf(Object type) {
+        if (type == null || String.valueOf(type).isBlank()) {
+            return DEFAULT_USER_TYPE;
+        }
+        return String.valueOf(type);
     }
 
     private boolean isWhitelisted(String path) {

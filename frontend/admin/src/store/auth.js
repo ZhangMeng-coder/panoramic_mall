@@ -9,8 +9,6 @@ const TOKEN_KEY = 'pm-admin-token'
 
 const token = ref(localStorage.getItem(TOKEN_KEY) || '')
 const user = ref(null)
-// 登录后第一个可见菜单页的路由地址（/ 落地页兜底用）
-const defaultPath = ref('')
 
 export function getToken() {
   return token.value
@@ -57,24 +55,9 @@ export function hasPerm(perm) {
   return perms.includes(perm)
 }
 
-/** 计算菜单树中第一个可见页面路由（登录/刷新后作为落地页） */
-export function resolveFirstRoute(menus) {
-  const list = Array.isArray(menus) ? menus : []
-  for (const dir of list) {
-    const children = Array.isArray(dir.children) ? dir.children : []
-    const page = children.find((c) => c && c.route)
-    if (page && page.route) return page.route
-  }
-  return ''
-}
-
 export function getDefaultPath() {
-  // 主页对任意已登录用户可见，作为“/”落地页兜底（刷新/直达首页时用）
-  return defaultPath.value || '/home'
-}
-
-export function setDefaultPath(path) {
-  defaultPath.value = path || ''
+  // “/”落地页：主页对任意登录用户恒可见且置顶，固定进 /home
+  return '/home'
 }
 
 export function clearAuth() {

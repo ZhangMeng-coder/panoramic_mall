@@ -15,10 +15,10 @@ import java.util.List;
 
 /**
  * 认证过滤器（各业务服务经 common 启用）
- * <p>链路：gateway 已验 JWT + Redis 并把 userId 放进 {@code X-User-Id} 头；
- * 本过滤器据此从 Redis 取 LoginUser 重建上下文。任一环查不到用户（无头/缓存失效/签名失败），
- * 则保持匿名——由 Security 对非白名单接口统一回 401（AuthenticationEntryPoint）。
- * 请求结束 finally 清理 UserContext，防止 ThreadLocal 串号。</p>
+ * <p>链路：gateway 已验 JWT + Redis 并把 userId、userType 放进 {@code X-User-Id} / {@code X-User-Type} 头；
+ * 本过滤器据此从 Redis 取 LoginUser 重建上下文。无头（直连等）时兜底解析 Bearer JWT。
+ * 任一环查不到用户（无头/缓存失效/签名失败），则保持匿名——由 Security 对非白名单接口统一回 401
+ * （AuthenticationEntryPoint）。请求结束 finally 清理 UserContext，防止 ThreadLocal 串号。</p>
  */
 public class AuthTokenFilter extends OncePerRequestFilter {
 
@@ -60,37 +60,58 @@ public class AuthTokenFilter extends OncePerRequestFilter {
     }
 
     /**
-     * 解析当前请求对应的登录用户：优先取网关透传的 userId 头；无头时兜底解析 Bearer JWT。
+     * 解析当前请求对应的登录用户：优先取网关透传的 userId/userType 头；无头时兜底解析 Bearer JWT。
      *
      * @param request 请求
      * @return 登录用户；解析失败/缓存无此用户返回 null（视为未认证）
      */
     private LoginUser resolveLoginUser(HttpServletRequest request) {
-        Long userId = resolveUserId(request);
-        if (userId == null) {
-            return null;
-        }
-        LoginUser loginUser = loginUserCacheService.get(userId);
-        if (loginUser == null) {
-            // 查无 Redis 用户上下文：登录态失效（登出/超时/强制下线），按未认证处理
-            return null;
-        }
-        return loginUser;
-    }
+        String userIdHeader = request.getHeader(headerName);
+        String userTypeHeader = request.getHeader(LoginUser.HEADER_USER_TYPE);
+        String token = bearerToken(request);
 
-    private Long resolveUserId(HttpServletRequest request) {
-        String headerUserId = request.getHeader(headerName);
-        if (headerUserId != null && !headerUserId.isBlank()) {
-            try {
-                return Long.valueOf(headerUserId.trim());
-            } catch (NumberFormatException ignore) {
-                // 头非法则继续尝试 token
-            }
+        // ① 网关透传头：userId + userType（缺 userType 视为 admin）
+        Long headerUserId = parseUserId(userIdHeader);
+        if (headerUserId != null) {
+            String userType = userTypeHeader != null && !userTypeHeader.isBlank()
+                    ? userTypeHeader.trim() : LoginUser.USER_TYPE_ADMIN;
+            return loginUserCacheService.get(userType, headerUserId);
         }
-        String authorization = request.getHeader("Authorization");
-        if (authorization != null && authorization.startsWith(BEARER_PREFIX)) {
-            return jwtService.parseUserId(authorization.substring(BEARER_PREFIX.length()).trim());
+
+        // ② 兜底：Bearer JWT 解析 userId/userType
+        if (token != null) {
+            Long tokenUserId = jwtService.parseUserId(token);
+            if (tokenUserId == null) {
+                return null;
+            }
+            String userType = jwtService.parseUserType(token);
+            return loginUserCacheService.get(userType, tokenUserId);
         }
         return null;
+    }
+
+    /**
+     * 解析 userId 请求头（透传值可能异常，防御式解析）
+     */
+    private Long parseUserId(String headerUserId) {
+        if (headerUserId == null || headerUserId.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(headerUserId.trim());
+        } catch (NumberFormatException ignore) {
+            return null;
+        }
+    }
+
+    /**
+     * 取 Bearer token 串（无/格式不符返回 null）
+     */
+    private String bearerToken(HttpServletRequest request) {
+        String authorization = request.getHeader("Authorization");
+        if (authorization == null || !authorization.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        return authorization.substring(BEARER_PREFIX.length()).trim();
     }
 }

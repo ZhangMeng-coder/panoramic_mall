@@ -1,6 +1,6 @@
 # admin — 全景商城后台管理
 
-后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用后端商品中心与用户管理（admin）接口。
+后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用后端商品中心（goods-center）、平台管理（admin）与店铺中心（store-center）接口。
 
 ## 主题与设计令牌（Design Tokens）
 
@@ -21,8 +21,9 @@
 | 用户管理 | `/user` | 列表内联展示已分配角色（多角色并排标签）；用户分页（关键字/状态筛选）+ CRUD；密码 BCrypt 存储，编辑留空不改密码；分配角色（全角色勾选回显、可整体替换/清空） |
 | 角色管理 | `/role` | 角色分页 + CRUD；分配权限（权限树勾选，父节点级联全选子级、可清空）；分配用户（左侧展示“不在该角色内”的用户分页可加，右侧已分配可移除） |
 | 权限管理 | `/permission` | 权限树表格展示（el-table 树形数据：目录/页面/按钮逐级递减，含权限字符串、页面级路由地址）；行悬停新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；页面(2)级权限带路由地址 `route`，供前端菜单导航 |
+| 店铺管理 | `/shop` | 店主店铺列表（店铺名关键字 + 审核状态筛选、状态 badge 草稿/待审核/已通过/已驳回）；详情抽屉（资质字段只读回显 + 店主账号）；审核弹窗：通过 / 驳回（驳回原因必填），按钮挂 `v-perm`（`store:shop:list/audit`） |
 
-> 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（商品中台 / 系统管理 两组：目录→页面，页面携带 `route`）；当前**全量返回（临时）**，后端已预留按当前登录用户角色过滤（`menusByRoleIds`），接入鉴权后可无缝切换。
+> 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（按当前登录用户角色过滤 `menusByRoleIds`：商品中台 / 系统管理 / 店铺管理 目录→页面，页面携带 `route`）；改动角色/权限后需**重新登录**刷新 Redis 快照。
 
 ## 商品编辑的 SKU 规格编辑器（SkuEditor）
 
@@ -34,14 +35,14 @@
 ## 技术要点
 
 - **响应拦截**：`axios` 拦截器校验 `RespData.code === 200` → 直接返回 `data`；否则 `ElMessage.error(msg)` 并 reject（业务提示统一来自后端）
-- **代理**：`vite.config.js` 将 `/goods`、`/admin`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到 goods-center/admin）
+- **代理**：`vite.config.js` 将 `/goods`、`/admin`、`/store`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到 goods-center/admin/store-center）
 - 分页参数为 `pageNum/pageSize`，与后端 `BasePageVO` 对应
 
 ## 本地开发
 
 ```bash
 npm install
-npm run dev       # → http://localhost:5173（需后端网关 8080 与商品中心 8081 已启动）
+npm run dev       # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store-center 8083 已启动）
 npm run build     # 产物输出 dist/
 ```
 
@@ -49,8 +50,8 @@ npm run build     # 产物输出 dist/
 
 ```
 src/
-├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限接口模块
-├── router/              # 路由（默认跳转分类管理）
+├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限/店铺接口模块
+├── router/              # 路由（默认跳转分类管理；店铺管理 /shop）
 ├── styles/              # Design Token 基础层（换肤/EP主题映射/组件预设）
 │   ├── tokens.css       #   可调变量色板 + 浅/暗令牌 + EP --el-* 主题映射
 │   ├── base.css         #   Reset + 排版 + 滚动条（纯 var 驱动）
@@ -61,7 +62,8 @@ src/
 │   ├── spu/             # SpuManage + SpuFormDialog(基础+规格配置) + SpuSkuManageDialog + SpuPreviewDialog
 │   ├── user/            # UserManage + UserFormDialog + AssignRoleDialog
 │   ├── role/            # RoleManage + RoleFormDialog + AssignPermissionDialog + AssignUserDialog
-│   └── permission/      # PermissionManage + PermissionFormDialog
+│   ├── permission/      # PermissionManage + PermissionFormDialog
+│   └── shop/            # ShopManage（店铺列表 + 详情抽屉 + 审核弹窗）
 ├── App.vue              # 布局壳：侧边导航（商品/系统管理）+ 顶栏（页名/明暗切换）
 └── main.js              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
 ```

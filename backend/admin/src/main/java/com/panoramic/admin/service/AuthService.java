@@ -59,8 +59,9 @@ public class AuthService {
         List<Long> permissionIds = rolePermissionService.permissionIdsByRoleIds(roleIds);
         List<String> perms = permissionService.permsOfIds(permissionIds);
 
-        // 登录用户上下文快照写 Redis（各服务按 userId 查出重建；删除即登出/强制下线）
+        // 登录用户上下文快照写 Redis（各服务按 userType+userId 查出重建；删除即登出/强制下线）
         LoginUser loginUser = new LoginUser();
+        loginUser.setUserType(LoginUser.USER_TYPE_ADMIN);
         loginUser.setId(user.getId());
         loginUser.setUsername(user.getUsername());
         loginUser.setNickname(user.getNickname());
@@ -70,7 +71,7 @@ public class AuthService {
         loginUser.setPerms(new HashSet<>(perms));
         loginUserCacheService.save(loginUser);
 
-        String token = jwtService.generateToken(user.getId());
+        String token = jwtService.generateToken(user.getId(), LoginUser.USER_TYPE_ADMIN);
 
         CurrentUserVO currentUser = toCurrentUser(loginUser);
         return new LoginResultVO(token, currentUser);
@@ -79,10 +80,11 @@ public class AuthService {
     /**
      * 登出：删除 Redis 中的登录用户上下文，网关/各服务下一请求即回 401
      *
-     * @param userId 用户ID
+     * @param userType 用户类型（admin/store）
+     * @param userId   用户ID
      */
-    public void logout(Long userId) {
-        loginUserCacheService.delete(userId);
+    public void logout(String userType, Long userId) {
+        loginUserCacheService.delete(userType, userId);
     }
 
     private CurrentUserVO toCurrentUser(LoginUser loginUser) {

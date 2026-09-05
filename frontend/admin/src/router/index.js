@@ -39,6 +39,12 @@ const routes = [
         meta: { title: '商品管理' }
       },
       {
+        path: '/shop',
+        name: 'shop',
+        component: () => import('../views/shop/ShopManage.vue'),
+        meta: { title: '店铺列表' }
+      },
+      {
         path: '/user',
         name: 'user',
         component: () => import('../views/user/UserManage.vue'),

@@ -28,3 +28,6 @@ dist/
 Thumbs.db
 
 todo.md
+
+# 本地临时数据/备份
+temp/

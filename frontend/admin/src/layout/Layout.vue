@@ -5,7 +5,7 @@
         <span class="logo-badge">全景</span>
         <span class="logo-title">全景商城 · 后台</span>
       </div>
-      <!-- 菜单由后台 /admin/permissions/menus 动态生成（目录→页面两层，已按登录用户权限过滤） -->
+      <!-- 菜单：主页 前端写死置顶（任意登录用户可见），其余目录由 /admin/permissions/menus 动态生成（已按用户权限过滤） -->
       <el-menu
         v-if="menuReady"
         :default-active="activeMenu"
@@ -13,6 +13,10 @@
         router
         class="app-menu"
       >
+        <el-menu-item index="/home">
+          <el-icon><HomeFilled /></el-icon>
+          <span>主页</span>
+        </el-menu-item>
         <el-sub-menu v-for="dir in menuTree" :key="dir.id" :index="`m-${dir.id}`">
           <template #title>
             <el-icon><component :is="resolveIcon(dir.icon)" /></el-icon>
@@ -82,12 +86,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { permissionApi } from '../api/permission'
 import { authApi } from '../api/auth'
-import { getUser, clearAuth, setDefaultPath, resolveFirstRoute } from '../store/auth'
+import { getUser, clearAuth } from '../store/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 import {
   Menu,
   Goods,
   Box,
+  Shop,
   HomeFilled,
   Setting,
   User,
@@ -125,6 +130,7 @@ const ICON_MAP = {
   menu: Menu,
   goods: Goods,
   box: Box,
+  shop: Shop,
   home: HomeFilled,
   setting: Setting,
   user: User,
@@ -144,8 +150,6 @@ async function loadMenu() {
   try {
     const tree = await permissionApi.menus()
     menuTree.value = tree
-    // 记录首个可见页面作为“/”落地页（登录/直达首页时用）
-    setDefaultPath(resolveFirstRoute(tree))
   } catch {
     // 目录接口失败时侧栏留空（路由仍可直接访问），不阻断页面
     console.warn('菜单加载失败，侧边栏暂空')
