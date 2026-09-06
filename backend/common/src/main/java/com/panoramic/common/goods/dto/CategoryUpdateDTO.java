@@ -1,4 +1,4 @@
-package com.panoramic.goods.dto;
+package com.panoramic.common.goods.dto;
 
 import com.panoramic.common.valid.ValidationGroups;
 import jakarta.validation.constraints.NotBlank;

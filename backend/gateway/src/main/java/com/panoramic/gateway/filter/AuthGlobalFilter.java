@@ -73,9 +73,13 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         String userType = typeOf(claims.get(CLAIM_USER_TYPE));
 
         String key = redisPrefix + ":" + userType + ":" + userId;
+        // hasElement 判定登录态键是否存在：get 对缺失键返回空 Mono，若用 switchIfEmpty 收口，
+        // flatMap 分支返回的 Mono<Void>（转发成功）会以「无值完成」被 switchIfEmpty 误判为空，
+        // 导致转发提交后再跑一次 unauthorized 写响应 → ReadOnlyHttpHeaders 抛 UnsupportedOperationException。
         return redisTemplate.opsForValue().get(key)
-                .flatMap(saved -> {
-                    if (saved == null) {
+                .hasElement()
+                .flatMap(loginExists -> {
+                    if (!loginExists) {
                         // Redis 无此登录用户（登出/超时/强制下线）→ 401
                         return unauthorized(exchange, MSG_UNAUTHORIZED);
                     }
@@ -86,8 +90,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
                                 headers.set(HEADER_USER_TYPE, userType);
                             }))
                             .build());
-                })
-                .switchIfEmpty(Mono.defer(() -> unauthorized(exchange, MSG_UNAUTHORIZED)));
+                });
     }
 
     @Override

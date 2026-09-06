@@ -1,19 +1,16 @@
 package com.panoramic.goods.controller;
 
+import com.panoramic.common.goods.dto.SpuPageQueryDTO;
+import com.panoramic.common.goods.dto.SpuSaveDTO;
+import com.panoramic.common.goods.dto.SpuSkuReplaceDTO;
+import com.panoramic.common.goods.dto.SpuStatusDTO;
+import com.panoramic.common.goods.dto.SpuUpdateDTO;
+import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.common.goods.vo.SpuDetailVO;
+import com.panoramic.common.goods.vo.SpuPageItemVO;
 import com.panoramic.common.valid.ValidationGroups;
-import com.panoramic.common.vo.RespData;
-import com.panoramic.goods.dto.SpuPageQueryDTO;
-import com.panoramic.goods.dto.SpuSaveDTO;
-import com.panoramic.goods.dto.SpuSkuReplaceDTO;
-import com.panoramic.goods.dto.SpuStatusDTO;
-import com.panoramic.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.service.SpuService;
-import com.panoramic.goods.vo.PageResult;
-import com.panoramic.goods.vo.SpuDetailVO;
-import com.panoramic.goods.vo.SpuPageItemVO;
-import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,82 +22,75 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 商品（SPU）接口
+ * 标准商品平台 · 标准商品 SPU（模板）内部领域接口（goods-center 下沉纯域）。
+ * <p>仅供端 BFF 经内部 Feign（{@code /internal/goods/...}）调用，不再向页面暴露公网路由；
+ * 方法直接返回业务结果类型（不包 RespData），错误经 {@code GoodsDomainExceptionHandler}
+ * 以真实 HTTP 状态码传播。权限判定已收敛在端 BFF（@PreAuthorize），本接口只负责执行；
+ * 写操作的审计 user_id 由 {@code GoodsUserIdentityFilter} 从 BFF 透传的 X-User-Id 信任头直取填充。</p>
  */
 @RestController
-@RequestMapping("/spu")
+@RequestMapping("/internal/goods/spu")
 @RequiredArgsConstructor
 public class SpuController {
 
     private final SpuService spuService;
 
     /**
-     * 商品分页查询
+     * 标准模板分页检索（分类/品牌/状态/名称关键字筛选）
      */
     @GetMapping("/page")
-    @PreAuthorize("hasAuthority('goods:spu:list')")
-    public RespData<PageResult<SpuPageItemVO>> page(@Validated SpuPageQueryDTO dto) {
-        return RespData.success(spuService.page(dto));
+    public PageResult<SpuPageItemVO> page(@Validated SpuPageQueryDTO dto) {
+        return spuService.page(dto);
     }
 
     /**
-     * 商品详情（含 SKU 列表、规格属性配置、分类完整链条）
+     * 标准模板详情/快照（含 SKU 列表、规格属性配置、分类完整链条）
      */
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('goods:spu:list')")
-    public RespData<SpuDetailVO> detail(@PathVariable @NotNull(message = "商品ID不能为空") Long id) {
-        return RespData.success(spuService.detail(id));
+    public SpuDetailVO detail(@PathVariable Long id) {
+        return spuService.detail(id);
     }
 
     /**
-     * 新建商品（基础信息 + 规格属性配置；SKU 由 /{id}/skus 单独维护）
+     * 新建模板（基础信息 + 规格属性配置；SKU 由 /{id}/skus 单独维护）
      */
     @PostMapping
-    @PreAuthorize("hasAuthority('goods:spu:add')")
-    public RespData<Long> save(@Validated(ValidationGroups.Create.class) @RequestBody SpuSaveDTO dto) {
-        return RespData.success(spuService.saveSpu(dto));
+    public Long save(@Validated(ValidationGroups.Create.class) @RequestBody SpuSaveDTO dto) {
+        return spuService.saveSpu(dto);
     }
 
     /**
-     * 更新商品（仅基础信息 + 规格属性配置）
+     * 更新模板（仅基础信息 + 规格属性配置）
      */
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('goods:spu:edit')")
-    public RespData<Void> update(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
-                                 @Validated(ValidationGroups.Update.class) @RequestBody SpuUpdateDTO dto) {
+    public void update(@PathVariable Long id,
+                       @Validated(ValidationGroups.Update.class) @RequestBody SpuUpdateDTO dto) {
         spuService.updateSpu(id, dto);
-        return RespData.success();
     }
 
     /**
-     * 全量替换商品 SKU（规格管理专用；空 skus = 清空全部 SKU）
+     * 全量替换模板 SKU（规格管理专用；空 skus = 清空全部 SKU）
      */
     @PutMapping("/{id}/skus")
-    @PreAuthorize("hasAuthority('goods:spu:edit')")
-    public RespData<Void> replaceSkus(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
-                                      @RequestBody SpuSkuReplaceDTO dto) {
+    public void replaceSkus(@PathVariable Long id,
+                            @RequestBody SpuSkuReplaceDTO dto) {
         spuService.replaceSkus(id, dto);
-        return RespData.success();
     }
 
     /**
-     * 商品展示/隐藏切换
+     * 模板展示/隐藏切换
      */
     @PutMapping("/{id}/status")
-    @PreAuthorize("hasAuthority('goods:spu:edit')")
-    public RespData<Void> updateStatus(@PathVariable @NotNull(message = "商品ID不能为空") Long id,
-                                       @Validated @RequestBody SpuStatusDTO dto) {
+    public void updateStatus(@PathVariable Long id,
+                             @Validated @RequestBody SpuStatusDTO dto) {
         spuService.updateStatus(id, dto);
-        return RespData.success();
     }
 
     /**
-     * 删除商品（展示中拒绝）
+     * 删除模板（展示中拒绝；级联逻辑删除 SKU）
      */
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('goods:spu:delete')")
-    public RespData<Void> delete(@PathVariable @NotNull(message = "商品ID不能为空") Long id) {
+    public void delete(@PathVariable Long id) {
         spuService.deleteSpu(id);
-        return RespData.success();
     }
 }

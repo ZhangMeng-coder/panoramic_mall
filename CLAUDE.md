@@ -11,6 +11,18 @@
 - **数据验证层的循环引用**用 Spring `@Lazy` 断环（需在模块 `lombok.config` 加 `lombok.copyableAnnotations += org.springframework.context.annotation.Lazy` 使其进入构造参数）。
 - **歧义先问**：规则适用或归属有歧义时，先向用户确认，不要自己判断。
 
+## 分层与内部服务调用（BFF 化，进行中）
+
+目标分层（详见 `Architecture-BFF.md`，收口路线见 `todo.md`）：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 `admin` 与 `store-center`（后者暂兼店铺端后端角色，等价于店铺端 BFF；拆出 store-bff 后名单改指向 store-bff）；goods-center 已下沉纯域、不开放公网路由。store-bff 拆分、mall-bff 等仍属后续待迁项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
+
+**Feign 内部接口规约（BFF → 域，M0 起一律遵守）**：
+- **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
+- **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
+- **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
+- **信任与防线（权限判定收敛在端 BFF）**：内部调用带信任头（主身份 + type + scope）。goods-center 信任内部令牌与 BFF 透传身份，**只负责执行 + 审计填充**（user_id 直取 X-User-Id 填 `UserContext`，不再打 Redis 重建登录用户），**不再做权限判定**——端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。⚠ 若未来出现带行级/店铺归属、确实需要域内范围判定的域（如 store），另行评估，勿照搬 goods-center 的“纯执行”模式。
+
+**术语防呆（避免跨域加错表）**：`goods-center`=标准商品模板库（标准商品平台）；"店铺在售商品/库存/信誉"属 store 域；"顾客/购物车/订单/评价"属未来 trade 域。别把别域实体塞进 goods-center。
+
 ## 代码验证只到“编译通过”
 
 本仓库生成/修改代码后，验证一律**止步于编译通过**：

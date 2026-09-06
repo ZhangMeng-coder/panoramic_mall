@@ -1,10 +1,10 @@
 package com.panoramic.goods.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.panoramic.goods.dto.CategorySaveDTO;
-import com.panoramic.goods.dto.CategoryUpdateDTO;
+import com.panoramic.common.goods.dto.CategorySaveDTO;
+import com.panoramic.common.goods.dto.CategoryUpdateDTO;
 import com.panoramic.goods.entity.GoodsCategory;
-import com.panoramic.goods.vo.CategoryTreeVO;
+import com.panoramic.common.goods.vo.CategoryTreeVO;
 
 import java.util.Collection;
 import java.util.List;

@@ -77,6 +77,22 @@
             <artifactId>jjwt-jackson</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- BFF 化内部调用通道：Feign 客户端 + LoadBalancer + 熔断。
+             公共类型/Feign 接口定义在 common，调用方(端 BFF)经 @EnableFeignClients 扫描启用；
+             被调用方(业务域)仅当实现端 HTTP 接口，不扫描 Feign 客户端，仅因依赖 common 而带上依赖，无副作用。
+             版本由父 POM 的 spring-cloud-dependencies BOM 统一管理。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

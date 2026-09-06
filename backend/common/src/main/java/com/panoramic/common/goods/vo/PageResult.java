@@ -1,4 +1,4 @@
-package com.panoramic.goods.vo;
+package com.panoramic.common.goods.vo;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

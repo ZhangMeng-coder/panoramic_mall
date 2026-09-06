@@ -1,7 +1,7 @@
-package com.panoramic.goods.vo;
+package com.panoramic.common.goods.vo;
 
-import com.panoramic.goods.dto.SpecAttr;
-import com.panoramic.goods.dto.SpecConfigItem;
+import com.panoramic.common.goods.dto.SpecAttr;
+import com.panoramic.common.goods.dto.SpecConfigItem;
 import lombok.Data;
 
 import java.time.LocalDateTime;

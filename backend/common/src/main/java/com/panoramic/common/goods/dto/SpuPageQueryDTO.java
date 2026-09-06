@@ -1,4 +1,4 @@
-package com.panoramic.goods.dto;
+package com.panoramic.common.goods.dto;
 
 import com.panoramic.common.vo.BasePageVO;
 import lombok.Data;

@@ -1,4 +1,4 @@
-package com.panoramic.goods.dto;
+package com.panoramic.common.goods.dto;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
