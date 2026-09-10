@@ -28,6 +28,8 @@
   - 组合必须来自该 SPU 的规格属性配置（各维度取一个值，与配置逐项匹配），否则拒绝
   - diff 策略：入参带 `id` 的 SKU 校验归属后更新、`id` 为空的新 SKU 插入、缺失的存量 SKU 逻辑删除 —— 保证已存在 SKU 的 `id` 稳定（供后续价格/库存模块引用），整体事务回滚
 - 轮播图（`image_list`）、规格属性配置（`spec_config`）与 SKU 规格（`spec_attrs`）以 **JSON 列**存储，服务层 Jackson 转换
+- **版本戳 `version`（`BIGINT`，Unix 毫秒）**：`goods_spu` 与 `goods_sku` 各一列，本行**任何修改即刷新**（SPU 自身字段变更、或其任一 SKU 变更，都会刷新该 SPU 的 `version`）；详情 `SpuDetailVO.version` 对外返回。用途：店铺端在售商品关联中台模板后记录该戳，编辑时比对以判断「中台模板是否已更新」，供店主选择是否同步覆盖（比对与提示在 store-bff 编排侧做，**域内不做版本判断**）。
+- **按 SKU 编码反查 SPU**（`GET /internal/goods/spu/by-sku-code?skuCode=`）：供店铺端「新增商品时按中台编码整单预填」；`goods_sku.sku_code` 无唯一索引（中台不强制唯一），命中多条时按 `id asc` 取第一条并回传 `matchedSkuCount` 提示，未命中返回 `spu=null`（成功响应）。
 
 ## 数据库（库：`panoramic_mall`）
 
@@ -65,9 +67,11 @@
 | PUT | `/internal/goods/spu/{id}/status` | `goods:spu:edit` | 展示/隐藏切换 `{status: 0|1}` |
 | DELETE | `/internal/goods/spu/{id}` | `goods:spu:delete` | 删除（展示中拒绝，级联逻辑删除 SKU） |
 | GET | `/internal/goods/spu/page` | `goods:spu:list` | 分页查询（categoryId/brandId/status/keyword，回填分类/品牌名） |
-| GET | `/internal/goods/spu/{id}` | `goods:spu:list` | SPU 详情（含 skus、规格属性配置、分类完整链条） |
+| GET | `/internal/goods/spu/{id}` | `goods:spu:list` | SPU 详情（含 skus、规格属性配置、分类完整链条、版本戳 `version`） |
+| GET | `/internal/goods/spu/by-sku-code?skuCode=` | —（store-bff 调，无权限码） | 按 SKU 编码反查 SPU 模板 → `SpuBySkuCodeVO{spu, matchedSkuCount}`（未命中 `spu=null`） |
 
 > 页面/BFF 编排侧（admin）等价接口见 admin 模块：网关 `/admin/goods/**` → admin 的 `GoodsTemplateBffService` 编排（带熔断降级），页面不再直连本服务。
+> 店铺端商品页的编排在 store-bff（网关 `/store/goods/**`）：分类树/品牌列表 + `by-sku-code` 预填 + 详情版本比对（`GoodsCenterClient`）。
 
 ## 配置说明
 

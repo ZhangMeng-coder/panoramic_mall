@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS goods_spu (
   description TEXT            DEFAULT NULL          COMMENT '商品详情（富文本 HTML）',
   spec_config JSON            DEFAULT NULL          COMMENT '规格属性配置：[{"spec":"颜色","values":["黑色","白色"]}]',
   status      TINYINT         NOT NULL DEFAULT 0    COMMENT '展示状态：0 隐藏，1 展示（信息模板，无上下架概念）',
+  version     BIGINT          NOT NULL DEFAULT 0    COMMENT '版本戳（Unix 毫秒）：本 SPU 或其任一 SKU 修改即刷新',
   create_user VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS goods_sku (
   spec_attrs  JSON            NOT NULL              COMMENT '规格属性组合：[{"spec":"颜色","value":"黑色"},{"spec":"内存","value":"256G"}]',
   sku_code    VARCHAR(64)     DEFAULT NULL          COMMENT '商家自定义 SKU 编码（可选）',
   main_image  VARCHAR(255)    DEFAULT NULL          COMMENT 'SKU 图片 URL（可选）',
+  version     BIGINT          NOT NULL DEFAULT 0    COMMENT '版本戳（Unix 毫秒）：本 SKU 修改即刷新',
   create_user VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -85,3 +87,24 @@ SET @goods_ddl := IF(@goods_has_spec = 0,
   'ALTER TABLE goods_spu ADD COLUMN spec_config JSON DEFAULT NULL COMMENT ''规格属性配置：[{"spec":"颜色","values":["黑色","白色"]}]'' AFTER description',
   'SELECT 1');
 PREPARE goods_stmt FROM @goods_ddl; EXECUTE goods_stmt; DEALLOCATE PREPARE goods_stmt;
+
+-- 4.2 幂等加列：版本戳（Unix 毫秒）。店铺端在售商品关联中台模板时记录该值，
+--     编辑时比对可判断「模板是否已被改动」，不一致时提示店主同步。
+--     SPU 的版本 = 本 SPU 及其全部 SKU 的最后变更时间（SKU 变更一并刷 SPU）。
+SET @spu_has_version := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'goods_spu' AND COLUMN_NAME = 'version');
+SET @spu_version_ddl := IF(@spu_has_version = 0,
+  'ALTER TABLE goods_spu ADD COLUMN version BIGINT NOT NULL DEFAULT 0 COMMENT ''版本戳（Unix 毫秒）：本 SPU 或其任一 SKU 修改即刷新''',
+  'SELECT 1');
+PREPARE spu_version_stmt FROM @spu_version_ddl; EXECUTE spu_version_stmt; DEALLOCATE PREPARE spu_version_stmt;
+
+SET @sku_has_version := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'goods_sku' AND COLUMN_NAME = 'version');
+SET @sku_version_ddl := IF(@sku_has_version = 0,
+  'ALTER TABLE goods_sku ADD COLUMN version BIGINT NOT NULL DEFAULT 0 COMMENT ''版本戳（Unix 毫秒）：本 SKU 修改即刷新''',
+  'SELECT 1');
+PREPARE sku_version_stmt FROM @sku_version_ddl; EXECUTE sku_version_stmt; DEALLOCATE PREPARE sku_version_stmt;
+
+-- 4.3 存量回填：历史数据无版本，用 update_time 折算为毫秒（仅回填 version=0 的行，可重复执行）
+UPDATE goods_spu SET version = COALESCE(UNIX_TIMESTAMP(update_time) * 1000, 0) WHERE version = 0;
+UPDATE goods_sku SET version = COALESCE(UNIX_TIMESTAMP(update_time) * 1000, 0) WHERE version = 0;

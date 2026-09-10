@@ -64,6 +64,12 @@ public class SpuDetailVO {
     private Integer status;
 
     /**
+     * 版本戳（Unix 毫秒）：SPU 或其任一 SKU 发生修改即刷新。
+     * 店铺端商品关联中台时记录该值，编辑时比对以判断中台模板是否已更新。
+     */
+    private Long version;
+
+    /**
      * 规格属性配置（JSON → List）
      */
     private List<SpecConfigItem> specConfig;

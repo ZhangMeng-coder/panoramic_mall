@@ -8,6 +8,7 @@ import com.panoramic.common.goods.dto.SpuStatusDTO;
 import com.panoramic.common.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.entity.GoodsSpu;
 import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.common.goods.vo.SpuBySkuCodeVO;
 import com.panoramic.common.goods.vo.SpuDetailVO;
 import com.panoramic.common.goods.vo.SpuPageItemVO;
 
@@ -73,6 +74,16 @@ public interface SpuService extends IService<GoodsSpu> {
      * @param id 商品ID
      */
     void deleteSpu(Long id);
+
+    /**
+     * 按 SKU 编码反查所属标准商品（店铺端「填 SKU_CODE 预填新增表单」用）。
+     * 未命中返回 spu=null（不抛异常，店铺端允许「查不到照样自建」）；
+     * 编码重复时取 SKU id 最小者并置 matchedSkuCount &gt; 1
+     *
+     * @param skuCode SKU 编码
+     * @return 查询结果（含匹配条数）
+     */
+    SpuBySkuCodeVO findBySkuCode(String skuCode);
 
     /**
      * 统计某分类下挂载的商品数（删除分类守卫用）

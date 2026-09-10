@@ -3,13 +3,22 @@ package com.panoramic.common.store.api;
 import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
+import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
+import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
@@ -70,4 +79,55 @@ public interface StoreClient {
      */
     @PostMapping("/shops/{id}/audit")
     void auditShop(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto);
+
+    // ---- owner：店铺在售商品（store-bff 调用，必带 store_id；X-User-Type=store）----
+    // 说明：本组接口无 platform 对应物——本轮 admin 不做店铺商品管理（无 platform 侧）。
+    // 出参 StoreGoodsSpuDetailVO 不含中台版本比对结果，由 store-bff 编排时补充。
+
+    /**
+     * 我的商品分页（仅 store_id 名下的商品）
+     */
+    @GetMapping("/goods/spu/page")
+    PageResult<StoreGoodsSpuPageItemVO> pageStoreGoods(@RequestParam("storeId") Long storeId,
+                                                       @SpringQueryMap StoreGoodsSpuPageQueryDTO dto);
+
+    /**
+     * 我的商品详情（含 SKU 列表）
+     */
+    @GetMapping("/goods/spu/{id}")
+    StoreGoodsSpuDetailVO storeGoodsDetail(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId);
+
+    /**
+     * 新增商品（返回新商品 id；SKU 一律以下架态落库）
+     */
+    @PostMapping("/goods/spu")
+    Long saveStoreGoods(@RequestParam("storeId") Long storeId, @RequestBody StoreGoodsSpuSaveDTO dto);
+
+    /**
+     * 修改商品（存在上架 SKU 时规格配置只读；centerVersion 非空则刷新关联版本戳）
+     */
+    @PutMapping("/goods/spu/{id}")
+    void updateStoreGoods(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId,
+                          @RequestBody StoreGoodsSpuUpdateDTO dto);
+
+    /**
+     * 删除商品（存在上架 SKU 时拒绝；否则软删并级联软删其下全部 SKU）
+     */
+    @DeleteMapping("/goods/spu/{id}")
+    void deleteStoreGoods(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId);
+
+    /**
+     * SKU 整单替换（未上架可增/改/删；已上架必须原样保留且不得缺失）
+     */
+    @PutMapping("/goods/spu/{id}/skus")
+    void replaceStoreGoodsSkus(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId,
+                               @RequestBody StoreGoodsSkuReplaceDTO dto);
+
+    /**
+     * SKU 上下架（驱动所属 SPU 状态联动）
+     */
+    @PutMapping("/goods/spu/{spuId}/skus/{skuId}/shelf")
+    void updateStoreGoodsSkuShelf(@PathVariable("spuId") Long spuId, @PathVariable("skuId") Long skuId,
+                                  @RequestParam("storeId") Long storeId,
+                                  @RequestBody StoreGoodsSkuShelfDTO dto);
 }

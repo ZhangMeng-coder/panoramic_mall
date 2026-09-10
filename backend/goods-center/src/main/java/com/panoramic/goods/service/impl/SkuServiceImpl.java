@@ -31,4 +31,18 @@ public class SkuServiceImpl extends ServiceImpl<GoodsSkuMapper, GoodsSku> implem
         // GoodsSku 继承 BaseEntity（@TableLogic），remove 为逻辑删除
         remove(Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSpuId, spuId));
     }
+
+    @Override
+    public GoodsSku findFirstBySkuCode(String skuCode) {
+        List<GoodsSku> skus = list(Wrappers.<GoodsSku>lambdaQuery()
+                .eq(GoodsSku::getSkuCode, skuCode)
+                .orderByAsc(GoodsSku::getId)
+                .last("LIMIT 1"));
+        return skus == null || skus.isEmpty() ? null : skus.get(0);
+    }
+
+    @Override
+    public long countBySkuCode(String skuCode) {
+        return count(Wrappers.<GoodsSku>lambdaQuery().eq(GoodsSku::getSkuCode, skuCode));
+    }
 }

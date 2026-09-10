@@ -1,6 +1,6 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，以及**商城店铺端一期（店铺管理）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，以及**商城店铺端（店铺管理 + 在售商品管理）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
 
 ## 系统架构
 
@@ -17,7 +17,7 @@
         │ Nacos 注册发现(:8848)  │                                │ 内部 Feign（身份头 X-User-Id/X-User-Type + 熔断）
 ┌───────▼───────────────┐  ┌─────▼────────────────────────────┐ ┌──────▼───────────────────────┐
 │ admin 端 BFF（:8082）   │  │ store-bff 店铺端 BFF（:8084）      │ │ store 店铺域（:8083，纯域）     │
-│ 平台账号/RBAC 合一+编排  │  │ 店主账号 store_user + 店铺资料编排   │ │ 店铺 store_shop + 审核状态机    │
+│ 平台账号/RBAC 合一+编排  │  │ 店主账号 store_user + 店铺/商品编排  │ │ 店铺 store_shop + 在售商品      │
 └───────┬───────────────┘  └───────────────────────────────────┘ └──────┬──────────────────────┘
         │ 内部 Feign                                                   ▲        │ 内部 Feign
         └──────────────────────┬───────────────────────────────────────┘        │
@@ -39,12 +39,12 @@
 | ├── [common-auth/](backend/common-auth/) | 鉴权装配层（非服务）：JWT + Redis 登录态 + 安全过滤链；**只被端 BFF 依赖**，业务域拿不到（故不鉴权） | [README](backend/common-auth/README.md) |
 | ├── [gateway/](backend/gateway/) | API 网关（8080）：路由转发、前缀剥离、鉴权透传、端 BFF 白名单 | [README](backend/gateway/README.md) |
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
-| ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 | [README](backend/store/README.md) |
-| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料编排 | [README](backend/store-bff/README.md) |
+| ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
+| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
 | ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核 | [README](frontend/admin/README.md) |
-| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 开店入口 | [README](frontend/store/README.md) |
+| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
 | └── [mall/](frontend/mall/) | 商城前台（占位，待开发） | [README](frontend/mall/README.md) |
 
 ## 技术栈
@@ -67,7 +67,9 @@
    - 店主端独立项目（frontend/store）+ 独立账号（store_user 归 store-bff，经网关 /store/** 登录；店铺数据归 store 域），**注册即登录**
    - 店主维护**店铺信息**并**提交审核**（基础信息 + 联系人 + 省市区地址 + 营业执照三要素），状态机：0草稿 → 1待审核 → 2已通过 / 3已驳回（可编辑重提）；「账号店同 ID」（store_shop.id == 店主账号 id，一人一店）
    - admin 后台**店铺管理**目录（经 admin BFF → store 域 platform 接口）：店铺列表/详情、**通过 / 驳回（填原因）**，`store:shop:list/audit` 权限控制；不显示店主登录账号
-   - **仅审核通过**后店主端开放 商品管理/订单管理/库存管理 入口（本期为假页面占位，后续需求）
+   - **仅审核通过**后店主端开放 商品管理/订单管理/库存管理 入口（店铺未过审时页面与接口均 403）
+   - **店主在售商品管理**（frontend/store「商品管理」，经 store-bff → store 域 owner 接口）：商品增删改查与分页筛选（分类/品牌/关键字/上下架）、规格属性配置、SKU 明细维护与**按 SKU 上下架**；**上架任一 SKU → 商品自动上架，SKU 全下架 → 商品自动下架**（SPU 状态为推导结果、只读）；已上架 SKU 整行锁定（须先下架才能改/删），存在上架 SKU 时商品规格属性配置只读、商品不可删除
+   - **中台模板关联与版本同步**：新增时可按中台 `sku_code` 整单预填；中台 SPU/SKU 均带版本戳 `version`（任何修改即刷新），店主编辑关联商品时 BFF 比对中台版本 → 不一致提示「中台模板已更新」并给「同步」按钮（覆盖商品信息与规格，SKU 按 `sku_code` 对齐、保留已填价格），**不同步也能保存**；中台模板已删则提示「已不存在」
 6. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
 
 ## 环境依赖
@@ -85,7 +87,7 @@
 ```bash
 # 1. 启动外部依赖：Nacos、MySQL。
 #    库与表用各模块的 db/schema.sql 创建（均 IF NOT EXISTS，可重复执行）：
-#      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop；store-bff → store_user
+#      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop + store_goods_*；store-bff → store_user
 
 # 2. 安装后端父 POM 与 common / common-auth（首次或改动后）
 cd backend && mvn -N install && mvn -pl common,common-auth install
@@ -112,6 +114,7 @@ cd frontend/store && npm install && npm run dev   # → http://localhost:5174
 - [x] 商品中台（分类、品牌、SPU/SKU 管理）+ 管理后台页面
 - [x] 登录与 RBAC 权限体系（用户/角色/权限 + 动态菜单/按钮）
 - [x] 店铺管理 + 店主端一期（frontend/store，开店审核闭环）
+- [x] 店主端商品管理（在售商品 SPU/SKU 增删改、按 SKU 上下架联动、中台模板关联与版本同步）
 - [x] BFF 化收口：goods-center 下沉纯域、store-center 拆为 store（域）+ store-bff（店铺端 BFF）、admin 店铺管理 BFF 编排、网关公网收敛为端 BFF 白名单
 - [ ] 商城前台项目（frontend/mall）+ mall-bff / trade-center 下沉
-- [ ] 开店后业务：店主商品 / 订单 / 库存、价格库存、图片上传等（店主端已留占位入口）
+- [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）

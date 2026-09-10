@@ -6,6 +6,7 @@ import com.panoramic.common.goods.dto.SpuSkuReplaceDTO;
 import com.panoramic.common.goods.dto.SpuStatusDTO;
 import com.panoramic.common.goods.dto.SpuUpdateDTO;
 import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.common.goods.vo.SpuBySkuCodeVO;
 import com.panoramic.common.goods.vo.SpuDetailVO;
 import com.panoramic.common.goods.vo.SpuPageItemVO;
 import com.panoramic.common.valid.ValidationGroups;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -41,6 +43,16 @@ public class SpuController {
     @GetMapping("/page")
     public PageResult<SpuPageItemVO> page(@Validated SpuPageQueryDTO dto) {
         return spuService.page(dto);
+    }
+
+    /**
+     * 按 SKU 编码反查标准模板（店铺端「填 SKU_CODE 预填新增表单」用）。
+     * 未命中返回 spu=null（不抛异常）；编码重复时取 SKU id 最小者并置 matchedSkuCount。
+     * 注：本映射为字面量路径，优先于 /{id} 模板匹配。
+     */
+    @GetMapping("/by-sku-code")
+    public SpuBySkuCodeVO findBySkuCode(@RequestParam("skuCode") String skuCode) {
+        return spuService.findBySkuCode(skuCode);
     }
 
     /**

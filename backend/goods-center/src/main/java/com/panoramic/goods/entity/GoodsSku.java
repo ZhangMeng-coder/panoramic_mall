@@ -40,4 +40,9 @@ public class GoodsSku extends BaseEntity {
      * SKU 图片 URL（可选）
      */
     private String mainImage;
+
+    /**
+     * 版本戳（Unix 毫秒）：本 SKU 发生修改即刷新（业务字段，非审计字段，故显式赋值）
+     */
+    private Long version;
 }

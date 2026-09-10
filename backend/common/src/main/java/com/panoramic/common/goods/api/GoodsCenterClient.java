@@ -13,6 +13,7 @@ import com.panoramic.common.goods.dto.SpuUpdateDTO;
 import com.panoramic.common.goods.vo.BrandVO;
 import com.panoramic.common.goods.vo.CategoryTreeVO;
 import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.common.goods.vo.SpuBySkuCodeVO;
 import com.panoramic.common.goods.vo.SpuDetailVO;
 import com.panoramic.common.goods.vo.SpuPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
@@ -79,6 +81,14 @@ public interface GoodsCenterClient {
 
     @GetMapping("/spu/{id}")
     SpuDetailVO spuDetail(@PathVariable("id") Long id);
+
+    /**
+     * 按 SKU 编码反查所属标准商品（店铺端「填 SKU_CODE 预填新增表单」用）。
+     * <p>中台 goods_sku.sku_code 无唯一索引，重复时按 SKU id 升序取首条并置 matchedSkuCount；
+     * <b>未命中返回 spu=null</b>（HTTP 200，不抛异常）——店铺端允许「查不到照样自建」。</p>
+     */
+    @GetMapping("/spu/by-sku-code")
+    SpuBySkuCodeVO spuDetailBySkuCode(@RequestParam("skuCode") String skuCode);
 
     @PostMapping("/spu")
     Long saveSpu(@RequestBody SpuSaveDTO dto);

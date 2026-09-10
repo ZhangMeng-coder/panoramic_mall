@@ -11,8 +11,8 @@
 | [gateway](gateway/) | 网关服务 | 8080 | Spring Cloud Gateway 响应式网关，统一入口、路由转发与鉴权透传；公网只路由到端 BFF（`/admin`、`/store`），域服务一律 403 |
 | [goods-center](goods-center/) | 业务服务（下沉纯域） | 8081 | 标准商品平台：分类 / 品牌 / 标准 SPU-SKU 模板；不暴露公网路由，仅被 admin 等 BFF 内部 Feign 调用 |
 | [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核（内部 Feign → goods-center / store） |
-| [store](store/) | 业务服务（下沉纯域） | 8083 | 店铺域：店铺 store_shop + 审核状态机（账号店同 ID，id==店主账号 id）；不暴露公网路由，仅被 store-bff/admin 内部 Feign 调用 |
-| [store-bff](store-bff/) | 业务服务（店铺端 BFF） | 8084 | 店主端：店主账号 store_user（注册即登录、签发 type=store）+ 店铺资料编排（内部 Feign → store） |
+| [store](store/) | 业务服务（下沉纯域） | 8083 | 店铺域：店铺 store_shop + 审核状态机 + 店主在售商品 store_goods_spu/store_goods_sku（账号店同 ID，id==店主账号 id）；不暴露公网路由，仅被 store-bff/admin 内部 Feign 调用 |
+| [store-bff](store-bff/) | 业务服务（店铺端 BFF） | 8084 | 店主端：店主账号 store_user（注册即登录、签发 type=store）+ 店铺资料编排 + 在售商品编排与中台版本比对（内部 Feign → store / goods-center） |
 
 ## 技术栈
 
@@ -21,7 +21,7 @@
 - Spring Cloud Gateway、Spring Cloud LoadBalancer、OpenFeign（circuitbreaker 熔断）+ Resilience4j
 - Nacos 服务发现与注册（默认 `127.0.0.1:8848`，账号 `nacos/nacos`）
 - MyBatis-Plus 3.5.16（`mybatis-plus-spring-boot4-starter`，Spring Boot 4 专用）——逻辑删除 + 字段自动填充 + 分页插件
-- MySQL 8（库 `panoramic_mall`；表结构在各模块 `db/schema.sql`：`goods-center` 的 `goods_*`、`admin` 的 `sys_*` 权限表 + 权限种子、`store` 的 `store_shop`、`store-bff` 的 `store_user`，均 IF NOT EXISTS 幂等）
+- MySQL 8（库 `panoramic_mall`；表结构在各模块 `db/schema.sql`：`goods-center` 的 `goods_*`（含版本戳 `version`）、`admin` 的 `sys_*` 权限表 + 权限种子、`store` 的 `store_shop` + `store_goods_spu/store_goods_sku`、`store-bff` 的 `store_user`，均 IF NOT EXISTS 幂等）
 - 鉴权：JWT（含 `userType` claim）+ Redis 会话（键 `{前缀}:{userType}:{userId}`），网关验签后向下游透传 `X-User-Id`/`X-User-Type`；`admin` 与 `store` 为两套隔离的 id 空间
 
 ## 快速开始
@@ -68,7 +68,7 @@ curl http://localhost:8080/discovery/services   # 网关探活：查看已注册
 > goods-center / store 已下沉纯域，**不再有公网路由**。页面链路全部改为端 BFF 编排：
 > - 商品模板：`GET http://localhost:8080/admin/goods/categories/tree` → 网关 `/admin/**`（StripPrefix=1）→ admin(8082) BFF 编排 → 内部 Feign `/internal/goods/**` → goods-center(8081)
 > - 店铺管理：`GET http://localhost:8080/admin/shop/shops` → admin(8082) BFF 编排 → 内部 Feign `/internal/store/**` → store(8083)
-> - 店主端：`/store/auth/**`、`/store/shops/**` → store-bff(8084)（店铺编排内部 Feign → store）
+> - 店主端：`/store/auth/**`、`/store/shops/**`、`/store/goods/**` → store-bff(8084)（店铺/商品编排内部 Feign → store；分类/品牌下拉与中台模板比对 → goods-center）
 
 ## 请求链路
 
@@ -92,5 +92,5 @@ store 前端(5174) ──/store──────────────┤
 - 页面只经网关路由到**端 BFF**（`/admin` → admin、`/store` → store-bff）；**业务域服务不暴露公网路由**，只被 BFF 经注册中心内部 Feign 调用（DTO 同源放 common、只透传身份头 `X-User-Id`/`X-User-Type` + 熔断降级，详见 CLAUDE.md「Feign 内部接口规约」与 [goods-center/README.md](goods-center/README.md) / [store/README.md](store/README.md)）
 - **鉴权只到端 BFF**：`common-auth`（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`）只被 admin / store-bff 依赖，业务域只依赖 `common` → 域服务不装配认证链、不碰 Redis、不做任何权限判断（内部令牌 `X-Internal-Token` 已删除）。⚠ 域端口只在内网可达是前提
 - 服务内跨实体只走对方 owner service
-- 店主端接口（`/store/auth`、`/store/shops`）由 store-bff 登录鉴权后编排到 store 域（owner，store_id=账号 id）；平台店铺管理接口（admin 端 `/admin/shop/shops/**`）以 `@PreAuthorize` + 权限串（`store:shop:list/audit`）控制，权限种子见 `admin/db/schema.sql` 与 `backfill-store-permission.sql`；admin 不读店主账号
+- 店主端接口（`/store/auth`、`/store/shops`、`/store/goods`）由 store-bff 登录鉴权后编排到 store 域（owner，store_id=账号 id）；`/store/goods/**` 额外由 BFF 校验「店铺已审核通过」（未过审 `code=403`，域内不做该判断）。平台店铺管理接口（admin 端 `/admin/shop/shops/**`）以 `@PreAuthorize` + 权限串（`store:shop:list/audit`）控制，权限种子见 `admin/db/schema.sql` 与 `backfill-store-permission.sql`；admin 不读店主账号
 - 详情见各模块 README：店铺域见 [store/README.md](store/README.md)、店铺端 BFF 见 [store-bff/README.md](store-bff/README.md)。

@@ -41,8 +41,8 @@ const routes = [
       {
         path: '/goods',
         name: 'goods',
-        component: () => import('../views/placeholder/PlaceholderView.vue'),
-        meta: { title: '商品管理', description: '商品管理功能开发中，敬请期待。' }
+        component: () => import('../views/goods/GoodsManage.vue'),
+        meta: { title: '商品管理' }
       },
       {
         path: '/orders',

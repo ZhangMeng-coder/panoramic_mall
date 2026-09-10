@@ -60,4 +60,10 @@ public class GoodsSpu extends BaseEntity {
      * 展示状态：0 隐藏，1 展示（商品中台商品为商城商品信息模板，无上下架概念）
      */
     private Integer status;
+
+    /**
+     * 版本戳（Unix 毫秒）：本 SPU 或其任一 SKU 发生修改即刷新（业务字段，非审计字段，故显式赋值）。
+     * 店铺端在售商品关联中台模板时记录该值，编辑时比对以判断模板是否已更新。
+     */
+    private Long version;
 }

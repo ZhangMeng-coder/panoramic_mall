@@ -5,7 +5,7 @@
 | 目录 | 说明 | 技术栈 |
 |---|---|---|
 | [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + Element Plus |
-| [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 开店入口占位） | Vue 3 + Vite + Element Plus |
+| [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + Element Plus |
 | [mall/](./mall/) | 前端商城项目（用户购物端） | 占位，待开发 |
 
 ## 本地开发

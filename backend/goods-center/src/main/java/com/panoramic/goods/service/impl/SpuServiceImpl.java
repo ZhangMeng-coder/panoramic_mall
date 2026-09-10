@@ -27,6 +27,7 @@ import com.panoramic.goods.service.SkuService;
 import com.panoramic.goods.service.SpuService;
 import com.panoramic.common.goods.vo.PageResult;
 import com.panoramic.common.goods.vo.SkuVO;
+import com.panoramic.common.goods.vo.SpuBySkuCodeVO;
 import com.panoramic.common.goods.vo.SpuDetailVO;
 import com.panoramic.common.goods.vo.SpuPageItemVO;
 import lombok.RequiredArgsConstructor;
@@ -129,6 +130,7 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         spu.setImageList(writeJson(dto.getImageList()));
         spu.setSpecConfig(writeJson(dto.getSpecConfig()));
         spu.setStatus(dto.getStatus() == null ? 0 : dto.getStatus());
+        spu.setVersion(nowVersion());
         save(spu);
         // 新建商品不携带 SKU（0 SKU 起步），SKU 由 replaceSkus 在「规格」管理中单独维护
         return spu.getId();
@@ -152,6 +154,7 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         if (dto.getStatus() != null) {
             spu.setStatus(dto.getStatus());
         }
+        spu.setVersion(nowVersion());
         updateById(spu);
         // SKU 不再随基础信息更新；由 replaceSkus 在「规格」管理中单独维护
     }
@@ -223,6 +226,7 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
                 target.setSpecAttrs(writeJson(skuDto.getSpecAttrs()));
                 target.setSkuCode(skuDto.getSkuCode());
                 target.setMainImage(skuDto.getMainImage());
+                target.setVersion(nowVersion());
                 skuService.updateById(target);
             }
         }
@@ -233,6 +237,10 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         if (!removed.isEmpty()) {
             skuService.removeByIds(removed);
         }
+        // SKU 的变更同样视为 SPU 变更：一并刷新 SPU 版本戳，
+        // 使店铺端「关联模板是否已更新」的判断能覆盖到 SKU 级改动
+        spu.setVersion(nowVersion());
+        updateById(spu);
     }
 
     @Override
@@ -240,6 +248,7 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
     public void updateStatus(Long id, SpuStatusDTO dto) {
         GoodsSpu spu = getByIdOrThrow(id);
         spu.setStatus(dto.getStatus());
+        spu.setVersion(nowVersion());
         updateById(spu);
     }
 
@@ -250,9 +259,31 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         if (spu.getStatus() == 1) {
             throw new ServiceException("商品展示中，请先隐藏再删除");
         }
+        // 逻辑删除前刷新版本戳（「任何修改都刷新版本」的约束同样覆盖删除）
+        spu.setVersion(nowVersion());
+        updateById(spu);
         removeById(id);
         // 级联逻辑删除该商品全部 SKU
         skuService.removeBySpuId(id);
+    }
+
+    @Override
+    public SpuBySkuCodeVO findBySkuCode(String skuCode) {
+        if (!StringUtils.hasText(skuCode)) {
+            throw new ServiceException("SKU 编码不能为空");
+        }
+        String code = skuCode.trim();
+        SpuBySkuCodeVO vo = new SpuBySkuCodeVO();
+        long matched = skuService.countBySkuCode(code);
+        if (matched == 0) {
+            // 未命中不抛异常：店铺端允许「查不到照样自建」，由调用方按 spu==null 判定
+            vo.setMatchedSkuCount(0);
+            return vo;
+        }
+        GoodsSku sku = skuService.findFirstBySkuCode(code);
+        vo.setSpu(detail(sku.getSpuId()));
+        vo.setMatchedSkuCount(matched);
+        return vo;
     }
 
     @Override
@@ -396,7 +427,16 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         sku.setSpecAttrs(writeJson(skuDto.getSpecAttrs()));
         sku.setSkuCode(skuDto.getSkuCode());
         sku.setMainImage(skuDto.getMainImage());
+        sku.setVersion(nowVersion());
         skuService.save(sku);
+    }
+
+    /**
+     * 当前版本戳（Unix 毫秒）。
+     * 版本是业务字段而非审计字段（审计字段由 MyMetaObjectHandler 自动填充、禁止手写），故此处显式赋值
+     */
+    private long nowVersion() {
+        return System.currentTimeMillis();
     }
 
     /**
