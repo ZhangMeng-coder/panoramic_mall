@@ -23,7 +23,7 @@
 
 ## 鉴权配置
 
-`jwt-secret` / `jwt-expire-seconds` / `redis-prefix` / `header-name` / `whitelist-paths` 均来自 Nacos 共享配置 `auth.yml`（与签发端「端 BFF」同源）。**登录态键 = `panoramic:login:{type}:{userId}`**，`type` 取 JWT 的 `type` claim（缺省 `admin`）——键格式是网关 ↔ 端 BFF 的共享契约，不可单边改动。
+`jwt-secret` / `jwt-expire-seconds` / `redis-prefix` / `header-name` 来自 Nacos 共享配置 `auth.yml`（与签发端「端 BFF」同源）；`panoramic.auth.whitelist-paths` 则**各服务本地各自声明**（网关的放行清单形如 `/admin/auth/login`，与端 BFF 的 `/auth/login` 路径形态不同，不共享）。**登录态键 = `panoramic:login:{type}:{userId}`**，`type` 取 JWT 的 `type` claim（缺省 `admin`）——键格式是网关 ↔ 端 BFF 的共享契约，不可单边改动。
 
 ## 快速验证
 

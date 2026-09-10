@@ -75,9 +75,9 @@
 
 ## 配置说明
 
-- **数据源**：默认本机 `127.0.0.1:3306`（root/root，库 `panoramic_mall`）；连接远程/定制库请注入环境变量：
-  `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见 `application.yml`，账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置**：只引入 `datasource-mysql.yml`（业务库 + mybatis-plus）。**不引入 `datasource-redis.yml` / `auth.yml`**——本服务不依赖 `common-auth`，结构上拿不到认证链与 Redis，没有登录态可查（2026-09-10）
+- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：
+  `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
+- **Nacos 共享配置**：只引入 `datasource-mysql.yml`（业务库 + mybatis-plus），且 import **不带 `optional:`**（缺失即启动失败）。**不引入 `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`**——本服务不依赖 `common-auth`，结构上拿不到认证链与 Redis，没有登录态可查；也不走 Feign 客户端（2026-09-10）。一览表见 `../nacos-config/README.md`
 - **身份头**：`X-User-Id` / `X-User-Type`（网关注入 → admin BFF 经 Feign 原样透传），仅用于审计填充，不做校验
 - MyBatis-Plus：主键自增、`is_delete` 逻辑删除、驼峰映射、SQL 日志打印（StdOutImpl，上线前移除）
 - 启动类扫描 `com.panoramic` 以加载 common 中的字段自动填充等

@@ -80,7 +80,7 @@
 | Maven | 3.9+ | 后端构建 |
 | Node.js | ≥ 20.19 | 前端构建（Vite 7 要求） |
 | Nacos | `127.0.0.1:8848`（nacos/nacos） | 服务注册与发现 |
-| MySQL | 连接信息见后端配置 | 库 `panoramic_mall`；默认指向本机 `127.0.0.1:3306`（root/root），远程库通过环境变量 `MYSQL_HOST/MYSQL_PORT/MYSQL_USERNAME/MYSQL_PASSWORD/MYSQL_DB` 注入 |
+| MySQL | 连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供 | 库 `panoramic_mall`；默认指向 `123.56.117.17:3306`（root/root），其他库通过环境变量 `MYSQL_HOST/MYSQL_PORT/MYSQL_USERNAME/MYSQL_PASSWORD/MYSQL_DB` 注入 |
 
 ## 快速开始
 
@@ -88,6 +88,8 @@
 # 1. 启动外部依赖：Nacos、MySQL。
 #    库与表用各模块的 db/schema.sql 创建（均 IF NOT EXISTS，可重复执行）：
 #      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop + store_goods_*；store-bff → store_user
+#    另需把 backend/nacos-config/ 下的共享配置发布到 Nacos（服务侧 import 不带 optional:，缺任一则启动失败）：
+#      datasource-mysql.yml / datasource-redis.yml / auth.yml / feign-circuitbreaker.yml → 见 backend/nacos-config/README.md
 
 # 2. 安装后端父 POM 与 common / common-auth（首次或改动后）
 cd backend && mvn -N install && mvn -pl common,common-auth install

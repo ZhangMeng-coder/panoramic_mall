@@ -30,7 +30,8 @@
 
 - JDK 21、Maven 3.9+
 - Nacos 单机启动（默认 8848，账号 `nacos/nacos`）
-- MySQL 8 可用：各服务默认连接本机 `127.0.0.1:3306`（root/root，库 `panoramic_mall`）；连接远程库时通过环境变量注入，详见 `goods-center/README.md` 配置说明
+- MySQL 8 可用：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库时通过环境变量注入
+- **Nacos 共享配置已就位**：把 `nacos-config/` 下 4 个 data-id（`datasource-mysql` / `datasource-redis` / `auth` / `feign-circuitbreaker`）发布到 Nacos——服务侧 import **不带 `optional:`**，缺任一则启动失败。一览表与发布方式见 [nacos-config/README.md](nacos-config/README.md)
 
 ### 1. 构建
 
@@ -57,7 +58,9 @@ mvn -pl store spring-boot:run          # 店铺域 8083
 mvn -pl store-bff spring-boot:run      # 店铺端 BFF 8084
 ```
 
-> 配置说明：`application.yml` 中的 `@nacos.server-addr@` 等占位符由 Maven 资源过滤在构建时替换为父 POM properties 中集中定义的版本/地址。
+> 配置说明：
+> - `application.yml` 中的 `@nacos.server-addr@` 等占位符由 Maven 资源过滤在构建时替换为父 POM properties 中集中定义的版本/地址。
+> - **多服务复用的配置**（数据源 / Redis / 鉴权 / Feign 熔断）收敛在 Nacos 共享配置，服务侧经 `spring.config.import` 引入，**不带 `optional:`**——配置中心不可用或任一 data-id 缺失则启动失败。各服务加载矩阵与发布方式见 [nacos-config/README.md](nacos-config/README.md)。
 
 ### 3. 验证
 

@@ -5,11 +5,11 @@ spring:
   application:
     name: gateway
   config:
-    # 共享配置统一收敛到 Nacos：网关无需数据源，按需引入 datasource-redis / auth
-    # optional: 前缀——配置中心未就绪或某 dataId 缺失时服务仍能启动（用到对应能力时才报错）
+    # 共享配置统一收敛到 Nacos：网关无需数据源、不走 Feign 客户端，按需引入 datasource-redis / auth
+    # ⚠ 不带 optional: 前缀——配置中心不可用或某 dataId 缺失时**启动即失败**，不做静默降级
     import:
-      - optional:nacos:datasource-redis.yml
-      - optional:nacos:auth.yml
+      - nacos:datasource-redis.yml
+      - nacos:auth.yml
   cloud:
     nacos:
       # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）

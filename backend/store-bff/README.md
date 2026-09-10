@@ -55,7 +55,7 @@
 
 ## 编排与降级
 
-- `StoreShopBffService` / `StoreGoodsBffService`（`com.panoramic.storebff.bff`）只做编排：持 `StoreClient`（+ 后者另持 `GoodsCenterClient`），`call(Supplier)` 统一执行——下游**业务异常（400 参数/业务，如「审核中锁定」「提交前请补全」）原样透传**由 common 统一异常处理还原 `RespData` 给页面；**熔断/连接/序列化等降级**为「店铺服务暂不可用，请稍后重试」（resilience4j 参数见 `application.yml`，仿 admin BFF）。
+- `StoreShopBffService` / `StoreGoodsBffService`（`com.panoramic.storebff.bff`）只做编排：持 `StoreClient`（+ 后者另持 `GoodsCenterClient`），`call(Supplier)` 统一执行——下游**业务异常（400 参数/业务，如「审核中锁定」「提交前请补全」）原样透传**由 common 统一异常处理还原 `RespData` 给页面；**熔断/连接/序列化等降级**为「店铺服务暂不可用，请稍后重试」（resilience4j 参数见 Nacos 共享配置 `feign-circuitbreaker.yml`，与 admin BFF 同源一份）。
 - `StoreClient` 与共享 DTO/VO 上移 common（`com.panoramic.common.store`，同源一份）；出站**只**原样透传 `X-User-Id`/`X-User-Type`（**不做 goods 版「缺省回退 admin」写死兜底**，避免店主侧被盖成 admin）；**不再带 `X-Internal-Token`**（该信任头已于 2026-09-10 删除——store 域不鉴权）。
 - 熔断降级文案在 BFF 统一处理，店铺域下游故障不拖垮店主端。
 
@@ -76,6 +76,6 @@
 
 ## 配置说明
 
-- **数据源**：默认本机 `127.0.0.1:3306`（root/root，库 `panoramic_mall`）；连接远程/定制库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见 Nacos `datasource-mysql.yml`，账号密码勿写入代码或提交到仓库）
-- Nacos 共享配置：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml`（jwt-secret/redis-prefix/header-name 由端 BFF 与 gateway 同源；域服务不引入后两者）
+- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
+- **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`（jwt-secret/redis-prefix/header-name 由端 BFF 与 gateway 同源；熔断参数与 admin 同源一份）。import **不带 `optional:`**——缺任一则启动失败，一览表见 `../nacos-config/README.md`
 - 响应结构：成功 `code=200`；业务校验失败 `code=400` 携带中文提示；店铺未过审 `code=403`；下游不可用统一 `code=500`（store 域「店铺服务暂不可用」/ 中台「商品服务暂不可用」）

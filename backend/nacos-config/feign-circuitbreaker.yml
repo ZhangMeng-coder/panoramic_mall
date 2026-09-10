@@ -1,0 +1,49 @@
+# ============================================================
+# Nacos 共享配置：Feign 熔断（data-id: feign-circuitbreaker.yml, GROUP: DEFAULT_GROUP）
+# 由端 BFF（admin / store-bff）经 spring.config.import 加载。gateway 与业务域
+# （goods-center / store）不加载——它们不走 Feign 客户端。
+#
+# 为什么收敛到这里：admin 与 store-bff 的这段配置**逐字相同**，原先各持一份——
+# 改一个阈值要改两处并重新打包两个服务；2026-09-10 修「业务 4xx 误计熔断」时就是两边同改的。
+# 收进 Nacos 后单点维护，两个端 BFF 引用同一份。
+#
+# ⚠ 本文件在 application.yml 的 import 中**不带 optional:** 前缀：
+#   缺本配置时服务启动即失败，而不是静默回落到 resilience4j 默认值——默认 TimeLimiter 是 1s，
+#   正是 2026-09-10 修掉的那个坑（偶发慢查询被掐断并计入失败、累积打开熔断）。
+# ============================================================
+spring:
+  cloud:
+    openfeign:
+      # 开启 Feign 的 resilience4j 熔断（经 Feign circuitbreaker 生效）：
+      # 下游故障经熔断器快速失败、不拖垮调用方；降级文案在各端 BFF 的编排 service 统一处理
+      circuitbreaker:
+        enabled: true
+
+# 端 BFF → 业务域内部 Feign 的熔断参数（resilience4j，经 Feign circuitbreaker 生效）。
+# ⚠ Feign 熔断会把调用放到独立线程执行并套 TimeLimiter：默认 1s 对含远程 DB/Redis 往返的内部调用偏紧，
+#   上游偶发慢查询即被掐断并计入失败、累积打开熔断（表现为页面 500「…服务暂不可用」）。
+#   这里显式放宽并给出可接受的降级/恢复节奏；两个端 BFF 同源一份，与 common 的 Feign 规约配套。
+#
+# ⚠ ignore-exceptions：业务 4xx 不计入熔断失败率（2026-09-10 修正）。
+#   域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 common 的
+#   InternalApiErrorDecoder 还原为 ServiceException，但它们是**调用方语义/参数错误，不是下游健康度信号**。
+#   若不忽略：连续几次操作失误（默认窗口 10 次 / 最少 5 次 / 失败率 >50%）就会打开熔断，
+#   把后续**正常**请求也降级成 500「…服务暂不可用」，错误文案与真实原因完全脱节。
+#   忽略后 4xx 既不计失败也不计成功；**5xx 仍走 FeignException 照常计入**（下游故障保护不变）——
+#   这个 4xx/5xx 的分野由 InternalApiErrorDecoder 按 HTTP 状态码划分，见该类的类注释。
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10          # 统计窗口调用数
+        minimum-number-of-calls: 5       # 打开判断所需最少调用数
+        failure-rate-threshold: 50       # 失败率超过 50% 打开
+        permitted-number-of-calls-in-half-open-state: 3  # 半开试探数
+        wait-duration-in-open-state: 10s # 打开后多久进入半开
+        ignore-exceptions:               # 不计入失败率：下游业务 4xx（调用方语义错误），5xx 仍计入
+          - com.panoramic.common.exception.ServiceException
+  timelimiter:
+    configs:
+      default:
+        timeout-duration: 10s            # 单次内部调用上限（覆盖框架默认 1s）
+        cancel-running-future: true      # 超时取消进行中的调用
