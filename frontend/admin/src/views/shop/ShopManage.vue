@@ -25,9 +25,6 @@
           <el-link type="primary" @click="openDetail(row)">{{ row.shopName }}</el-link>
         </template>
       </el-table-column>
-      <el-table-column label="店主账号" min-width="130">
-        <template #default="{ row }">{{ row.ownerUsername || '-' }}</template>
-      </el-table-column>
       <el-table-column label="联系人 / 电话" min-width="170">
         <template #default="{ row }">
           <span v-if="row.contactName">{{ row.contactName }}</span>
@@ -86,7 +83,6 @@
         </div>
         <el-descriptions :column="1" border class="detail-desc">
           <el-descriptions-item label="店铺ID">{{ detail.id }}</el-descriptions-item>
-          <el-descriptions-item label="店主账号">{{ detail.ownerUsername || '-' }}</el-descriptions-item>
           <el-descriptions-item label="店铺简介">{{ detail.intro || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系人">{{ detail.contactName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="联系电话">{{ detail.contactPhone || '-' }}</el-descriptions-item>
@@ -113,7 +109,7 @@
     <el-dialog v-model="auditVisible" title="店铺审核" width="460px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="店铺">
-          <span>{{ auditShop?.shopName }}（店主：{{ auditShop?.ownerUsername || '-' }}）</span>
+          <span>{{ auditShop?.shopName }}</span>
         </el-form-item>
         <el-form-item label="审核结果">
           <el-radio-group v-model="auditForm.approved">

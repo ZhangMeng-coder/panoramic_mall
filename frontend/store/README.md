@@ -1,6 +1,6 @@
 # store — 全景商城店铺端（店主侧）
 
-商城店铺端独立前端项目（Vue 3 + Vite + Element Plus），端口 **5174**，经网关（8080）调 `store-center`（:8083）接口，前端根前缀 `/store`。
+商城店铺端独立前端项目（Vue 3 + Vite + Element Plus），端口 **5174**，经网关（8080）调 `store-bff`（店铺端 BFF，:8084）接口（店铺数据再经其编排落 store 域），前端根前缀 `/store`。
 
 > 当前为 **Phase 1 店铺管理**：店主注册登录 → 维护店铺信息并提交审核 → 平台审核通过后开放后续开店业务入口（本期商品/订单/库存为占位假页面）。
 
@@ -34,7 +34,7 @@
 
 ```bash
 npm install
-npm run dev       # → http://localhost:5174（需后端网关 8080 / admin 8082 / store-center 8083 已启动，且库已建表）
+npm run dev       # → http://localhost:5174（需后端网关 8080 / store 域 8083 / store-bff 8084 已启动，且库已建表）
 npm run build     # 产物输出 dist/
 ```
 

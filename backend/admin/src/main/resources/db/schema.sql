@@ -157,7 +157,7 @@ UPDATE sys_permission SET route = '/role'       WHERE id = 12 AND route IS NULL;
 UPDATE sys_permission SET route = '/permission' WHERE id = 13 AND route IS NULL;
 
 -- ============================================================
--- 幂等权限种子：店铺管理（平台 admin 后台，业务落在 store-center /store/admin/**）
+-- 幂等权限种子：店铺管理（平台 admin 后台，业务经 admin 端 BFF /admin/shop/** 编排落 store 域）
 --   顶级目录(4) → 页面 店铺列表(41, 带路由 /shop，perms=store:shop) → 按钮 查询/审核
 -- 角色授权见 db/backfill-store-permission.sql（自动补发给后端管理角色）或「角色管理→分配权限」UI。
 -- ============================================================

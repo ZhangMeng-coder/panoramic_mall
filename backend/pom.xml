@@ -21,7 +21,8 @@
     <modules>
         <module>gateway</module>
         <module>goods-center</module>
-        <module>store-center</module>
+        <module>store</module>
+        <module>store-bff</module>
         <module>admin</module>
         <module>common</module>
     </modules>

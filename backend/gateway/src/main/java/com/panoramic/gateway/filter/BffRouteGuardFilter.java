@@ -22,13 +22,12 @@ import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.G
 
 /**
  * 网关「公网入口=BFF」路由守卫（WebFlux，不依赖 common）
- * <p>网关是唯一公网入口，语义上只允许把请求转发给「端 BFF」服务；业务域服务（goods-center 等）
+ * <p>网关是唯一公网入口，语义上只允许把请求转发给「端 BFF」服务；业务域服务（goods-center / store 等）
  * 只被 BFF 经注册中心内部 Feign 调用，不可经网关被页面直连。</p>
  * <p>实现为白名单守卫：匹配到的路由若转发到 {@code panoramic.gateway.bff-services}（lb:// 服务名）
  * 之外的任何上游，一律回 HTTP 403。即便后续误加了一条指向域服务的路由，也会被这里默认拒绝，
  * 而不是默默暴露成公网入口。仅接受 lb 路由；非 lb 直连路由视为非 BFF 入口一并拒绝。</p>
- * <p>白名单不写死、放配置：store-center 目前兼店铺端后端（店铺端 BFF 角色），待其拆出 store-bff 后，
- * 把名单里的 store-center 换成 store-bff 即可。</p>
+ * <p>白名单不写死、放配置：store-center 已拆出 store-bff（店铺端 BFF），名单为 admin,store-bff。</p>
  */
 @Component
 public class BffRouteGuardFilter implements GlobalFilter, Ordered {

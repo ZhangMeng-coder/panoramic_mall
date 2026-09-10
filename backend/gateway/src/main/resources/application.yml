@@ -26,31 +26,29 @@ spring:
           routes:
             # 网关公网入口只转发「端 BFF」服务（白名单见下方 panoramic.gateway.bff-services，
             # BffRouteGuardFilter 强制校验：转发到名单外服务/域服务一律 403）。
-            # goods-center（标准商品平台）已下沉为纯域：不开公网路由，仅被 admin 等端 BFF 经注册中心
-            # 内部 Feign（/internal/goods/**）调用。
+            # 业务域服务（goods-center / store）不开公网路由：仅被端 BFF 经注册中心内部 Feign
+            # （/internal/goods/**、/internal/store/**）调用。
             - id: admin-route
               uri: lb://admin
               filters:
                 - StripPrefix=1
               predicates:
                 - Path=/admin/**
-            - id: store-center-route
-              # store-center 目前兼店铺端后端（店铺端 BFF 角色），作为白名单上游对店铺端/admin 店铺管理开放；
-              # 拆出 store-bff 后改指向 store-bff，store-center 不再对外。
-              uri: lb://store-center
+            - id: store-bff-route
+              # 店铺端 BFF（store-bff）对店铺端开放（账号/登录 + 店铺资料编排）；store 域已下沉为纯域，不对外。
+              uri: lb://store-bff
               filters:
                 - StripPrefix=1
               predicates:
                 - Path=/store/**
 
 # —— 网关公网策略（panoramic.* 为自定义配置，不入 spring.cloud 前缀）——
-# 【公网入口=BFF 白名单】网关只允许把请求转发到「端 BFF」服务；业务域服务（goods-center 等）不可经网关被页面直连，
+# 【公网入口=BFF 白名单】网关只允许把请求转发到「端 BFF」服务；业务域服务（goods-center / store 等）不可经网关被页面直连，
 # 只由 BFF 经注册中心内部 Feign 调用。名单为注册中心 lb:// 服务名（对应上方 routes），
 # 被声明路由若转发到名单外服务，会被 BffRouteGuardFilter 直接 403（白名单外默认拒绝）。
-# store-center 目前兼店铺端后端（店铺端 BFF 角色）；拆出 store-bff 后此处改指向 store-bff，store-center 不再对外。
 # 【鉴权白名单】登录/注册接口放行，其余先验 JWT+Redis；jwt-secret/redis-prefix/header-name 由 Nacos auth.yml 统一提供，不再重复。
 panoramic:
   gateway:
-    bff-services: admin,store-center
+    bff-services: admin,store-bff
   auth:
     whitelist-paths: /admin/auth/login,/store/auth/login,/store/auth/register,/discovery/**

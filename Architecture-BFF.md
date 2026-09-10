@@ -30,7 +30,7 @@
 | 19 | 物流 / 发货单 | 规划 | 店铺填物流号→已发货 |
 | 20 | 退款 / 退货单 | 规划 | 退款退货流程（平台可介入） |
 | 21 | 评价 | 规划 | 顾客对订单的评价，分数影响店铺信誉 |
-| 22 | 店铺信誉评分 | 规划 | store-center 明确职责（未做） |
+| 22 | 店铺信誉评分 | 规划 | store 域明确职责（未做） |
 | 23 | 广告位 | 规划 | Architecture.md 单列，归属 ⚠ |
 | 24 | 顾客账号 | 推导 | 业务流 6 明确"用户需登录下单"，后端至今没有顾客主体，必须补 ⚠ |
 | — | （收货地址） | 推导/可选 | 下单收货必需，本轮不主列，建议补 |
@@ -57,11 +57,11 @@
 ### 域 C · 店铺与商铺商品域 —— 归属 `store`（下沉纯域）
 实体：11 店铺、22 店铺信誉评分、12 店铺在售 SPU、13 店铺在售 SKU、14 店铺库存
 - 数据被多端读/写 → 共享下沉域，统一经 store-api 暴露：店铺资料/审核状态/信誉 → admin（审核/运营）；上架目录 + 信誉 → mall（顾客浏览）；店主自己的店铺/商品 → store-bff（店主后台编排）。
-- 店铺表自带 `owner_user_id` 归属字段 → 店主范围判定 =「店铺.owner_user_id == 调用方 userId」，本域**不需要 store_user 表**即可完成店主身份的作用域校验。
+- 【账号店同 ID（2026-09-07 落地）】store_shop 删除 `owner_user_id`（连同其 UNIQUE），改「店铺主键 id == 店主账号 id」（一人一店）；店主范围判定 =「store_id(=账号 id)==店铺主键」，域内按 **store_id 通用数据权限**适配（owner 只作用于「id==store_id 的店」、platform 全量），本域**不持有 store_user 表**即可完成店主身份的作用域校验。
 
 ### 店主账号（store_user）—— 端私有，归属 `store-bff`
 - store_user 与 store_shop 本就是两张表、职责可拆：store_user 只被店主端登录/签发这一个端使用 → 命中"只被一个端用 → 可随端"的判据，随 store-bff。
-- 关联（store_shop.owner_user_id → store_user.id）跨服务只作 **id 引用**、不做联查；店主登录后由 store-bff 调 store 域反查"我的店"，带出 owner 范围。
+- 「账号店同 ID」即唯一关联：store_shop.id == 店主账号 id（一人一店），跨服务只作 id 引用、不做联查；store-bff 登录后以**自己账号 id 作为 store_id** 调 store 域 owner 接口（无需按 owner_user_id 反查"我的店"）。
 
 ### 域 D · 消费者与交易域 —— 归属 `trade-center`（未来下沉，当前未建）
 实体：24 顾客账号、15 购物车 ⚠、16 订单、17 订单明细（快照）、18 支付记录、19 物流/发货单、20 退款/退货单、21 评价
@@ -94,7 +94,10 @@
 | mall-bff | 端 BFF，纯聚合 | 几乎无（⚠ 购物车端私有可选） | 待建 |
 | trade-center | 下沉纯域 D | 顾客/购物车/订单/支付/物流/退款/评价 | 待建 |
 
-网关：职责从"路由到域服务"改为"路由到 BFF（+全局粗校验/放行公开路由）"；域服务不再暴露公网路由。BFF↔域走注册中心内部调用。**落地状态（2026-09-06，admin↔goods-center 切片）**：common 已落内部 Feign 客户端（`com.panoramic.common.goods.api`）+ resilience4j 熔断 + 服务间信任头（`X-Internal-Token`），goods-center 收口为 `/internal/goods/**` 纯域不再公网暴露、admin 做 BFF 编排——M0/M1/M2 完成；store/goods、mall/trade 等其余切面待后续按同规约补齐。
+网关：职责从"路由到域服务"改为"路由到 BFF（+全局粗校验/放行公开路由）"；域服务不再暴露公网路由。BFF↔域走注册中心内部调用。**落地状态**：
+- 2026-09-06（admin↔goods-center 切片）：common 落内部 Feign 客户端（`com.panoramic.common.goods.api`）+ resilience4j 熔断 + 信任头（`X-Internal-Token`），goods-center 收口 `/internal/goods/**` 纯域、admin 做 BFF 编排。
+- 2026-09-07（store-center 下沉切片）：store-center 拆为 **store**（下沉纯域，仅持 store_shop，`/internal/store/**`）+ **store-bff**（店铺端 BFF，持 store_user）；账号店同 ID（D4）、store_id 通用数据权限（D5）、admin 不读账号（D6）；common 上移 `com.panoramic.common.store` 共享类型 + `StoreClient`；admin 店铺管理 BFF 编排、网关白名单收敛为 `admin,store-bff`。
+- mall/trade 等其余切面待后续按同规约补齐。
 
 ---
 
@@ -130,12 +133,12 @@
 - **大致功能**
   - 以领域能力暴露"店铺 + 在售商品"整条数据，供三类主体消费：admin（平台身份）店铺审核/查询/停用、上架商品运营；mall（公开）店铺资料/信誉/上架目录；store-bff（店主 owner）自己店铺与在售商品的操作。
   - 在售商品建模（从中台模板导入生成 / 自建、填价格库存、上下架、模板同步覆盖）作为本域领域动作。
-- **提供的接口（共享面 store-api，Feign）**
-  - 店铺：查询、审核（平台身份触发）、停用、资料更新（owner）、信誉详情。
-  - 在售商品：按店 CRUD、由模板生成在售、模板同步覆盖、上下架、上架目录查询（公开读）。
-  - 【现状逻辑归位】AdminShopController（平台身份审店）→ 本域平台能力；ShopController（mine/save/submit）→ 由 store-bff 编排后落到本域 owner 操作。
+- **提供的接口（共享面 store-api，Feign，已收敛为内部 `/internal/store/**`，2026-09-07）**
+  - 店铺：owner=「mine/save/submit」（store-bff 调用，必带 store_id）、platform=「page/detail/audit」（admin 调用，不传 store_id 全量）；停用、资料更新、信誉详情等后续按同规约补齐。
+  - 在售商品（后续切片）：按店 CRUD、由模板生成在售、模板同步覆盖、上下架、上架目录查询（公开读）。
+  - 原 store-center 的 AdminShopController（平台身份审店）→ 本域 platform 能力；原 ShopController（mine/save/submit）→ store-bff 编排后落本域 owner 操作。
 - **谁调它**：admin、mall-bff、store-bff 三个 BFF 都消费；trade-center（未来）跨域写（扣库存/回写信誉）。
-- **备注**：纯共享域，不带店主登录与页面编排；范围判定留在本域——店主=「店铺.owner_user_id == userId」、admin=平台身份全量、mall=公开读上架。不持有 store_user。
+- **备注**：纯共享域，不带店主登录与页面编排；本域按调用意图（X-User-Type）与数据作用域约束：owner=「id==store_id 的店」（账号店同 ID，防越权）、platform(admin)=全量、mall=公开读上架；owner 归属收敛在 store-bff，域内只做执行 + store_id 校验（D5）。不持有 store_user，admin 不读店主账号（D6）。
 
 ### store-bff —— 店主端 BFF（只持 1 个实体：store_user）
 
@@ -143,12 +146,12 @@
 - **大致功能**
   - 店主注册/登录/签发、店主会话（store_user 是 store-bff 唯一自有实体）。
   - 店主后台页面编排：入驻与店铺资料（→store）、我的商品（模板检索→goods-center、在售 CRUD/同步→store）、我的订单履约（→trade-center，未来）、经营报表（聚合）。
-  - 登录后解析"我的店"：调 store 域按 owner_user_id 取回 shopId，随请求带上 owner 范围。
-- **提供的接口（店主端，给 store 前端）**
-  - 【现状已有】`store/auth`(register/login/logout/me)、`shops`(mine/save/submit——save/submit 编排到 store 域)。
+  - 账号店同 ID：登录后**账号 id 即 store_id**，mine/save/submit 直接以账号 id 作 store_id 调 store 域 owner 接口（无需反查"我的店"）。
+- **提供的接口（店主端，给 store 前端，路径不变 2026-09-07）**
+  - 【现状已有】`/store/auth`(register/login/logout/me)、`/store/shops`(mine/save/submit——经 StoreClient 编排到 store 域 owner 接口)。
   - 【规划】我的商品管理、订单履约、报表。
 - **谁调它**：只有 store 前端。
-- **备注**：借 store_user 与 store_shop 两张表的天然切缝，把"端私有登录"和"共享店铺数据"拆开，比合一两脸更干净——共享数据域统一下沉、端私有统一随 BFF，只有 admin(sys_*) 因纯端私有而合一。代价：登录/每会话需向 store 域多一次"反查我的店"。现 store-center 拆解：store_user→store-bff；store_shop 及将来在售商品→store。
+- **备注**：借 store_user 与 store_shop 两张表的天然切缝，把"端私有登录"和"共享店铺数据"拆开，比合一两脸更干净——共享数据域统一下沉、端私有统一随 BFF，只有 admin(sys_*) 因纯端私有而合一。落地为「账号店同 ID」后无额外反查开销：store_id=账号 id。原 store-center 拆解：store_user→store-bff；store_shop 及将来在售商品→store。
 
 ### mall-bff —— 商城顾客端 BFF（纯聚合，待建）
 
@@ -190,7 +193,9 @@
 | mall-bff | trade-center（未来） | 顾客登录/购物车/下单/支付/评价 |
 | trade-center（未来） | store | 下单扣库存、评价回写信誉（跨域写，经 store-api，⚠） |
 | admin | goods-center | ✅ 已落地（2026-09-06）：Feign + 熔断 + 信任头，见 common `GoodsCenterClient` |
-| store-bff（未来） | goods-center / store | 待后续切片按同规约补齐（common 基建已就绪） |
+| admin | store | ✅ 已落地（2026-09-07）：平台店铺分页/详情/审核，见 common `StoreClient` + admin `StoreShopBffService`（不读店主账号） |
+| store-bff | store | ✅ 已落地（2026-09-07）：店主 mine/save/submit，store_id=账号 id，见 common `StoreClient` + store-bff `StoreShopBffService` |
+| store-bff | goods-center | 待后续切片（店主建品导模板/同步覆盖，common Feign 基建已就绪） |
 
 ---
 

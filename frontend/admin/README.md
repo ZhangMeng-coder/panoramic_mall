@@ -1,6 +1,6 @@
 # admin — 全景商城后台管理
 
-后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用后端商品中心（goods-center）、平台管理（admin）与店铺中心（store-center）接口。
+后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用平台管理（admin，端 BFF）接口；admin 再经内部 Feign 编排商品域（goods-center）、店铺域（store）。
 
 ## 主题与设计令牌（Design Tokens）
 
@@ -21,7 +21,7 @@
 | 用户管理 | `/user` | 列表内联展示已分配角色（多角色并排标签）；用户分页（关键字/状态筛选）+ CRUD；密码 BCrypt 存储，编辑留空不改密码；分配角色（全角色勾选回显、可整体替换/清空） |
 | 角色管理 | `/role` | 角色分页 + CRUD；分配权限（权限树勾选，父节点级联全选子级、可清空）；分配用户（左侧展示“不在该角色内”的用户分页可加，右侧已分配可移除） |
 | 权限管理 | `/permission` | 权限树表格展示（el-table 树形数据：目录/页面/按钮逐级递减，含权限字符串、页面级路由地址）；行悬停新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；页面(2)级权限带路由地址 `route`，供前端菜单导航 |
-| 店铺管理 | `/shop` | 店主店铺列表（店铺名关键字 + 审核状态筛选、状态 badge 草稿/待审核/已通过/已驳回）；详情抽屉（资质字段只读回显 + 店主账号）；审核弹窗：通过 / 驳回（驳回原因必填），按钮挂 `v-perm`（`store:shop:list/audit`） |
+| 店铺管理 | `/shop` | 店主店铺列表（店铺名关键字 + 审核状态筛选、状态 badge 草稿/待审核/已通过/已驳回）；详情抽屉（资质字段只读回显）；审核弹窗：通过 / 驳回（驳回原因必填），按钮挂 `v-perm`（`store:shop:list/audit`）。不显示店主登录账号 |
 
 > 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（按当前登录用户角色过滤 `menusByRoleIds`：商品中台 / 系统管理 / 店铺管理 目录→页面，页面携带 `route`）；改动角色/权限后需**重新登录**刷新 Redis 快照。
 
@@ -35,14 +35,14 @@
 ## 技术要点
 
 - **响应拦截**：`axios` 拦截器校验 `RespData.code === 200` → 直接返回 `data`；否则 `ElMessage.error(msg)` 并 reject（业务提示统一来自后端）
-- **代理**：`vite.config.js` 将 `/goods`、`/admin`、`/store`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到 goods-center/admin/store-center）
+- **代理**：`vite.config.js` 将 `/admin`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到端 BFF admin）
 - 分页参数为 `pageNum/pageSize`，与后端 `BasePageVO` 对应
 
 ## 本地开发
 
 ```bash
 npm install
-npm run dev       # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store-center 8083 已启动）
+npm run dev       # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store 8083 已启动）
 npm run build     # 产物输出 dist/
 ```
 

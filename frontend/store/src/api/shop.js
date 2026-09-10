@@ -1,7 +1,7 @@
 import request from './request'
 
 /**
- * 店主店铺 API（经网关 /store/** 前缀转发到 store-center）
+ * 店主店铺 API（经网关 /store/** 前缀转发到 store-bff，店铺数据由 store-bff 编排落 store 域）
  */
 export const shopApi = {
   /** 我的店铺（未创建返回 null） */

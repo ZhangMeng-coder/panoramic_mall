@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     port: 5174,
     // 开发代理：/store 转发到 API 网关（8080）
-    // 链路：5174/store/xxx -> 网关 8080（StripPrefix=1）-> store-center 8083
+    // 链路：5174/store/xxx -> 网关 8080（StripPrefix=1）-> store-bff 8084（店铺端 BFF）-> 内部 Feign -> store 域 8083
     proxy: {
       '/store': {
         target: 'http://localhost:8080',
