@@ -1,5 +1,6 @@
-package com.panoramic.common.security;
+package com.panoramic.common.auth;
 
+import com.panoramic.common.security.LoginUser;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -12,7 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 /**
- * JWT 服务：签发（admin/店主登录）与解析（common AuthFilter 兜底取 userId / userType）。
+ * JWT 服务：签发（admin / store-bff 各自登录）与解析（{@link AuthTokenFilter} 兜底取 userId / userType）。
  * <p>约定：token 只携带 userId（subject）与用户类型（type claim）两个维度，
  * 不塞其它业务信息——用户上下文统一从 Redis 按 {type}:{userId} 取。</p>
  */

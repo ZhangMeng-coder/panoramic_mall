@@ -59,6 +59,19 @@ public class UserContext {
     }
 
     /**
+     * 获取当前用户的身份类型
+     * <p>未登录或类型为空时回退 {@code admin}（与 {@link LoginUser} 的缺省语义一致）——
+     * 审计值只增不减：有 userId 就应写出可读的操作人标识。</p>
+     *
+     * @return admin/store/user；未登录回退 admin
+     */
+    public static String getUserType() {
+        LoginUser user = LOGIN_USER.get();
+        String userType = user == null ? null : user.getUserType();
+        return userType == null || userType.isBlank() ? LoginUser.USER_TYPE_ADMIN : userType;
+    }
+
+    /**
      * 获取当前用户名
      *
      * @return 用户名，可能为 null

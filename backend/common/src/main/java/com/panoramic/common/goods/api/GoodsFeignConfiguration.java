@@ -1,7 +1,6 @@
 package com.panoramic.common.goods.api;
 
 import com.panoramic.common.feign.InternalApiErrorDecoder;
-import com.panoramic.common.feign.InternalHeaders;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import feign.RequestInterceptor;
@@ -17,10 +16,10 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  * goods-center 内部 Feign 客户端配置（随 {@link GoodsCenterClient} 的 configuration 生效）。
  * <p>仅作为 Feign 客户端配置类被引用，不参与组件扫描（避免全局作用到所有 Feign 客户端）。
  * <ul>
- *   <li>{@link RequestInterceptor}：为每个出站内部调用附带信任头，并把主身份（X-User-Id）与
- *       用户类型（X-User-Type）透传给下游（优先取当前 Web 请求上 gateway 透传的身份头，经
- *       RequestContextHolder 跨熔断线程读取；兜底取请求线程 UserContext），供 goods-center 经
- *       Redis 重建登录用户做最终范围判定；</li>
+ *   <li>{@link RequestInterceptor}：为每个出站内部调用把主身份（X-User-Id）与用户类型
+ *       （X-User-Type）透传给下游（优先取当前 Web 请求上 gateway 透传的身份头，经
+ *       RequestContextHolder 跨熔断线程读取；兜底取请求线程 UserContext），供 goods-center 填充
+ *       审计字段（{@code UserContext}）；⚠ goods-center 已不做权限判定，也不再校验信任头令牌；</li>
  *   <li>{@link ErrorDecoder}：把下游非 2xx 的 {@code {code,msg}} 响应还原为业务异常。</li>
  * </ul></p>
  */
@@ -28,12 +27,8 @@ public class GoodsFeignConfiguration {
 
     @Bean
     public RequestInterceptor goodsInternalRequestInterceptor(
-            @Value("${panoramic.auth.header-name:X-User-Id}") String userIdHeader,
-            @Value("${panoramic.internal.secret:panoramic-mall-internal-dev-token}") String trustToken) {
+            @Value("${panoramic.auth.header-name:X-User-Id}") String userIdHeader) {
         return template -> {
-            // 信任头 + 范围（预留）；令牌与 goods-center 本地校验值一致，勿单边改动
-            template.header(InternalHeaders.TRUST_TOKEN, trustToken);
-            template.header(InternalHeaders.TRUST_SCOPE, InternalHeaders.SCOPE_PLATFORM);
             // 主身份透传。⚠ 不能只读 UserContext(ThreadLocal)：Feign 熔断会把调用挪到其它线程执行，
             // 自定义 ThreadLocal 不会随线程迁移；而 OpenFeign 会在熔断线程上恢复 RequestContextHolder，
             // 故主身份以「当前 Web 请求上 gateway 透传的 X-User-Id/X-User-Type」为首选来源。

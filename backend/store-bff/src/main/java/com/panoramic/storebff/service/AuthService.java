@@ -2,9 +2,9 @@ package com.panoramic.storebff.service;
 
 import com.panoramic.common.enums.ServiceExceptionEnums;
 import com.panoramic.common.exception.ServiceException;
-import com.panoramic.common.security.JwtService;
+import com.panoramic.common.auth.JwtService;
 import com.panoramic.common.security.LoginUser;
-import com.panoramic.common.security.LoginUserCacheService;
+import com.panoramic.common.auth.LoginUserCacheService;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.storebff.dto.LoginDTO;
 import com.panoramic.storebff.dto.RegisterDTO;

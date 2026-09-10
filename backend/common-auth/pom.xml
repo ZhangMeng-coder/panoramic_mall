@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.panoramic</groupId>
+        <artifactId>panoramic-mall-backend</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>common-auth</artifactId>
+    <name>common-auth</name>
+    <description>鉴权装配层（端 BFF 专用）：JWT 签发/校验 + Redis 登录态缓存 + 安全过滤链</description>
+
+    <!--
+      ⚠ 本模块只被「端 BFF」（admin / store-bff / 未来的 mall-bff）依赖。
+      业务域服务（goods-center / store）只依赖 common，故结构上拿不到本模块，
+      也就不会装配 SecurityConfig/AuthTokenFilter/LoginUserCacheService/JwtService，
+      从而不需要 Redis 与 auth.yml（域服务只做执行 + 审计填充，不做鉴权）。
+    -->
+    <dependencies>
+        <!-- common 基座：LoginUser / UserContext / RespData / BaseEntity / 异常 / 分页 / Feign 契约 -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- Redis：登录用户上下文缓存（key = panoramic:login:{type}:{userId}） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!-- JWT：登录签发 + AuthTokenFilter 兜底解析 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- Lombok（@Slf4j） -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <!-- common-auth 为装配层工具包，无启动类，跳过 repackage -->
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

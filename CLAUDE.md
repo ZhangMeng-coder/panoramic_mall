@@ -6,6 +6,7 @@
 
 - **CRUD 交给 MyBatis-Plus 基类**：每个实体有独立 service，接口 `extends IService<T>`、实现 `extends ServiceImpl<XxxMapper, Xxx>`。own-entity 的增删改查（`save`/`updateById`/`removeById`/`getById`/`list`/`page`/`count` 等）直接用基类内置方法，能用组件实现就不新写逻辑、不直接用 own Mapper。纯关联表（如 `sys_user_role`、`sys_role_permission`）也要建 service。
 - **审计字段交给自动填充，禁止手写赋值**：所有业务实体一律 `extends BaseEntity`，`create_user/update_user/create_time/update_time` 由 common 的 `MyMetaObjectHandler` 经 `UserContext` 自动填充，代码**不得**显式赋值（不得出现 `setCreateUser/setUpdateUser/setCreateTime/setUpdateTime`），也不得绕过 `save/updateById` 等触发填充的 MP 基类方法。纯关联表（无审计列、物理删除，如 `sys_user_role`/`sys_role_permission`）除外，维持现状。
+  - **审计值格式为 `UserType:UserId` 字符串**（如 `admin:1` / `store:7`）：多端身份空间（admin/store/user）下同一 id 可能指向不同的人，带类型前缀消歧。故 `BaseEntity.createUser/updateUser` 是 **`String`**，数据库列为 `VARCHAR(32)`（不是 INT）；取不到 userId 时留空，类型缺失时由 `UserContext.getUserType()` 回退 `admin`。
 - **跨实体只走 owner service**：Service 内禁止直接持有/调用其他实体的 Mapper；要读写别的实体，必须调用该实体自己的 service（对方缺能力时先在对方 service 上加方法再回来调）。
 - **内容归其所属实体的 controller**：不局限在实体 controller 里查询无关内容——要查什么内容，就调什么实体的 controller/service。例：不要在 RoleController/RoleService 里查 User 相关内容。
 - **数据验证层的循环引用**用 Spring `@Lazy` 断环（需在模块 `lombok.config` 加 `lombok.copyableAnnotations += org.springframework.context.annotation.Lazy` 使其进入构造参数）。
@@ -15,12 +16,21 @@
 
 目标分层（详见 `Architecture-BFF.md`，收口路线见 `todo.md`）：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` 与 `store-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由。mall-bff、trade-center 等仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
 
+**模块归属（鉴权装配层已独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/Feign 契约）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类，放 `common-auth`；只被业务代码共用的放 `common`。
+
 **Feign 内部接口规约（BFF → 域，M0 起一律遵守）**：
 - **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
 - **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
 - **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
-- **信任与防线（权限判定收敛在端 BFF）**：内部调用带信任头（主身份 + type + scope）。goods-center 信任内部令牌与 BFF 透传身份，**只负责执行 + 审计填充**（user_id 直取 X-User-Id 填 `UserContext`，不再打 Redis 重建登录用户），**不再做权限判定**——端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。
-- **store 域例外（已落地，勿再倒退回"纯执行"假设）**：store 采用 **store_id 通用数据权限适配**（D5）：域内不持 store_user，以透传的 `X-User-Type`（store/admin）分流 owner/platform——owner 方法由 store-bff 触发，强制 `store_id` 且只作用于「id==store_id 的店」（**账号店同 ID**，D4，store_shop 主键==店主账号 id、无 owner_user_id 列，店主归属收敛在 store-bff）；platform 方法由 admin 触发、不传 store_id 全量。`audit_by` 直取 X-User-Id 仅记录，不与平台账号联查（D6）。新增 store 域方法时按「作用对象表是否带 store_id 列 + 调用意图」决定套 owner(限 store_id)/platform(全量) 哪一侧，勿照搬 goods 的纯执行形态。
+- **信任与防线（鉴权与权限判定全部收敛在端 BFF）**：**域服务不做任何鉴权、不做任何权限判断、不校验 token**。内部调用只透传身份头 `X-User-Id` / `X-User-Type`（网关注入 → 端 BFF 经 Feign 原样转发），域服务把它直取填 `UserContext`，**仅用于两件事**：审计字段自动填充（`UserType:UserId`）与 `audit_by` 留痕——读 ≠ 判断，读身份不等于做鉴权。端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。⚠ **不再有内部令牌 `X-Internal-Token`**（已删除）：域端口只在内网可达是前提，否则可伪造 `X-User-Id`——防线在网络层，不在应用层。
+  - **缺头即不填充、不拦截**：域内身份过滤器（`GoodsUserIdentityFilter` / `StoreUserIdentityFilter`）在缺 `X-User-Id` 时直接放行（审计留空），**不得回 401**——那等于在域内做鉴权。
+- **store 域的数据权限（D5，已按新边界改写）**：store 采用 **store_id 通用数据权限适配**：域内不持 store_user，owner 侧方法带 `store_id` 参数、只作用于「id==store_id 的店」（**账号店同 ID**，D4，store_shop 主键==店主账号 id、无 owner_user_id 列，店主归属收敛在 store-bff）；platform 侧方法不带 store_id、全量。**owner/platform 的分流由「端 BFF 调哪一侧接口」决定，不由 `X-User-Type` 在域内判断**（`assertOwner`/`requirePlatformAdmin` 之类的域内断言已删除）；store-bff 从登录态取 store_id 传给域，admin 走 platform 侧并由 `@PreAuthorize` 把关。`audit_by` 直取 X-User-Id 仅记录，不与平台账号联查（D6）。新增 store 域方法时按「作用对象表是否带 store_id 列 + 调用意图」决定套 owner(限 store_id)/platform(全量) 哪一侧。
+
+**鉴权与登录态（各端各管各的）**：每个端 BFF 只提供**自己身份**的登录接口（admin → `/auth/login` 签 `type=admin`；store-bff → `/auth/register|login` 签 `type=store`；mall-bff 待建，`type=user`）。三端共用同一把 `jwt-secret` 与同一套 `type` claim 契约（`LoginUser.CLAIM_USER_TYPE`），但**登录用户模型与 Redis 键命名空间按身份隔离**：
+
+- **Redis 登录态键 = `panoramic:login:{userType}:{userId}`**（如 `panoramic:login:admin:1` / `panoramic:login:store:7` / `panoramic:login:user:42`）。前缀由 Nacos `auth.yml` 的 `panoramic.auth.redis-prefix`（= `panoramic:login`）提供，网关按 JWT 的 `type` claim 拼同一把键校验——**键格式是网关 ↔ 端 BFF 的共享契约，不可单边改动**。
+- 网关只做「验签 + 查登录态 + 注入 `X-User-Id`/`X-User-Type`」，不做身份类型判断；身份类型由签发的 `type` claim 携带、全链路透传。
+- 域服务不参与登录态（无 Redis），见上「信任与防线」。
 
 **术语防呆（避免跨域加错表）**：`goods-center`=标准商品模板库（标准商品平台）；"店铺在售商品/库存/信誉"属 store 域；"顾客/购物车/订单/评价"属未来 trade 域。别把别域实体塞进 goods-center。
 

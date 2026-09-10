@@ -1,6 +1,7 @@
-package com.panoramic.common.security;
+package com.panoramic.common.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.panoramic.common.security.LoginUser;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -10,9 +11,11 @@ import java.time.Duration;
 
 /**
  * 登录用户上下文缓存（Redis）
- * <p>key = {@code redis-prefix:userType:userId}，value 为 {@link LoginUser} 的 JSON 快照，TTL 与 token 有效期对齐。
- * userType 维度隔离平台管理员（admin）与店主（store）两套用户 id 空间，避免 id 冲突串上下文。
- * 删除 key 即强制下线/登出（gateway 与各业务服务下一请求因查无此键而回 401）。</p>
+ * <p>key = {@code redis-prefix:userType:userId}（默认 {@code panoramic:login:admin:1}），value 为
+ * {@link LoginUser} 的 JSON 快照，TTL 与 token 有效期对齐。
+ * userType 维度隔离各端身份空间（admin=平台管理员 / store=店主 / user=C 端顾客），避免 id 冲突串上下文；
+ * 网关按 JWT 的 type claim 拼同一把键查登录态，故键格式是三方共享契约，不可单边改动。
+ * 删除 key 即强制下线/登出（gateway 与端 BFF 下一请求因查无此键而回 401）。</p>
  */
 @Slf4j
 @Service
@@ -25,7 +28,7 @@ public class LoginUserCacheService {
 
     public LoginUserCacheService(StringRedisTemplate redisTemplate,
                                  ObjectMapper objectMapper,
-                                 @Value("${panoramic.auth.redis-prefix:panoramic:login:user}") String keyPrefix,
+                                 @Value("${panoramic.auth.redis-prefix:panoramic:login}") String keyPrefix,
                                  @Value("${panoramic.auth.jwt-expire-seconds:7200}") long expireSeconds) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;

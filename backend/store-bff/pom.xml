@@ -15,10 +15,17 @@
     <description>全景商城店铺端 BFF（店主端：账号/登录 + 店铺资料编排）</description>
 
     <dependencies>
-        <!-- common 工具包（RespData/BaseEntity/BasePageVO/异常处理/安全链 + Feign 熔断基建） -->
+        <!-- common 工具包（RespData/BaseEntity/BasePageVO/异常处理/Feign 熔断基建） -->
         <dependency>
             <groupId>com.panoramic</groupId>
             <artifactId>common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <!-- 鉴权装配层（端 BFF 专用）：JwtService/LoginUserCacheService/SecurityConfig/AuthTokenFilter。
+             业务域只依赖 common，结构上拿不到本模块，故不做鉴权、不需要 Redis -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>common-auth</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- Spring Boot Web -->

@@ -29,12 +29,11 @@ spring:
 
 # 服务侧白名单（路由前缀已剥离）：登录接口放行，其余需认证。
 # 数据源/mybatis-plus/jwt-secret/redis 等由 Nacos 共享配置提供（datasource-mysql.yml / datasource-redis.yml / auth.yml），不再本地重复。
+# 内部调用（BFF→域）不再携带信任头令牌：域服务不做鉴权，只信任并执行；
+# 身份经 X-User-Id / X-User-Type 透传供审计填充，防线收敛到网络层（域端口不对公网开放）。
 panoramic:
   auth:
     whitelist-paths: /auth/login
-  internal:
-    # 内部调用信任头令牌（BFF→域，X-Internal-Token 值），需与 goods-center 侧保持一致，勿单边改动
-    secret: panoramic-mall-internal-dev-token
 
 # admin 端 BFF → 业务域内部 Feign 的熔断参数（resilience4j，经 Feign circuitbreaker 生效）。
 # ⚠ Feign 熔断会把调用放到独立线程执行并套 TimeLimiter：默认 1s 对含远程 DB/Redis 往返的内部调用偏紧，

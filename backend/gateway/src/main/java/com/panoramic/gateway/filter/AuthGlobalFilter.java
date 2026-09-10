@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets;
 /**
  * 网关鉴权过滤器（WebFlux，不依赖 common）
  * <p>对非白名单请求：① 验 JWT 签名/有效期 → ② 解析 type claim（缺省 admin）
- * → ③ 校验 Redis 中 {prefix}:{type}:{userId} 登录用户上下文仍有效。
+ * → ③ 校验 Redis 中 {prefix}:{type}:{userId}（如 {@code panoramic:login:store:1}）登录用户上下文仍有效。
  * 任一环失效一律回 HTTP 401（与业务服务安全链的 401 语义一致）；通过则把 userId、userType 分别写入
  * {@code X-User-Id} / {@code X-User-Type} 请求头透传给下游业务服务作为「查用户上下文」的 key。</p>
  */
@@ -47,7 +47,7 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
 
     public AuthGlobalFilter(ReactiveStringRedisTemplate redisTemplate,
                             @Value("${panoramic.auth.jwt-secret}") String secret,
-                            @Value("${panoramic.auth.redis-prefix:panoramic:login:user}") String redisPrefix,
+                            @Value("${panoramic.auth.redis-prefix:panoramic:login}") String redisPrefix,
                             @Value("${panoramic.auth.header-name:X-User-Id}") String headerName,
                             @Value("${panoramic.auth.whitelist-paths:/admin/auth/login,/discovery/**}") String whitelistPaths) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

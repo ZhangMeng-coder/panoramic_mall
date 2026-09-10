@@ -14,7 +14,7 @@
 │    公网入口 = 端 BFF 白名单（BffRouteGuardFilter 强制，域服务一律 403）                         │
 │    /admin/** ─▶ lb://admin（端 BFF）         /store/** ─▶ lb://store-bff（店铺端 BFF）        │
 └───────┬───────────────────────┬───────────────────────────────┬──────────────────────────────┘
-        │ Nacos 注册发现(:8848)  │                                │ 内部 Feign（信任头 X-Internal-Token + 熔断）
+        │ Nacos 注册发现(:8848)  │                                │ 内部 Feign（身份头 X-User-Id/X-User-Type + 熔断）
 ┌───────▼───────────────┐  ┌─────▼────────────────────────────┐ ┌──────▼───────────────────────┐
 │ admin 端 BFF（:8082）   │  │ store-bff 店铺端 BFF（:8084）      │ │ store 店铺域（:8083，纯域）     │
 │ 平台账号/RBAC 合一+编排  │  │ 店主账号 store_user + 店铺资料编排   │ │ 店铺 store_shop + 审核状态机    │
@@ -28,14 +28,15 @@
                                         MySQL 8（库 panoramic_mall：goods_* / sys_* / store_*）
 ```
 
-> common 工具包被各业务服务共享；鉴权会话由 JWT `type` claim + Redis 键 `{前缀}:{userType}:{userId}` 区分平台管理员（admin）与店主（store）两套账号体系。业务域（goods-center / store）与端 BFF（admin / store-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、信任头 + 熔断降级）。
+> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。登录会话由 JWT `type` claim + Redis 键 `panoramic:login:{type}:{userId}` 区分平台管理员（admin）/ 店主（store）/ C 端顾客（user，待建）三套账号体系。业务域（goods-center / store）与端 BFF（admin / store-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、只透传身份头 + 熔断降级；域内不做权限判断）。审计字段 `create_user`/`update_user` 为 `VARCHAR(32)`，值 `UserType:UserId`。
 
 ## 仓库结构
 
 | 目录 | 说明 | 文档 |
 |---|---|---|
 | [backend/](backend/) | 微服务后端（Maven 多模块） | [README](backend/README.md) |
-| ├── [common/](backend/common/) | 公共工具包（非服务）：返回结构/基类/异常/分页/自动填充/鉴权 + 各域 Feign 客户端与共享 DTO/VO | [README](backend/common/README.md) |
+| ├── [common/](backend/common/) | 公共基座（非服务）：返回结构/基类/异常/分页/审计自动填充/登录用户模型 + 各域 Feign 客户端与共享 DTO/VO | [README](backend/common/README.md) |
+| ├── [common-auth/](backend/common-auth/) | 鉴权装配层（非服务）：JWT + Redis 登录态 + 安全过滤链；**只被端 BFF 依赖**，业务域拿不到（故不鉴权） | [README](backend/common-auth/README.md) |
 | ├── [gateway/](backend/gateway/) | API 网关（8080）：路由转发、前缀剥离、鉴权透传、端 BFF 白名单 | [README](backend/gateway/README.md) |
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
 | ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 | [README](backend/store/README.md) |
@@ -86,8 +87,8 @@
 #    库与表用各模块的 db/schema.sql 创建（均 IF NOT EXISTS，可重复执行）：
 #      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop；store-bff → store_user
 
-# 2. 安装后端父 POM 与 common（首次或改动后）
-cd backend && mvn -N install && mvn -pl common install
+# 2. 安装后端父 POM 与 common / common-auth（首次或改动后）
+cd backend && mvn -N install && mvn -pl common,common-auth install
 
 # 3. 启动后端服务（各一个终端；连远程 MySQL 时先注入环境变量，如
 #    MYSQL_HOST=xxx MYSQL_PORT=3306 MYSQL_USERNAME=xxx MYSQL_PASSWORD=xxx MYSQL_DB=panoramic_mall）

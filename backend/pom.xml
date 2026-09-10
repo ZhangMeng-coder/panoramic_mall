@@ -25,6 +25,8 @@
         <module>store-bff</module>
         <module>admin</module>
         <module>common</module>
+        <!-- 鉴权装配层：只被端 BFF 依赖；业务域只依赖 common，故结构上拿不到认证链与 Redis -->
+        <module>common-auth</module>
     </modules>
 
     <properties>
@@ -38,11 +40,11 @@
         <nacos.server-addr>127.0.0.1:8848</nacos.server-addr>
         <nacos.username>nacos</nacos.username>
         <nacos.password>nacos</nacos.password>
-        <!-- JWT 库版本（admin/goods-center 经 common、gateway 单独引用，统一管理） -->
+        <!-- JWT 库版本（端 BFF 经 common-auth、gateway 单独引用，统一管理） -->
         <jjwt.version>0.12.6</jjwt.version>
         <!-- 鉴权统一值（jwt-secret/jwt-expire-seconds/redis-prefix/header-name）已收敛到
-             Nacos 共享配置 nacos-config/auth.yml，签发(admin)/校验(gateway)/解析(goods-center+common)
-             三端同源，此处不再重复定义（见 nacos-config/ 目录） -->
+             Nacos 共享配置 nacos-config/auth.yml：签发端(admin/store-bff 经 common-auth) 与
+             校验端(gateway) 同源；业务域不鉴权、不引入本文件。此处不再重复定义（见 nacos-config/ 目录） -->
     </properties>
 
     <dependencyManagement>

@@ -38,18 +38,18 @@
 | `store_shop` | store（本域） | 店铺（主键=店主账号 id + 资质字段 + 审核状态/留痕字段） |
 | `store_user` | store-bff | 店主账号（见 store-bff schema） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人（MP 自动填充，`create_user` 取透传 `X-User-Id`）。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）。字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人（MP 自动填充）——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（如 `store:5`）；`audit_by` 是审核人留痕列（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
 
 ## 接口清单（内部，前缀 `/internal/store`，Feign 方法直返业务类型不包 RespData）
 
-### owner（store-bff 调用，必带 store_id；服务端校验 userType=store）
+### owner（store-bff 调用，必带 store_id；只作用于 id==store_id 的店）
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/internal/store/shops/mine?storeId=` | 我的店铺；**无店返回 200 + JSON null**（Feign 解出 null，勿改抛异常） |
 | POST | `/internal/store/shops/{storeId}/save` | 保存草稿（无店则建 id=storeId） |
 | POST | `/internal/store/shops/{storeId}/submit` | 提交审核（完整资质校验→待审核） |
 
-### platform（admin 调用，不传 store_id 全量；服务端校验 userType=admin）
+### platform（admin 调用，不传 store_id 全量；由 admin `@PreAuthorize` 把关）
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/internal/store/shops/page` | 分页（pageNum/pageSize/status/keyword）→ `PageResult<ShopVO>` |
@@ -61,8 +61,9 @@
 ## 信任与防线
 
 - 本域不启用 Feign 客户端扫描（纯被调方）。
-- 入口信任链（仿 goods-center 纯域样板）：`InternalTrustFilter`（对 `/internal/**` 验 `X-Internal-Token` == 本地 `panoramic.internal.secret`）→ `StoreUserIdentityFilter`（把 `X-User-Id`/`X-User-Type` 直取填 `UserContext(id,userType)`，不打 Redis）→ 本地 `StoreSecurityConfig`（`securityMatcher("/internal/**")` permitAll，绕开 common 每请求重建登录用户）。**权限判定已在端 BFF 完成**，本域只负责执行 + 审计填充；owner/platform 分流为域内兜底防越权。
-- `application.yml` 不声明 auth 白名单；`datasource-redis` import 仅满足 common 安全链 Bean 装配（`/internal` 不打 Redis）。
+- **本域不做鉴权、不做权限判断**（2026-09-10 起）：入口只有两道——`StoreUserIdentityFilter`（把透传的 `X-User-Id`/`X-User-Type` 直取填 `UserContext`，供审计填充与 `audit_by` 留痕；**缺头即不填充、放行**，不回 401）→ 本地 `StoreSecurityConfig`（唯一一条全放行链，避免 Spring Security 默认链拦截 actuator）。原 `InternalTrustFilter`（验 `X-Internal-Token`）与 `assertOwner`/`requirePlatformAdmin`（域内 userType 断言）**均已删除**。
+- owner/platform 的分流**由「哪个 BFF 调哪一侧接口」决定**：store-bff 从登录态取账号 id 作 store_id 调 owner 侧，admin 调 platform 侧并由 `@PreAuthorize` 把关。⚠ 前提是 `8083` 端口只在内网可达，防线在网络层。
+- `application.yml` 不声明 auth 白名单；**不引入** `datasource-redis.yml` / `auth.yml`（本域不依赖 `common-auth`，结构上拿不到认证链与 Redis）。
 
 ## 配置说明
 

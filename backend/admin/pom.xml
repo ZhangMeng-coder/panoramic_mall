@@ -21,6 +21,13 @@
             <artifactId>common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- 鉴权装配层（端 BFF 专用）：JwtService/LoginUserCacheService/SecurityConfig/AuthTokenFilter。
+             业务域只依赖 common，结构上拿不到本模块，故不做鉴权、不需要 Redis -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>common-auth</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

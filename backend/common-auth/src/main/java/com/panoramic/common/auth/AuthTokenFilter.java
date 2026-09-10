@@ -1,5 +1,6 @@
-package com.panoramic.common.security;
+package com.panoramic.common.auth;
 
+import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -14,7 +15,7 @@ import java.io.IOException;
 import java.util.List;
 
 /**
- * 认证过滤器（各业务服务经 common 启用）
+ * 认证过滤器（端 BFF 经 common-auth 启用；业务域不依赖本模块）
  * <p>链路：gateway 已验 JWT + Redis 并把 userId、userType 放进 {@code X-User-Id} / {@code X-User-Type} 头；
  * 本过滤器据此从 Redis 取 LoginUser 重建上下文。无头（直连等）时兜底解析 Bearer JWT。
  * 任一环查不到用户（无头/缓存失效/签名失败），则保持匿名——由 Security 对非白名单接口统一回 401

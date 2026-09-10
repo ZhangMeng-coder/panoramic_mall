@@ -1,6 +1,6 @@
 package com.panoramic.goods.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -10,28 +10,25 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 /**
- * goods-center 操作人身份直取过滤器（信任头模式，无 Redis）。
- * <p>紧随 {@link InternalTrustFilter}（验内部令牌）之后执行，对 {@code /internal/**} 请求把端 BFF 透传的
- * {@code X-User-Id} 直接填入 {@link UserContext}(仅 id)——goods-center 不再按权限需要重建完整登录用户，
- * 也不需要打 Redis。该 id 供 MyBatis-Plus 审计字段（create_user/update_user）自动填充。
- * 缺省 {@code X-User-Id} 说明非 BFF 可信调用（或非用户上下文），直接 401，与旧「必须认证」语义对齐。</p>
+ * goods-center 操作人身份直取过滤器（信任头模式，无 Redis、不鉴权）。
+ * <p>对 {@code /internal/**} 请求把端 BFF 透传的 {@code X-User-Id} / {@code X-User-Type} 直接填
+ * {@link UserContext}，供 MyBatis-Plus 审计字段（create_user/update_user）自动填充为
+ * {@code UserType:UserId}。</p>
+ * <p><b>缺头即不填充、不拦截</b>：域服务不做鉴权（鉴权与权限判定全部收敛在端 BFF），身份头只用于
+ * 审计归属；缺头说明调用方未带身份（如定时任务/内部脚本），放行执行、审计字段留空，不再回 401。</p>
+ * <p>⚠ 不可用 {@code UserContext.set(userId, username)}（userType 缺省会变 admin），须构造带 userType 的
+ * {@link LoginUser} 后再 set。</p>
  */
 @Slf4j
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class GoodsUserIdentityFilter extends OncePerRequestFilter {
-
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     /** gateway 透传 userId 的请求头名（与 common LoginUser / gateway AuthGlobalFilter 对齐） */
     private final String userIdHeader;
@@ -52,14 +49,16 @@ public class GoodsUserIdentityFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         Long userId = parseUserId(request.getHeader(userIdHeader));
         if (userId == null) {
-            log.warn("内部调用缺少操作人身份头 {}，拒绝访问: method={}, uri={}",
-                    userIdHeader, request.getMethod(), request.getRequestURI());
-            writeUnauthorized(response);
+            // 无身份头：不填充 UserContext，放行（审计字段留空）
+            filterChain.doFilter(request, response);
             return;
         }
+        String userType = request.getHeader(LoginUser.HEADER_USER_TYPE);
         try {
-            // 仅 id 即满足审计填充（MyMetaObjectHandler 只读 getUserId）；无需 username/perms/roles
-            UserContext.set(userId, null);
+            LoginUser loginUser = new LoginUser();
+            loginUser.setId(userId);
+            loginUser.setUserType(userType == null || userType.isBlank() ? null : userType.trim());
+            UserContext.set(loginUser);
             filterChain.doFilter(request, response);
         } finally {
             UserContext.clear();
@@ -73,17 +72,8 @@ public class GoodsUserIdentityFilter extends OncePerRequestFilter {
         try {
             return Long.valueOf(headerValue.trim());
         } catch (NumberFormatException e) {
+            log.warn("身份头 {} 非法，忽略: value={}", userIdHeader, headerValue);
             return null;
         }
-    }
-
-    private void writeUnauthorized(HttpServletResponse response) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("code", 401);
-        body.put("msg", "未携带操作人身份（X-User-Id）");
-        OBJECT_MAPPER.writeValue(response.getOutputStream(), body);
     }
 }

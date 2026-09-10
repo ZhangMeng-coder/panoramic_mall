@@ -5,12 +5,11 @@ spring:
   application:
     name: goods-center
   config:
-    # 共享配置统一收敛到 Nacos：本服务按需引入 datasource-mysql(含 mybatis-plus) / datasource-redis / auth
+    # 共享配置统一收敛到 Nacos：本服务只引入 datasource-mysql(含 mybatis-plus)。
+    # 域服务不做鉴权、不碰登录态，故不再引入 datasource-redis.yml / auth.yml。
     # optional: 前缀——配置中心未就绪或某 dataId 缺失时服务仍能启动（用到对应能力时才报错）
     import:
       - optional:nacos:datasource-mysql.yml
-      - optional:nacos:datasource-redis.yml
-      - optional:nacos:auth.yml
   cloud:
     nacos:
       # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
@@ -22,16 +21,12 @@ spring:
         # 配置中心与注册中心同址
         server-addr: @nacos.server-addr@
 
-# goods-center 为下沉纯域（标准商品平台 / 标准商品模板库）：不再向页面暴露公网路由，
+# goods-center 为下沉纯域（标准商品平台 / 标准商品模板库）：不向页面暴露公网路由，
 # 仅被各端 BFF 经内部 Feign（/internal/goods/**）调用；服务端不启用 Feign 客户端扫描。
-# 权限判定已收敛在端 BFF（@PreAuthorize），本服务只执行 + 审计填充：
-#   /internal/** 先由 InternalTrustFilter 校验内部信任头令牌，再由 GoodsUserIdentityFilter 把
-#   X-User-Id 信任头直取填 UserContext(id)（不打 Redis）供审计字段自动填充，随后 GoodsSecurityConfig
-#   本地安全链放行执行（绕开 common 的 AuthTokenFilter 每次打 Redis 重建登录用户）。
-# 数据源/mybatis-plus/jwt-secret 等由 Nacos 共享配置提供（datasource-mysql.yml / auth.yml）；
-# datasource-redis.yml 仍保留仅因 common 的 AuthTokenFilter/LoginUserCacheService Bean 需要装配，
-# /internal 路径已不再请求 Redis。
-panoramic:
-  internal:
-    # 内部调用信任头令牌（X-Internal-Token 校验值），需与调用方 admin 端一致，勿单边改动
-    secret: panoramic-mall-internal-dev-token
+# 鉴权与权限判定全部收敛在端 BFF（@PreAuthorize 是唯一授权点），本服务只做两件事：
+#   1) 执行领域逻辑；
+#   2) GoodsUserIdentityFilter 把网关注入的信任头 X-User-Id / X-User-Type 直取填 UserContext
+#      （不打 Redis、不校验 token、不做权限判断；缺头则不填充，审计字段留空）。
+# 数据源/mybatis-plus 由 Nacos 共享配置 datasource-mysql.yml 提供；
+# 本服务不依赖 common-auth，结构上拿不到认证链与 Redis，故不引入 datasource-redis.yml / auth.yml。
+# ⚠ 部署前提：8081 端口只在内网可达，否则可伪造 X-User-Id；这是「域服务去鉴权」的既有取舍。

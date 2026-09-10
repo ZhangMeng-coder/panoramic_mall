@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.panoramic.common.exception.ServiceException;
-import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
@@ -30,20 +29,21 @@ import java.util.stream.Collectors;
 /**
  * 店铺服务实现（store 域下沉纯域）。
  * <p>「账号店同 ID」（一人一店）：店铺主键 id == 店主账号 id，owner 方法以 store_id(=账号 id) 直查/直写
- * 「id==store_id 的店」；platform 方法全量。方法内按 {@code X-User-Type}（admin/store）分流：
- * owner 校验 userType==store 且 store_id==X-User-Id（防越权），platform 校验 userType==admin 兜底。
- * 已不再回填店主登录账号（D6：admin 不读账号，域内无 store_user 表）。</p>
+ * 「id==store_id 的店」；platform 方法全量。<b>域内不做权限判断</b>：owner/platform 的分流由端 BFF
+ * 选择调用哪一侧接口决定（store-bff 走 owner 侧并从登录态取 store_id，admin 走 platform 侧），
+ * 域内只按「作用对象表是否带 store_id 列 + 方法语义」执行，scope 由方法本身的 store_id 参数天然限定。</p>
+ * <p>身份头只用于两处：MyBatis-Plus 审计字段自动填充（{@code UserType:UserId}）与
+ * {@code audit_by} 直取 X-User-Id 留痕（D6，不与平台账号联查）。缺头则留空，不回 401。</p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop> implements StoreShopService {
 
-    // ---- owner（store-bff，X-User-Type=store，仅作用于 id==store_id 的店）----
+    // ---- owner（store-bff 调用，仅作用于 id==store_id 的店）----
 
     @Override
     public ShopVO mine(Long storeId) {
-        assertOwner(storeId);
         // 账号店同 ID：id==store_id；未开店 getById 返回 null（契约：HTTP 200 空 body → Feign null）
         return toVO(getById(storeId));
     }
@@ -51,7 +51,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveDraft(Long storeId, ShopSaveDTO dto) {
-        assertOwner(storeId);
         StoreShop shop = getById(storeId);
         boolean isNew = shop == null;
         if (isNew) {
@@ -82,7 +81,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void submit(Long storeId, ShopSaveDTO dto) {
-        assertOwner(storeId);
         StoreShop shop = getById(storeId);
         boolean isNew = shop == null;
         if (!isNew) {
@@ -118,7 +116,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
 
     @Override
     public PageResult<ShopVO> adminPage(ShopPageQueryDTO dto) {
-        requirePlatformAdmin();
         Page<StoreShop> shopPage = dto.toPage(StoreShop.class);
         IPage<StoreShop> result = page(shopPage,
                 Wrappers.<StoreShop>lambdaQuery()
@@ -135,14 +132,12 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
 
     @Override
     public ShopVO adminDetail(Long id) {
-        requirePlatformAdmin();
         return toVO(getByIdOrThrow(id));
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void adminAudit(Long id, ShopAuditDTO dto) {
-        Long operatorId = requirePlatformAdmin();
         boolean approved = Boolean.TRUE.equals(dto.getApproved());
         if (!approved && !StringUtils.hasText(dto.getAuditRemark())) {
             throw new ServiceException("驳回时必须填写驳回原因");
@@ -151,7 +146,8 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         // 以「待审核(1)」为条件做条件更新：他人已审核或店铺状态变更时更新 0 行 → 拒绝（防重复/并发审核）
         StoreShop patch = new StoreShop();
         patch.setStatus(approved ? StoreShop.STATUS_APPROVED : StoreShop.STATUS_REJECTED);
-        patch.setAuditBy(operatorId);
+        // audit_by 直取 X-User-Id 仅留痕（D6：不与平台账号联查，缺头则为 null）
+        patch.setAuditBy(UserContext.getUserId());
         patch.setAuditTime(LocalDateTime.now());
         if (!approved) {
             patch.setAuditRemark(dto.getAuditRemark().trim());
@@ -163,35 +159,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         if (!updated) {
             throw new ServiceException("店铺不存在或已被审核，请刷新后重试");
         }
-    }
-
-    // ---- 身份/归属适配（D5）----
-
-    /**
-     * 校验当前为店主（X-User-Type=store）且 store_id == X-User-Id（防越权）。
-     * 账号店同 ID：owner 操作对象恒为「id==store_id 的店」。
-     */
-    private void assertOwner(Long storeId) {
-        LoginUser loginUser = UserContext.getLoginUser();
-        if (loginUser == null || !LoginUser.USER_TYPE_STORE.equals(loginUser.getUserType())
-                || loginUser.getId() == null) {
-            throw new ServiceException("仅店主可执行该操作");
-        }
-        if (storeId == null || !storeId.equals(loginUser.getId())) {
-            throw new ServiceException("无权操作该店铺");
-        }
-    }
-
-    /**
-     * 取当前登录平台管理员（校验 X-User-Type=admin），返回其账号ID（写入 audit_by）
-     */
-    private Long requirePlatformAdmin() {
-        LoginUser loginUser = UserContext.getLoginUser();
-        if (loginUser == null || !LoginUser.USER_TYPE_ADMIN.equals(loginUser.getUserType())
-                || loginUser.getId() == null) {
-            throw new ServiceException("仅平台管理员可执行该操作");
-        }
-        return loginUser.getId();
     }
 
     // ---- 店铺字段/留痕辅助（状态机与审核留痕清理逻辑从旧实现平移，去掉账号回填）----

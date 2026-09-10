@@ -35,7 +35,7 @@
 ## 编排与降级
 
 - `StoreShopBffService`（`com.panoramic.storebff.bff`）只做编排：持 `StoreClient`，`call(Supplier)` 统一执行——下游**业务异常（400 参数/业务，如「审核中锁定」「提交前请补全」）原样透传**由 common 统一异常处理还原 `RespData` 给页面；**熔断/连接/序列化等降级**为「店铺服务暂不可用，请稍后重试」（resilience4j 参数见 `application.yml`，仿 admin BFF）。
-- `StoreClient` 与共享 DTO/VO 上移 common（`com.panoramic.common.store`，同源一份）；出站自动带 `X-Internal-Token`（`panoramic.internal.secret`）并原样透传 `X-User-Id`/`X-User-Type`（**不做 goods 版「缺省回退 admin」写死兜底**，避免店主侧被盖成 admin 使 store 域 owner 分流失效）。
+- `StoreClient` 与共享 DTO/VO 上移 common（`com.panoramic.common.store`，同源一份）；出站**只**原样透传 `X-User-Id`/`X-User-Type`（**不做 goods 版「缺省回退 admin」写死兜底**，避免店主侧被盖成 admin）；**不再带 `X-Internal-Token`**（该信任头已于 2026-09-10 删除——store 域不鉴权）。
 - 熔断降级文案在 BFF 统一处理，店铺域下游故障不拖垮店主端。
 
 ## 数据库（库：`panoramic_mall`，与 store 域同库、只分表所有权）
@@ -44,16 +44,17 @@
 |---|---|
 | `store_user` | 店主账号（username/password BCrypt/nickname/phone/status）；id 即其店铺主键（账号店同 ID） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）。字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（本模块写入的为 `store:{id}`）。
 
 ## 鉴权说明
 
-- 店主登录/注册走白名单（网关 `/store/auth/login,register` + 服务侧 `/auth/login,/auth/register`），签发 `type=store` 的 JWT 并写 Redis 店主登录上下文
-- `/shops/**` 走 common 本地认证链（JWT + Redis `store:<id>` 重建登录店主），store 店主无 RBAC，登录后对自己店全权限
+- 本模块是**端 BFF**，依赖 `common-auth`（`JwtService` / `LoginUserCacheService` / `SecurityConfig` / `AuthTokenFilter`）做鉴权；业务域只依赖 `common`，结构上拿不到这条链。
+- 店主登录/注册走白名单（网关 `/store/auth/login,register` + 服务侧 `/auth/login,/auth/register`），签发 `type=store` 的 JWT 并写 Redis 店主登录上下文，**键 = `panoramic:login:store:{userId}`**（各端身份空间隔离，2026-09-10 起）
+- `/shops/**` 走 `common-auth` 本地认证链（JWT/网关注入的 `X-User-Id` + `X-User-Type` → Redis 按 `store:{id}` 重建登录店主），store 店主无 RBAC，登录后对自己店全权限
 - `@EnableFeignClients(basePackages = "com.panoramic.common.store")` 扫描内部 Feign 客户端
 
 ## 配置说明
 
 - **数据源**：默认本机 `127.0.0.1:3306`（root/root，库 `panoramic_mall`）；连接远程/定制库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见 Nacos `datasource-mysql.yml`，账号密码勿写入代码或提交到仓库）
-- Nacos 共享配置：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml`（jwt-secret/redis-prefix/header-name 三端同源）
+- Nacos 共享配置：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml`（jwt-secret/redis-prefix/header-name 由端 BFF 与 gateway 同源；域服务不引入后两者）
 - 响应结构：成功 `code=200`；业务校验失败 `code=400` 携带中文提示；下游 store 域不可用统一 `code=500`「店铺服务暂不可用」

@@ -1,4 +1,4 @@
-package com.panoramic.common.security;
+package com.panoramic.common.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,8 +22,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 安全配置（随 common 被 admin/goods-center 扫描自动启用）
- * <p>无状态 + JWT/Redis 认证：各服务经 gateway 透传的 userId（或兜底 Bearer JWT）由
+ * 安全配置（随 common-auth 被端 BFF 扫描启用；业务域不依赖本模块，故不装配本链）
+ * <p>无状态 + JWT/Redis 认证：端 BFF 经 gateway 透传的 userId（或兜底 Bearer JWT）由
  * {@link AuthTokenFilter} 从 Redis 重建登录用户；非白名单接口一律要求认证。
  * <ul>
  *   <li>401（未认证/登录态失效）：HTTP 401 + {@code {code:401,msg}}</li>

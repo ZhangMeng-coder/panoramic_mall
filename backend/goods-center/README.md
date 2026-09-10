@@ -38,14 +38,14 @@
 | `goods_spu` | 商品 SPU（含 image_list、spec_config JSON 列） |
 | `goods_sku` | 商品 SKU 规格组合（含 spec_attrs JSON 列） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。字段沿用 common `BaseEntity` 约定：主键自增 + `is_delete` 逻辑删除 + 创建/更新时间与操作人。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）。字段沿用 common `BaseEntity` 约定：主键自增 + `is_delete` 逻辑删除 + 创建/更新时间与操作人——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（如 `admin:1`），由 `MyMetaObjectHandler` 自动填充。
 
 ## 接口清单（下沉域内部接口）
 
-- **基础路径 `/internal/goods`**：仅被内部 Feign 调用，请求须带信任头（`X-Internal-Token`，校验值见 `panoramic.internal.secret`，由调用方 Feign 拦截器自动附加）；缺省或令牌不符返回 HTTP 401 `{code:401}`。
+- **基础路径 `/internal/goods`**：仅被内部 Feign 调用。**不再校验任何令牌**（内部信任头 `X-Internal-Token` 已删除，2026-09-10）：鉴权与权限判定全部收敛在端 BFF，本域只信任并执行。⚠ 前提是 `8081` 端口只在内网可达，防线在网络层。
 - **入参/出参走 common 同源类型**：DTO/VO 在 `common` 的 `com.panoramic.common.goods.{dto,vo}` 维护，调用方与被调用方引用同一份，禁止各自复制。
 - **返回业务原类型、不包 RespData**：方法直接返回 `Xxx` / `List<Xxx>` / `Long` / `void`；错误由 `GoodsDomainExceptionHandler` 转成**真实 HTTP 状态码** + `{code,msg}`（Feign ErrorDecoder 据此还原为 `ServiceException` 抛给调用方）。RespData 仅用于对外页面/网关接口（admin BFF 层包装）。
-- **权限判定收敛在端 BFF，域内纯执行**：goods-center 不再做任何权限判断（`DomainPerms` 已删除）；唯一授权点是调用方 admin BFF 各操作的 `@PreAuthorize`（下表“权限码”列即其校验串，与 RBAC 存库权限码一一对应）。本服务信任内部令牌与 BFF 透传身份，只负责执行 + 审计填充——`GoodsUserIdentityFilter` 把 `X-User-Id` 直取填 `UserContext(id)`，供 `create_user/update_user` 自动填充，不再打 Redis 重建登录用户。
+- **鉴权与权限判定收敛在端 BFF，域内纯执行**：goods-center 不做任何鉴权、不做任何权限判断（`DomainPerms` 已删除）；唯一授权点是调用方 admin BFF 各操作的 `@PreAuthorize`（下表“权限码”列即其校验串，与 RBAC 存库权限码一一对应）。本服务只负责执行 + 审计填充——`GoodsUserIdentityFilter` 把 BFF 透传的 `X-User-Id` / `X-User-Type` 直取填 `UserContext`（**缺头即不填充、放行**，不回 401），供 `create_user/update_user` 自动填充为 `UserType:UserId`；不打 Redis、不校验 token。
 
 | 方法 | 路径 | 端 BFF @PreAuthorize 权限码（域不判定） | 说明 |
 |---|---|---|---|
@@ -73,7 +73,8 @@
 
 - **数据源**：默认本机 `127.0.0.1:3306`（root/root，库 `panoramic_mall`）；连接远程/定制库请注入环境变量：
   `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见 `application.yml`，账号密码勿写入代码或提交到仓库）
-- **内部信任头令牌**：`panoramic.internal.secret`（`X-Internal-Token` 校验值），需与调用方（admin）保持一致，勿单边改动；`InternalTrustFilter` 在进入安全链前校验 `/internal/**`
+- **Nacos 共享配置**：只引入 `datasource-mysql.yml`（业务库 + mybatis-plus）。**不引入 `datasource-redis.yml` / `auth.yml`**——本服务不依赖 `common-auth`，结构上拿不到认证链与 Redis，没有登录态可查（2026-09-10）
+- **身份头**：`X-User-Id` / `X-User-Type`（网关注入 → admin BFF 经 Feign 原样透传），仅用于审计填充，不做校验
 - MyBatis-Plus：主键自增、`is_delete` 逻辑删除、驼峰映射、SQL 日志打印（StdOutImpl，上线前移除）
 - 启动类扫描 `com.panoramic` 以加载 common 中的字段自动填充等
 - 异常语义（内部）：业务失败 `ServiceException` → 真实 HTTP 状态（如 400/403/404）+ `{code,msg}`；未知异常 → 500 `{code:500,msg:"系统异常"}`

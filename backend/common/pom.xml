@@ -47,35 +47,16 @@
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-core</artifactId>
         </dependency>
-        <!-- Spring Security：Method Security + 鉴权过滤链（随 common 被 admin/goods-center 扫描启用） -->
+        <!-- Spring Security：业务域自己的 permitAll 安全链仍需要（@EnableWebSecurity/SecurityFilterChain）；
+             鉴权过滤链（SecurityConfig/AuthTokenFilter）已下移到 common-auth，业务域不依赖它 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
-        <!-- Redis：登录用户上下文缓存（business 服务按 X-User-Id 查 LoginUser） -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <!-- Jackson（Boot 4 的 starter-web 不再传递包含，ObjectMapper 自动配置依赖它；Redis 序列化亦用） -->
+        <!-- Jackson（Boot 4 的 starter-web 不再传递包含，ObjectMapper 自动配置依赖它） -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-        </dependency>
-        <!-- JWT：签发(admin 登录)/解析(common AuthFilter 兜底取 userId) -->
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <scope>runtime</scope>
         </dependency>
         <!-- BFF 化内部调用通道：Feign 客户端 + LoadBalancer + 熔断。
              公共类型/Feign 接口定义在 common，调用方(端 BFF)经 @EnableFeignClients 扫描启用；

@@ -58,6 +58,7 @@
 实体：11 店铺、22 店铺信誉评分、12 店铺在售 SPU、13 店铺在售 SKU、14 店铺库存
 - 数据被多端读/写 → 共享下沉域，统一经 store-api 暴露：店铺资料/审核状态/信誉 → admin（审核/运营）；上架目录 + 信誉 → mall（顾客浏览）；店主自己的店铺/商品 → store-bff（店主后台编排）。
 - 【账号店同 ID（2026-09-07 落地）】store_shop 删除 `owner_user_id`（连同其 UNIQUE），改「店铺主键 id == 店主账号 id」（一人一店）；店主范围判定 =「store_id(=账号 id)==店铺主键」，域内按 **store_id 通用数据权限**适配（owner 只作用于「id==store_id 的店」、platform 全量），本域**不持有 store_user 表**即可完成店主身份的作用域校验。
+- 【D5 改写（2026-09-10 落地）】**owner/platform 的分流改由「端 BFF 调哪一侧接口」决定，域内不再按 `X-User-Type` 判断**。原来的 `assertOwner`/`requirePlatformAdmin` 域内断言已删除（那是域内鉴权，与新边界冲突）；作用域改由方法签名天然限定：owner 侧方法带 `store_id` 参数、只碰「id==store_id 的行」，由 store-bff 从登录态取值传入；platform 侧方法不带 store_id、全量，由 admin 经 `@PreAuthorize` 把关。`audit_by` 仍直取 `X-User-Id` 仅留痕（D6）。
 
 ### 店主账号（store_user）—— 端私有，归属 `store-bff`
 - store_user 与 store_shop 本就是两张表、职责可拆：store_user 只被店主端登录/签发这一个端使用 → 命中"只被一个端用 → 可随端"的判据，随 store-bff。
@@ -95,8 +96,9 @@
 | trade-center | 下沉纯域 D | 顾客/购物车/订单/支付/物流/退款/评价 | 待建 |
 
 网关：职责从"路由到域服务"改为"路由到 BFF（+全局粗校验/放行公开路由）"；域服务不再暴露公网路由。BFF↔域走注册中心内部调用。**落地状态**：
-- 2026-09-06（admin↔goods-center 切片）：common 落内部 Feign 客户端（`com.panoramic.common.goods.api`）+ resilience4j 熔断 + 信任头（`X-Internal-Token`），goods-center 收口 `/internal/goods/**` 纯域、admin 做 BFF 编排。
+- 2026-09-06（admin↔goods-center 切片）：common 落内部 Feign 客户端（`com.panoramic.common.goods.api`）+ resilience4j 熔断，goods-center 收口 `/internal/goods/**` 纯域、admin 做 BFF 编排。（当时的 `X-Internal-Token` 信任头已于 2026-09-10 删除，见下条。）
 - 2026-09-07（store-center 下沉切片）：store-center 拆为 **store**（下沉纯域，仅持 store_shop，`/internal/store/**`）+ **store-bff**（店铺端 BFF，持 store_user）；账号店同 ID（D4）、store_id 通用数据权限（D5）、admin 不读账号（D6）；common 上移 `com.panoramic.common.store` 共享类型 + `StoreClient`；admin 店铺管理 BFF 编排、网关白名单收敛为 `admin,store-bff`。
+- 2026-09-10（鉴权边界收敛切片）：① **鉴权只到端 BFF**——拆出 `common-auth` 模块（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis + JJWT），**只有端 BFF 依赖它**；域服务只依赖 `common`，结构上拿不到认证链与 Redis，故移除 `datasource-redis.yml` / `auth.yml` 引入。② **删内部令牌** `X-Internal-Token` 及其域内校验 `InternalTrustFilter`，只保留 `X-User-Id` / `X-User-Type` 身份透传（域内只填审计、不判断）。③ **删域内权限判断**（store 的 `assertOwner`/`requirePlatformAdmin`），owner/platform 由调用的 BFF 决定。④ **Redis 登录态键**改为 `panoramic:login:{type}:{userId}`，各端身份空间隔离。⑤ **审计字段** `create_user`/`update_user` 由 INT 改 `VARCHAR(32)`，值 `UserType:UserId`。
 - mall/trade 等其余切面待后续按同规约补齐。
 
 ---
@@ -138,7 +140,7 @@
   - 在售商品（后续切片）：按店 CRUD、由模板生成在售、模板同步覆盖、上下架、上架目录查询（公开读）。
   - 原 store-center 的 AdminShopController（平台身份审店）→ 本域 platform 能力；原 ShopController（mine/save/submit）→ store-bff 编排后落本域 owner 操作。
 - **谁调它**：admin、mall-bff、store-bff 三个 BFF 都消费；trade-center（未来）跨域写（扣库存/回写信誉）。
-- **备注**：纯共享域，不带店主登录与页面编排；本域按调用意图（X-User-Type）与数据作用域约束：owner=「id==store_id 的店」（账号店同 ID，防越权）、platform(admin)=全量、mall=公开读上架；owner 归属收敛在 store-bff，域内只做执行 + store_id 校验（D5）。不持有 store_user，admin 不读店主账号（D6）。
+- **备注**：纯共享域，不带店主登录与页面编排；本域**不做鉴权、不做权限判断**，作用域由接口侧决定：owner 侧方法带 `store_id` 参数 → 只碰「id==store_id 的行」（账号店同 ID）；platform 侧方法不带 store_id → 全量；mall 侧只读上架公开数据。分流由「哪个 BFF 调哪一侧」决定，不由域内读 `X-User-Type` 判断（2026-09-10 改写，原 `assertOwner`/`requirePlatformAdmin` 已删）。不持有 store_user，admin 不读店主账号（D6）。
 
 ### store-bff —— 店主端 BFF（只持 1 个实体：store_user）
 

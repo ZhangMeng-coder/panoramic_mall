@@ -25,6 +25,9 @@ public class LoginUser implements Serializable {
     /** 店主用户类型 */
     public static final String USER_TYPE_STORE = "store";
 
+    /** C 端顾客用户类型（mall-bff 身份空间，预留） */
+    public static final String USER_TYPE_USER = "user";
+
     /** JWT type claim 名 */
     public static final String CLAIM_USER_TYPE = "type";
 
@@ -32,8 +35,9 @@ public class LoginUser implements Serializable {
     public static final String HEADER_USER_TYPE = "X-User-Type";
 
     /**
-     * 用户类型：admin=平台管理员 / store=店主。缺省 admin（老 token/旧快照兼容）。
-     * 参与 Redis 键拼装（{prefix}:{userType}:{userId}），与 JWT type claim 对齐。
+     * 用户类型：admin=平台管理员 / store=店主 / user=C 端顾客。缺省 admin（老 token/旧快照兼容）。
+     * 参与 Redis 键拼装（{prefix}:{userType}:{userId}），与 JWT type claim 对齐；
+     * 亦参与审计字段拼装（create_user/update_user = {@code userType:userId}）。
      */
     private String userType = USER_TYPE_ADMIN;
 
