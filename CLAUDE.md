@@ -20,6 +20,8 @@
 
 **Feign 内部接口规约（BFF → 域，M0 起一律遵守）**：
 - **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
+  - **⚠ 业务 4xx 不得计入熔断失败率（2026-09-10 修正）**：域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 `common` 的 `InternalApiErrorDecoder` 还原为 `ServiceException`，属**调用方语义/参数错误**，不是下游健康度信号。端 BFF 的 `resilience4j.circuitbreaker.configs.default` 必须配 `ignore-exceptions: [com.panoramic.common.exception.ServiceException]`，否则店主连续几次操作失误就会打开熔断，把后续**正常**请求也降级成 500「…暂不可用」。
+  - **4xx/5xx 的分野在 `InternalApiErrorDecoder`，按 HTTP 状态码划分**：**4xx** → `ServiceException`（熔断忽略，端 BFF 原样透传给页面）；**5xx** → 回落 `Default()` 产出 `FeignException`（**照常计入失败率**，下游故障保护不变）。⚠ 域内兜底 `@ExceptionHandler(Exception.class)` 返回的正是 **HTTP 500 + `{code,msg}`**——**5xx 绝不能也还原成 `ServiceException`**，否则会连真故障一起被忽略，熔断永远不打开。新增域的兜底异常处理时须保持这个形状。
 - **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
 - **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
 - **信任与防线（鉴权与权限判定全部收敛在端 BFF）**：**域服务不做任何鉴权、不做任何权限判断、不校验 token**。内部调用只透传身份头 `X-User-Id` / `X-User-Type`（网关注入 → 端 BFF 经 Feign 原样转发），域服务把它直取填 `UserContext`，**仅用于两件事**：审计字段自动填充（`UserType:UserId`）与 `audit_by` 留痕——读 ≠ 判断，读身份不等于做鉴权。端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。⚠ **不再有内部令牌 `X-Internal-Token`**（已删除）：域端口只在内网可达是前提，否则可伪造 `X-User-Id`——防线在网络层，不在应用层。

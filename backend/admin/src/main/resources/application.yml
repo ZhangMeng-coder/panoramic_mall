@@ -39,6 +39,14 @@ panoramic:
 # ⚠ Feign 熔断会把调用放到独立线程执行并套 TimeLimiter：默认 1s 对含远程 DB/Redis 往返的内部调用偏紧，
 #   上游偶发慢查询即被掐断并计入失败、累积打开熔断（表现为页面 500「商品服务暂不可用」）。
 #   这里显式放宽并给出可接受的降级/恢复节奏；随 admin 打包，与 common 的 Feign 规约配套。
+#
+# ⚠ ignore-exceptions：业务 4xx 不计入熔断失败率（2026-09-10 修正）。
+#   域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 common 的
+#   InternalApiErrorDecoder 还原为 ServiceException，但它们是**调用方语义/参数错误，不是下游健康度信号**。
+#   若不忽略：连续几次操作失误（默认窗口 10 次 / 最少 5 次 / 失败率 >50%）就会打开熔断，
+#   把后续**正常**请求也降级成 500「商品服务暂不可用」，错误文案与真实原因完全脱节。
+#   忽略后 4xx 既不计失败也不计成功；**5xx 仍走 FeignException 照常计入**（下游故障保护不变）——
+#   这个 4xx/5xx 的分野由 InternalApiErrorDecoder 按 HTTP 状态码划分，见该类的类注释。
 resilience4j:
   circuitbreaker:
     configs:
@@ -48,6 +56,8 @@ resilience4j:
         failure-rate-threshold: 50       # 失败率超过 50% 打开
         permitted-number-of-calls-in-half-open-state: 3  # 半开试探数
         wait-duration-in-open-state: 10s # 打开后多久进入半开
+        ignore-exceptions:               # 不计入失败率：下游业务 4xx（调用方语义错误），5xx 仍计入
+          - com.panoramic.common.exception.ServiceException
   timelimiter:
     configs:
       default:
