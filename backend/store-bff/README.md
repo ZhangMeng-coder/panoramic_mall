@@ -42,7 +42,7 @@
 |---|---|
 | `store_user` | 店主账号（username / password BCrypt / nickname / phone / status）；**id 即其店铺主键**（账号店同 ID） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。⚠ 建库只有一个入口：审计列 `create_user/update_user` 改 `VARCHAR(32)` 等历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
 字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（本模块写入的为 `store:{id}`）。
 

@@ -45,15 +45,9 @@
 | `sys_user_role` | 用户-角色（纯关联表，**无审计列、物理删除**） |
 | `sys_role_permission` | 角色-权限（纯关联表，**无审计列、物理删除**） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，含**幂等权限种子**）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，含**幂等权限种子**）。⚠ 建库只有一个入口：历次结构变更（审计列 `create_user/update_user` 改 `VARCHAR(32)` 等）的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
-配套脚本：
-
-| 脚本 | 用途 |
-|---|---|
-| `db/backfill-store-permission.sql` | 店铺管理权限种子补灌 |
-| `db/backfill-query-button.sql` | 查询按钮权限补灌 |
-| `db/remove-home-permission.sql` | 删除主页权限（2026-09-05） |
+⚠ **角色授权不由本文件播种**：`schema.sql` 只种 `sys_permission` 权限项（目录 / 页面 / 按钮），`sys_role_permission` 的授权一律在「角色管理 → 分配权限」UI 里勾选。即**换一台新库建好表后，还需手工授权才能登录使用**——这是一处已知缺口，暂不在 `schema.sql` 里补种子。
 
 字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（本模块写入的为 `admin:{id}`）。⚠ 两张关联表按仓库约定**除外**（纯关联、无审计列、物理删除）。
 

@@ -35,7 +35,7 @@
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）；审计列改造见 `db/migrate-audit-usertype.sql`（2026-09-10）；平台锁定列迁移见 `db/migrate-goods-lock.sql`（2026-09-12，四列 + `idx_lock_status`，`information_schema` 守卫幂等，重复执行安全）。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：审计列形状、平台锁定四列 + `idx_lock_status` 的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
 字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人（MP 自动填充）——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（如 `store:5`）；`audit_by` 是审核人留痕列（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
 
@@ -93,7 +93,7 @@
 
 ### 4. 平台锁定规则（R12，2026-09-12 新增）
 
-管理后台「店铺商品管理」可对**任意店铺**的商品锁定/解锁（`lock_status` 列，见 `db/migrate-goods-lock.sql`）。
+管理后台「店铺商品管理」可对**任意店铺**的商品锁定/解锁（`lock_status` 列，见 `db/schema.sql` 中 `store_goods_spu` 的列定义与文件尾部的幂等补列块）。
 
 | 项 | 口径 |
 |---|---|

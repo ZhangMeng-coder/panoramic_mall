@@ -106,8 +106,8 @@ CREATE TABLE IF NOT EXISTS store_goods_sku (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SKU';
 
 -- 3.1 幂等加列：为已存在的 store_goods_spu 表补充平台锁定列（可重复执行）。
---     与 db/migrate-goods-lock.sql 内容等价（后者是「已部署库」的一次性迁移留痕），
---     存量库若已跑过迁移，此处守卫判定为已存在、不重复 ALTER。
+--     新建库走上面的 CREATE TABLE 即已含这四列，本块只对「早于锁定功能建表」的存量库生效；
+--     守卫判定为已存在时跳过，不重复 ALTER。
 SET @spu_has_lock := (SELECT COUNT(*) FROM information_schema.COLUMNS
                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_goods_spu' AND COLUMN_NAME = 'lock_status');
 SET @spu_lock_ddl := IF(@spu_has_lock = 0,

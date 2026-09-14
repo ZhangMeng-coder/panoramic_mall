@@ -100,8 +100,9 @@ PREPARE stmt FROM @ddl; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 -- 幂等权限种子：商品中台 / 系统管理 / 店铺管理 目录 → 页面（带路由地址）→ 功能按钮
 -- 使用显式 ID + INSERT IGNORE，重复执行不会产生重复数据；
 -- 已存在页面（旧种子无 route）由文件尾部 UPDATE 幂等回填路由地址。
--- 注：主页（/home）不再入权限表，由 admin/店铺端 前端各自写死置顶菜单；
---     历史种子中的 主页 目录(id 3)/页面(id 31) 见 db/remove-home-permission.sql。
+-- 注：主页（/home）不再入权限表，由 admin/店铺端 前端各自写死置顶菜单。
+--     ⚠ 本文件只 INSERT IGNORE、不做 DELETE：2026-09-05 之前的旧种子库里若残留
+--     主页 目录(id 3)/页面(id 31)，执行本文件不会清掉，需手工删一次。
 -- ============================================================
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
   -- 目录（type=1，parent=0）
@@ -159,7 +160,7 @@ UPDATE sys_permission SET route = '/permission' WHERE id = 13 AND route IS NULL;
 -- ============================================================
 -- 幂等权限种子：店铺管理（平台 admin 后台，业务经 admin 端 BFF /admin/shop/** 编排落 store 域）
 --   顶级目录(4) → 页面 店铺列表(41, 带路由 /shop，perms=store:shop) → 按钮 查询/审核
--- 角色授权见 db/backfill-store-permission.sql（自动补发给后端管理角色）或「角色管理→分配权限」UI。
+-- ⚠ 角色授权不在本文件内：本文件只种权限项，sys_role_permission 的授权一律在「角色管理→分配权限」UI 勾选。
 -- ============================================================
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
   (4,  0, '店铺管理', 1, NULL,        'shop', 0, NULL),
