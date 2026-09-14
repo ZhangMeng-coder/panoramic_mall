@@ -45,4 +45,15 @@ public interface StoreGoodsSkuService extends IService<StoreGoodsSku> {
      * @param spuId 店铺商品 SPU id
      */
     void removeBySpuId(Long spuId);
+
+    /**
+     * 把某店铺商品名下<b>已上架</b>的 SKU 批量置为下架（平台锁定时的级联动作），返回是否有行被改动。
+     * <p>只更新上架行（下架行本就不必写）；调用方随后须经
+     * {@code StoreGoodsSpuServiceImpl#refreshShelfStatus} 重推 SPU 上下架，保持
+     * 「SPU上架 ⟺ ≥1 SKU 上架」的不变量，本方法不自行改 SPU 状态。</p>
+     *
+     * @param spuId 店铺商品 SPU id
+     * @return true = 至少下架了一个 SKU
+     */
+    boolean offShelfBySpuId(Long spuId);
 }

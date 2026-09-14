@@ -60,7 +60,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="name" label="商品名称" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="categoryName" label="分类" min-width="110" />
+      <!-- 分类显示全路径（如「服饰 / 男装 / T恤」），由 store-bff 读时解析；解析失败回退落库快照的分类名 -->
+      <el-table-column label="分类" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.categoryPath || row.categoryName || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="brandName" label="品牌" min-width="110" />
       <el-table-column prop="skuCount" label="SKU" width="70" align="center" />
       <!-- 上下架状态只读：SPU 状态由名下 SKU 联动推导（上架任一 SKU → SPU 上架；全下架 → SPU 下架），
@@ -72,6 +75,13 @@
           </el-tag>
         </template>
       </el-table-column>
+      <!-- 平台锁定状态（只读）：锁定期整行只读，仅平台可解锁 -->
+      <el-table-column label="锁定状态" width="100">
+        <template #default="{ row }">
+          <el-tag v-if="row.lockStatus === 1" type="danger">已锁定</el-tag>
+          <el-tag v-else type="success" effect="plain">正常</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="中台关联" width="100" align="center">
         <template #default="{ row }">
           <el-tag v-if="row.goodsSpuId" type="warning" effect="plain">已关联</el-tag>
@@ -79,14 +89,15 @@
         </template>
       </el-table-column>
       <el-table-column prop="updateTime" label="更新时间" width="170" />
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="success" @click="openSku(row)">规格</el-button>
+          <el-button v-if="row.lockStatus === 1" link type="warning" @click="openLockInfo(row)">锁定信息</el-button>
+          <el-button link type="primary" :disabled="row.lockStatus === 1" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="success" :disabled="row.lockStatus === 1" @click="openSku(row)">规格</el-button>
           <el-button
             link
             type="danger"
-            :disabled="row.shelfStatus === 1"
+            :disabled="row.lockStatus === 1 || row.shelfStatus === 1"
             @click="handleDelete(row)"
           >删除</el-button>
         </template>
@@ -116,6 +127,19 @@
       @saved="handleSkuSaved"
       @changed="handleSkuChanged"
     />
+
+    <!-- 锁定信息（只读）：仅展示锁定原因与锁定时间——按 A2 不展示锁定人 -->
+    <el-dialog v-model="lockInfoVisible" title="锁定信息" width="440px" destroy-on-close>
+      <el-descriptions v-if="lockInfo" :column="1" border>
+        <el-descriptions-item label="商品">{{ lockInfo.name }}</el-descriptions-item>
+        <el-descriptions-item label="锁定原因">{{ lockInfo.lockReason || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="锁定时间">{{ lockInfo.lockTime || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="lock-tip">商品被平台锁定期间不可编辑、上下架或删除 SKU；如需恢复，请联系平台管理员解锁，解锁后需自行重新上架。</div>
+      <template #footer>
+        <el-button type="primary" @click="lockInfoVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -139,6 +163,10 @@ const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
 const dialogGoods = ref(null) // 共享的商品详情（含 SKU 与中台比对结果，打开前各自刷新拉取）
 const skuDialogVisible = ref(false)
+
+// 锁定信息弹窗（只读；数据直接取列表行，无需额外请求）
+const lockInfoVisible = ref(false)
+const lockInfo = ref(null)
 
 async function loadOptions() {
   const [brandList, tree] = await Promise.all([goodsMetaApi.brands(), goodsMetaApi.categories()])
@@ -214,6 +242,12 @@ function handleSkuChanged() {
   loadPage()
 }
 
+/** 打开锁定信息弹窗（只读：原因 + 时间，不含锁定人——按 A2） */
+function openLockInfo(row) {
+  lockInfo.value = row
+  lockInfoVisible.value = true
+}
+
 async function handleSave(payload) {
   try {
     if (dialogType.value === 'add') {
@@ -267,5 +301,12 @@ onMounted(async () => {
 .pager {
   margin-top: 12px;
   justify-content: flex-end;
+}
+
+.lock-tip {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
 }
 </style>

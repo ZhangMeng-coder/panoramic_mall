@@ -45,6 +45,20 @@ const routes = [
         meta: { title: '店铺列表' }
       },
       {
+        // ⚠ path 必须与 sys_permission.route（页 42 店铺商品）逐字一致，否则侧栏菜单点不开
+        path: '/shop-goods',
+        name: 'shopGoods',
+        component: () => import('../views/shopgoods/ShopGoodsManage.vue'),
+        meta: { title: '店铺商品' }
+      },
+      {
+        // 详情页：侧栏仍高亮「店铺商品」（Layout 认 meta.activeMenu）
+        path: '/shop-goods/:id',
+        name: 'shopGoodsDetail',
+        component: () => import('../views/shopgoods/ShopGoodsDetail.vue'),
+        meta: { title: '店铺商品详情', activeMenu: '/shop-goods' }
+      },
+      {
         path: '/user',
         name: 'user',
         component: () => import('../views/user/UserManage.vue'),

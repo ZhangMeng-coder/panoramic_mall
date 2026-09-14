@@ -60,7 +60,10 @@
         </template>
       </el-table-column>
       <el-table-column prop="name" label="商品名称" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="categoryName" label="分类" min-width="110" />
+      <!-- 分类显示全路径（BFF 读时解析）；解析失败时回退落库快照的分类名 -->
+      <el-table-column label="分类" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.categoryPath || row.categoryName || '-' }}</template>
+      </el-table-column>
       <el-table-column prop="brandName" label="品牌" min-width="110" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">

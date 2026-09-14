@@ -9,6 +9,7 @@ import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.store.entity.StoreShop;
@@ -23,7 +24,10 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -159,6 +163,28 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         if (!updated) {
             throw new ServiceException("店铺不存在或已被审核，请刷新后重试");
         }
+    }
+
+    @Override
+    public Map<Long, String> nameMap(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return listByIds(ids).stream()
+                .collect(Collectors.toMap(StoreShop::getId,
+                        shop -> shop.getShopName() == null ? "" : shop.getShopName(), (a, b) -> a));
+    }
+
+    @Override
+    public List<ShopOptionVO> options() {
+        return list(Wrappers.<StoreShop>lambdaQuery().orderByAsc(StoreShop::getId)).stream()
+                .map(shop -> {
+                    ShopOptionVO vo = new ShopOptionVO();
+                    vo.setId(shop.getId());
+                    vo.setShopName(shop.getShopName());
+                    return vo;
+                })
+                .collect(Collectors.toList());
     }
 
     // ---- 店铺字段/留痕辅助（状态机与审核留痕清理逻辑从旧实现平移，去掉账号回填）----

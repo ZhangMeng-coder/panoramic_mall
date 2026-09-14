@@ -22,14 +22,18 @@
 - **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
   - **⚠ 业务 4xx 不得计入熔断失败率（2026-09-10 修正）**：域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 `common` 的 `InternalApiErrorDecoder` 还原为 `ServiceException`，属**调用方语义/参数错误**，不是下游健康度信号。端 BFF 的 `resilience4j.circuitbreaker.configs.default` 必须配 `ignore-exceptions: [com.panoramic.common.exception.ServiceException]`，否则店主连续几次操作失误就会打开熔断，把后续**正常**请求也降级成 500「…暂不可用」。
   - **4xx/5xx 的分野在 `InternalApiErrorDecoder`，按 HTTP 状态码划分**：**4xx** → `ServiceException`（熔断忽略，端 BFF 原样透传给页面）；**5xx** → 回落 `Default()` 产出 `FeignException`（**照常计入失败率**，下游故障保护不变）。⚠ 域内兜底 `@ExceptionHandler(Exception.class)` 返回的正是 **HTTP 500 + `{code,msg}`**——**5xx 绝不能也还原成 `ServiceException`**，否则会连真故障一起被忽略，熔断永远不打开。新增域的兜底异常处理时须保持这个形状。
+  - **异常剥壳 + 降级一律走 `common` 的 `BffFeignCall`（2026-09-12）**：端 BFF 调域**不要**再各写一份 `call(Supplier)`——统一用 `BffFeignCall.call(下游名, 降级文案, action)`：沿 cause 链剥开熔断/异步包装找出原始 `ServiceException`，**400/403/404 原样透传**（由统一异常处理还原给页面），其余（熔断/连接/序列化/其它业务码）打日志后降级为各端自己的「…暂不可用，请稍后重试」。
 - **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
 - **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
 - **信任与防线（鉴权与权限判定全部收敛在端 BFF）**：**域服务不做任何鉴权、不做任何权限判断、不校验 token**。内部调用只透传身份头 `X-User-Id` / `X-User-Type`（网关注入 → 端 BFF 经 Feign 原样转发），域服务把它直取填 `UserContext`，**仅用于两件事**：审计字段自动填充（`UserType:UserId`）与 `audit_by` 留痕——读 ≠ 判断，读身份不等于做鉴权。端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。⚠ **不再有内部令牌 `X-Internal-Token`**（已删除）：域端口只在内网可达是前提，否则可伪造 `X-User-Id`——防线在网络层，不在应用层。
   - **缺头即不填充、不拦截**：域内身份过滤器（`GoodsUserIdentityFilter` / `StoreUserIdentityFilter`）在缺 `X-User-Id` 时直接放行（审计留空），**不得回 401**——那等于在域内做鉴权。
 - **store 域的数据权限（D5，已按新边界改写）**：store 采用 **store_id 通用数据权限适配**：域内不持 store_user，owner 侧方法带 `store_id` 参数、只作用于「id==store_id 的店」（**账号店同 ID**，D4，store_shop 主键==店主账号 id、无 owner_user_id 列，店主归属收敛在 store-bff）；platform 侧方法不带 store_id、全量。**owner/platform 的分流由「端 BFF 调哪一侧接口」决定，不由 `X-User-Type` 在域内判断**（`assertOwner`/`requirePlatformAdmin` 之类的域内断言已删除）；store-bff 从登录态取 store_id 传给域，admin 走 platform 侧并由 `@PreAuthorize` 把关。`audit_by` 直取 X-User-Id 仅记录，不与平台账号联查（D6）。新增 store 域方法时按「作用对象表是否带 store_id 列 + 调用意图」决定套 owner(限 store_id)/platform(全量) 哪一侧。
   - **store 域现有 owner 侧能力**：店铺 `store_shop`（mine/save/submit）与店主在售商品 `store_goods_spu`/`store_goods_sku`（`/internal/store/goods/**`，带 `storeId` 且按该列过滤；SKU 经 `spuId` 归属，不再单带 store_id）。**「店铺已审核通过」的门禁不在域内**（域不查店铺状态），由 store-bff 调域前判定并回 `403`。
+  - **store 域现有 platform 侧能力（2026-09-12 新增）**：`/internal/store/goods/platform/spu/{page,{id}}` 跨店全量分页与详情（**不带 store_id**，`categoryIds` 多值过滤、回填 `storeName`/`skuCount`）与 `/platform/spu/{id}/lock|unlock`（平台锁定/解锁），供 admin BFF 的「店铺商品管理」编排，权限由 admin 的 `@PreAuthorize store:goods:list|lock` 把关；另有 `/internal/store/shops/options`（店铺下拉）。**平台分页走 `POST + @RequestBody`**（`categoryIds` 是集合，规避 Feign `@SpringQueryMap` 的集合序列化口径问题）。
   - **上下架是推导量、由域内单一写者维护**：`StoreGoodsSpuServiceImpl#refreshShelfStatus` 是 `SPU上架 ⟺ ≥1 SKU 上架` 的唯一写者（上架任一 SKU → SPU 上架；SKU 全下架 → SPU 下架），前端不得直接传 SPU 上下架；已上架 SKU 锁定其规格/价格（须先下架才能改/删），存在上架 SKU 时 SPU 规格配置只读、SPU 不可删除。
   - **中台版本比对属编排职责（store-bff 做）**：域只落库/回读 `center_version` 与商品字段，不调中台、不判版本；「更新提示 + 同步覆盖」（覆盖与否由店主决定、不阻断保存）在 store-bff 详情编排里组装。
+  - **平台锁定（R12，2026-09-12）**：`store_goods_spu` 的 `lock_status/lock_reason/lock_user/lock_time` 四列即锁定态（不建独立锁定表）。**锁定 = 名下已上架 SKU 级联下架 → 由 `refreshShelfStatus` 推导 SPU 下架**（不变量仍是唯一写者，绝不直接改 `shelf_status`）；**锁定期 owner 侧整行只读**（编辑/删除/改 SKU/上下架一律拒绝，`assertNotLocked` 域内强制，不只靠前端禁用按钮）；**解锁只清锁定字段、不恢复上架**（店主手动重上）；锁定写入用条件更新（`where lock_status=0`）防并发重复锁定，解锁必须 `lambdaUpdate().set(col, null)` 显式清（`updateById` 跳过 null）。`lock_user` 是**业务列**（D7，可在 service 内显式写入），存审计同格式 `UserType:UserId`（如 `admin:1`）；**商户端不展示锁定人**，仅管理端展示。
+  - **跨域「分类全路径」由端 BFF 读时解析（2026-09-12）**：域只存「分类 id 引用 + 名称快照」，**不持分类表、不解析路径**；端 BFF 读时按页内去重后的 `categoryId` 批量调 goods-center `/categories/paths` 补 `categoryPath`（一次调用，非 N+1），**解析失败只告警、路径留空**，前端回退快照名（展示增强不得拖垮主流程）。分类**子树匹配**同理：前端只传单个 `categoryId`，由端 BFF 用分类树展开成「该节点 + 全部后代」的 `categoryIds` 再传域（域只做 `IN`）。
 
 **鉴权与登录态（各端各管各的）**：每个端 BFF 只提供**自己身份**的登录接口（admin → `/auth/login` 签 `type=admin`；store-bff → `/auth/register|login` 签 `type=store`；mall-bff 待建，`type=user`）。三端共用同一把 `jwt-secret` 与同一套 `type` claim 契约（`LoginUser.CLAIM_USER_TYPE`），但**登录用户模型与 Redis 键命名空间按身份隔离**：
 
@@ -38,6 +42,37 @@
 - 域服务不参与登录态（无 Redis），见上「信任与防线」。
 
 **术语防呆（避免跨域加错表）**：`goods-center`=标准商品模板库（标准商品平台）；"店铺在售商品/库存/信誉"属 store 域；"顾客/购物车/订单/评价"属未来 trade 域。别把别域实体塞进 goods-center。
+
+## 对外契约清单（docs/contracts）
+
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`）③ 跨服务隐式（`cross-cutting.md`，共 15 条），外加基础设施（`gateway.md`）。
+
+**⚠ 契约表是页面契约的唯一裁决点：写/改前端时只照表写，不照后端代码写。** 表里「路径 / 方法 / 权限串 / 入出参类型」即全部契约；字段定义去 `common` 的 DTO 类看，表里**不抄字段**（抄一份就是制造第二个会漂移的地方）。
+
+生成/修改代码时遵守三条硬规则：
+
+1. **改任何对外接口**（增删改路径 / 方法 / 权限串 / 入出参类型）时，**同一改动内**更新对应 `<服务>.md`。只改代码不改契约表，视为未完成。
+2. **契约先行**：接口可以先定契约、后写实现——契约先行写下的行，把「状态」列填 **`待实现`**（留空即「已实现」）；**实现完成后同一改动内把该列摘回留空**，不摘检查器会报错（反向哨兵，防标记烂掉后这张表开始骗人）。`待实现` 行只校验路径/方法/权限串的写法，**不查**入出参类型是否存在、权限串是否已在种子里——契约先行时那些同样还没写，查了契约就落不了盘。前端可以照 `待实现` 的行先把页面写起来。
+3. **改跨服务隐式契约**（响应形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串与路由一致性等）时，**必须**同步更新 `docs/contracts/cross-cutting.md`——这些约定任何一方单边改动都不会编译报错，只会在运行时静默断链，所以只能靠登记 + 核对。
+4. **提交前跑一次检查器**，差集非空不得提交：`node docs/contracts/drift-check.mjs`（退出码 0 = 一致；非 0 按输出逐条修正）。
+
+**文件专项专用**：模块 README 只写服务说明（职责 / 架构位置 / 实体标记 / 边界），❌ 不列接口清单；契约文件只写接口与形状，❌ 不写业务规则散文；`db/*.sql` 只写表结构与种子。一个文件只有一个职责，同一内容不写两遍。
+
+## mall 前台（用户端）视觉与结构约定
+
+`frontend/mall` 是 mall 前台的**风格基准样张**（零构建静态页，双击 `index.html` 即可看）。⚠ 它约束的是**视觉与结构，不是技术形态**——正式实现仍按上面的目标分层走，但**长什么样、分哪几块，以样张为准**。生成/修改 mall 前台任何页面时一律遵守：
+
+- **色板唯一来源**：只消费 `frontend/mall/styles/tokens.css` 的令牌，**禁止硬编码**色值 / 圆角 / 阴影；换肤只改这一个文件（样张存在的意义就在于此）。
+- **风格不混用**：前台是 **C 端促销风（橙红主色）**，与 admin / store 的靛蓝后台令牌**刻意不同源**；不要把后台那套 `tokens.css` 引进来，也不要把橙色板反向引回后台。
+- **结构基准**：首页六区块顺序即基准——顶部用户条 → 万能搜索长框 → 全分类展示 → 大型滚动广告框 → 用户信息展示框 → 热门商品列表；新增页面的顶栏 / 页脚沿用同一套（`styles/mall.css` 的 `.topbar` / `.foot`）。
+- **只做宽屏**：容器固定 1280px，**不写媒体查询**，不做手机 / 窄屏适配。
+- **不做暗色模式**（C 端商城不做，与 admin / store 的 `.dark` 两回事）。
+- **未登录态固定形态**：顶栏左侧「请登录 / 免费注册」文字 link，右侧「购物车 / 我的订单」。
+- **不引外部图片与字体**：占位或无图场景用 **CSS 渐变占位**，不接外链图床 / CDN / 外部字体。
+- **样张先行**：要新增区块或调整风格时，**先在 `frontend/mall` 样张里改好、定了，再落到正式页面**；样张始终是唯一风格源头，不各页各写一套。
+
+⚠ 样张里的「风格样张」说明条与「切换登录态」按钮是**演示外壳**，落正式页面时删掉。
+⚠ 样张的**内容范围**（10 分类铺满一行、商品卡 5 列 × 2 行、价格三层字号、角标 / 原价 / 销量位）与 `scripts/data.js` 里逐条探边界的假数据，是刻意的基准，不要随手改小。
 
 ## 代码验证只到“编译通过”
 

@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -155,6 +156,49 @@ public class CategoryServiceImpl extends ServiceImpl<GoodsCategoryMapper, GoodsC
         }
         return listByIds(ids).stream()
                 .collect(Collectors.toMap(GoodsCategory::getId, GoodsCategory::getName, (a, b) -> a));
+    }
+
+    @Override
+    public Map<Long, String> pathNames(Collection<Long> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // 分类是三级小表，一次全量查询建 id 索引后在内存拼链，避免逐个 getById 的 N+1
+        Map<Long, GoodsCategory> index = list().stream()
+                .collect(Collectors.toMap(GoodsCategory::getId, c -> c, (a, b) -> a));
+        Map<Long, String> result = new HashMap<>();
+        for (Long categoryId : new HashSet<>(categoryIds)) {
+            String path = buildPath(index, categoryId);
+            if (!path.isEmpty()) {
+                result.put(categoryId, path);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 沿父链在内存索引里拼全路径（带环守卫，防脏数据成环时死循环）
+     *
+     * @param index     全量分类的 id 索引
+     * @param categoryId 目标分类 id
+     * @return 如 "服饰 / 男装 / T恤"；id 不存在时返回空串
+     */
+    private String buildPath(Map<Long, GoodsCategory> index, Long categoryId) {
+        if (categoryId == null) {
+            return "";
+        }
+        List<String> names = new ArrayList<>();
+        Set<Long> guard = new HashSet<>();
+        GoodsCategory cur = index.get(categoryId);
+        while (cur != null && guard.add(cur.getId())) {
+            names.add(cur.getName());
+            if (cur.getParentId() == null || cur.getParentId() == 0) {
+                break;
+            }
+            cur = index.get(cur.getParentId());
+        }
+        Collections.reverse(names);
+        return String.join(" / ", names);
     }
 
     /**

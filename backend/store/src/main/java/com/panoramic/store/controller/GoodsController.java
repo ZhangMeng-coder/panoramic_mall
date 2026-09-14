@@ -1,13 +1,17 @@
 package com.panoramic.store.controller;
 
+import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import com.panoramic.store.service.StoreGoodsSpuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -23,12 +27,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 店铺在售商品内部领域接口（store 域下沉纯域）。
- * <p>仅供 store-bff 经内部 Feign（{@code /internal/store/goods/**}）调用，不对页面暴露公网路由；
+ * <p>仅供端 BFF 经内部 Feign（{@code /internal/store/goods/**}）调用，不对页面暴露公网路由；
  * 方法直接返回业务原类型（不包 RespData），错误经 {@code StoreDomainExceptionHandler}
  * 以真实 HTTP 状态码传播。权限判定与店铺审核门禁（{@code status == 2}，R9）已收敛在端 BFF，
  * 本接口只负责执行；写操作审计 user_id 由 {@code StoreUserIdentityFilter} 从 X-User-Id 直取填充。</p>
- * <p>全部接口均为 owner 侧：{@code storeId}（= 店主账号 id，账号店同 ID）由 store-bff 从登录态带入，
- * 域内以「id + store_id」双条件限定作用域（R11）；本切片无 platform 对应物。</p>
+ * <p><b>owner 侧</b>（{@code /spu/**}，store-bff 调用）：{@code storeId}（= 店主账号 id，账号店同 ID）
+ * 由 store-bff 从登录态带入，域内以「id + store_id」双条件限定作用域（R11）；
+ * <b>platform 侧</b>（{@code /platform/spu/**}，admin BFF 调用）：不带 storeId、跨店全量，
+ * 供管理后台「店铺商品管理」查看 / 锁定解锁。两侧分流由端 BFF 调哪一侧决定，域内不做身份判断。</p>
  */
 @RestController
 @RequestMapping("/internal/store/goods")
@@ -102,5 +108,42 @@ public class GoodsController {
                                @RequestParam("storeId") Long storeId,
                                @Validated @RequestBody StoreGoodsSkuShelfDTO dto) {
         storeGoodsSpuService.updateSkuShelf(storeId, spuId, skuId, dto.getShelfStatus());
+    }
+
+    // ---- platform（admin BFF 调用，不带 storeId，跨店全量）----
+
+    /**
+     * 店铺商品分页（跨店全量；分类为多值子树匹配，categoryIds 由端 BFF 用分类树展开后传入）。
+     * <p>用 POST + body 而非 query 参数：categoryIds 是集合，走 body 规避 @SpringQueryMap 的集合序列化问题。</p>
+     */
+    @PostMapping("/platform/spu/page")
+    public PageResult<StoreGoodsSpuPlatformPageItemVO> platformPage(
+            @Validated @RequestBody StoreGoodsSpuPlatformPageQueryDTO dto) {
+        return storeGoodsSpuService.platformPage(dto);
+    }
+
+    /**
+     * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）
+     */
+    @GetMapping("/platform/spu/{id}")
+    public StoreGoodsSpuPlatformDetailVO platformDetail(@PathVariable("id") Long id) {
+        return storeGoodsSpuService.platformDetail(id);
+    }
+
+    /**
+     * 锁定商品（平台，原因必填）：写锁定字段 + 名下 SKU 级联下架 → SPU 推导为下架；
+     * 锁定期 owner 侧整行只读
+     */
+    @PostMapping("/platform/spu/{id}/lock")
+    public void lock(@PathVariable("id") Long id, @Validated @RequestBody StoreGoodsLockDTO dto) {
+        storeGoodsSpuService.lock(id, dto);
+    }
+
+    /**
+     * 解锁商品（平台）：清空锁定字段；<b>不恢复上架</b>（SKU 保持下架，需店主手动上架）
+     */
+    @PostMapping("/platform/spu/{id}/unlock")
+    public void unlock(@PathVariable("id") Long id) {
+        storeGoodsSpuService.unlock(id);
     }
 }

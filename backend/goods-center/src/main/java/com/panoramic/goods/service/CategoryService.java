@@ -76,4 +76,12 @@ public interface CategoryService extends IService<GoodsCategory> {
      * @return id -> 分类名称映射
      */
     Map<Long, String> nameMap(Collection<Long> ids);
+
+    /**
+     * 分类 ID 集合批量查完整链条名称（分页列表路径回填用；一次全量查询后内存拼链，避免 N+1）
+     *
+     * @param categoryIds 分类 ID 集合
+     * @return id -> 如 "服饰 / 男装 / T恤"；不存在 / 空集合的 id 不会出现在结果里（调用方回退快照名）
+     */
+    Map<Long, String> pathNames(Collection<Long> categoryIds);
 }

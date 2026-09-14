@@ -5,15 +5,21 @@ import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.store.entity.StoreShop;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 店铺服务（store 域下沉纯域）。
  * <p>own-entity CRUD 直接用 MyBatis-Plus 基类（IService）内置方法；新增方法承载店铺
  * 审核状态机 + store_id 数据权限适配（D5）。本切片 store 域仅一张 store_shop，且
  * 「账号店同 ID」（id==store_id==店主账号 id）；owner 操作只作用于「id==store_id 的店」，
- * platform 操作全量。方法内按 {@code X-User-Type}（admin/store）做平台/店主身份分流。</p>
+ * platform 操作全量。<b>owner/platform 的分流由端 BFF 选择调哪一侧方法决定</b>，
+ * 域内不做身份判断（不读 X-User-Type 判权；该头只用于审计留痕）。</p>
  */
 public interface StoreShopService extends IService<StoreShop> {
 
@@ -69,4 +75,20 @@ public interface StoreShopService extends IService<StoreShop> {
      * @param dto 审核参数
      */
     void adminAudit(Long id, ShopAuditDTO dto);
+
+    /**
+     * 店铺 ID 集合批量查店铺名（店铺商品列表回填 storeName 用，避免 N+1）
+     *
+     * @param ids 店铺 id 集合
+     * @return id -> 店铺名；查不到的 id 不出现在结果里（调用方回退空串）
+     */
+    Map<Long, String> nameMap(Collection<Long> ids);
+
+    /**
+     * 店铺下拉选项（管理后台「店铺商品管理」按店铺筛选用），按 id 升序。
+     * <p>不按审核状态过滤：未审核通过的店铺本就没有商品，过滤无收益。</p>
+     *
+     * @return 店铺 id + 名称列表
+     */
+    List<ShopOptionVO> options();
 }

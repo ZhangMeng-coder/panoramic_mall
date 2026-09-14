@@ -31,6 +31,12 @@ public class SpuPageItemVO {
     private String categoryName;
 
     /**
+     * 分类全路径（如「服饰 / 男装 / T恤」；goods-center 列表查询时一并解析返回）
+     * <p>管理员在分类页改路径命名 / 迁移层级后立即生效（读时解析，不是快照）。</p>
+     */
+    private String categoryPath;
+
+    /**
      * 品牌ID
      */
     private Long brandId;

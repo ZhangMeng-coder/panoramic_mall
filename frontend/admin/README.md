@@ -22,8 +22,14 @@
 | 角色管理 | `/role` | 角色分页 + CRUD；分配权限（权限树勾选，父节点级联全选子级、可清空）；分配用户（左侧展示“不在该角色内”的用户分页可加，右侧已分配可移除） |
 | 权限管理 | `/permission` | 权限树表格展示（el-table 树形数据：目录/页面/按钮逐级递减，含权限字符串、页面级路由地址）；行悬停新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；页面(2)级权限带路由地址 `route`，供前端菜单导航 |
 | 店铺管理 | `/shop` | 店主店铺列表（店铺名关键字 + 审核状态筛选、状态 badge 草稿/待审核/已通过/已驳回）；详情抽屉（资质字段只读回显）；审核弹窗：通过 / 驳回（驳回原因必填），按钮挂 `v-perm`（`store:shop:list/audit`）。不显示店主登录账号 |
+| 店铺商品 | `/shop-goods` | **全部店铺**的在售商品列表（2026-09-12 新增）：筛选 分类（el-tree-select，**可选任意层级，含全部子分类**）/ 品牌 / 店铺 / 上下架 / 锁定状态 / 名称关键字；列含 所属店铺、**分类全路径**、SKU 数、状态标签、锁定状态标签。操作：未锁定 → `锁定`（弹窗原因必填）；已锁定 → `锁定信息`（原因 / 锁定人 `平台管理员(N)` / 时间）+ `解锁`（二次确认）。按钮挂 `v-perm`（`store:goods:list` / `store:goods:lock`） |
+| 店铺商品详情 | `/shop-goods/:id` | 只读详情页（A3）：基础信息（名称 / 所属店铺 / 分类全路径 / 品牌 / 状态 / 锁定状态 / 中台关联）/ 主图 / 轮播图 / 商品详情富文本 / 规格属性配置 / SKU 列表（规格组合、编码、图片、价格、上下架）/ 锁定信息；顶部 `返回` + `锁定`/`解锁`。侧栏靠 `meta.activeMenu` 仍高亮「店铺商品」 |
 
 > 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（按当前登录用户角色过滤 `menusByRoleIds`：商品中台 / 系统管理 / 店铺管理 目录→页面，页面携带 `route`）；改动角色/权限后需**重新登录**刷新 Redis 快照。
+>
+> ⚠ 「店铺商品」是本次新增的**页面(2)级权限**（`store:goods`，`route=/shop-goods`，挂目录「店铺管理」4），权限行由 `backend/admin/src/main/resources/db/schema.sql` 灌入；**角色授权需在「角色管理 → 分配权限」手工勾选**，勾选后相关账号**重新登录**才生效（超管持 `*` 不受限）。前端 `router` 里列表页 `path` 必须与 `sys_permission.route` 逐字一致，否则侧栏点不开。
+>
+> **分类筛选取子树匹配**：页面只传单个 `categoryId`（可选父分类），admin BFF 取分类树展开为「该节点 + 全部后代」后传给域；**分类列展示全路径**（`categoryPath`，如 `服饰 / 男装 / T恤`），由 BFF 读时调 goods-center 解析，解析失败时前端回退落库快照的分类名。
 
 ## 商品编辑的 SKU 规格编辑器（SkuEditor）
 
@@ -50,8 +56,8 @@ npm run build     # 产物输出 dist/
 
 ```
 src/
-├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限/店铺接口模块
-├── router/              # 路由（默认跳转分类管理；店铺管理 /shop）
+├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限/店铺/店铺商品接口模块
+├── router/              # 路由（默认跳转分类管理；店铺管理 /shop、店铺商品 /shop-goods[/:id]）
 ├── styles/              # Design Token 基础层（换肤/EP主题映射/组件预设）
 │   ├── tokens.css       #   可调变量色板 + 浅/暗令牌 + EP --el-* 主题映射
 │   ├── base.css         #   Reset + 排版 + 滚动条（纯 var 驱动）
@@ -63,7 +69,8 @@ src/
 │   ├── user/            # UserManage + UserFormDialog + AssignRoleDialog
 │   ├── role/            # RoleManage + RoleFormDialog + AssignPermissionDialog + AssignUserDialog
 │   ├── permission/      # PermissionManage + PermissionFormDialog
-│   └── shop/            # ShopManage（店铺列表 + 详情抽屉 + 审核弹窗）
+│   ├── shop/            # ShopManage（店铺列表 + 详情抽屉 + 审核弹窗）
+│   └── shopgoods/       # ShopGoodsManage（店铺商品列表 + 锁定/解锁）+ ShopGoodsDetail（只读详情）
 ├── App.vue              # 布局壳：侧边导航（商品/系统管理）+ 顶栏（页名/明暗切换）
 └── main.js              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
 ```

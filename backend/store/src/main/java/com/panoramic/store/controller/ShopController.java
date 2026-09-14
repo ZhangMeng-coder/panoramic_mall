@@ -4,6 +4,7 @@ import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.store.service.StoreShopService;
 import lombok.RequiredArgsConstructor;
@@ -16,13 +17,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 店铺内部领域接口（store 域下沉纯域）。
  * <p>仅供端 BFF（store-bff 店主端 / admin 店铺管理）经内部 Feign（{@code /internal/store/...}）调用，
  * 不再向页面暴露公网路由；方法直接返回业务原类型（不包 RespData），错误经
  * {@code StoreDomainExceptionHandler} 以真实 HTTP 状态码传播。权限判定已收敛在端 BFF，
- * 本接口只负责执行；写操作审计 user_id 由 {@code StoreUserIdentityFilter} 从 X-User-Id 直取填充，
- * service 层再按 X-User-Type 做 owner(store)/platform(admin) 分流兜底（D5）。</p>
+ * 本接口只负责执行；写操作审计 user_id 由 {@code StoreUserIdentityFilter} 从 X-User-Id 直取填充。
+ * owner(store)/platform(admin) 的分流由端 BFF 选择调哪一侧接口决定，域内不做身份判断（D5）。</p>
  */
 @RestController
 @RequestMapping("/internal/store/shops")
@@ -77,5 +80,14 @@ public class ShopController {
     @PostMapping("/{id}/audit")
     public void audit(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto) {
         storeShopService.adminAudit(id, dto);
+    }
+
+    /**
+     * 平台店铺下拉选项（管理后台「店铺商品管理」按店铺筛选用）。
+     * <p>不按审核状态过滤：未审核通过的店铺本就没有商品，过滤无收益。</p>
+     */
+    @GetMapping("/options")
+    public List<ShopOptionVO> options() {
+        return storeShopService.options();
     }
 }

@@ -1,0 +1,108 @@
+/* ============================================================================
+   Design Tokens — 全景商城 · 前台（mall）风格样张
+   ----------------------------------------------------------------------------
+   ⚠ 这个文件是样张的「唯一换肤入口」。
+   只改下面「可调整」区块的品牌色 / 中性色 / 圆角 / 阴影，
+   全站观感整体跟随；base.css 与 mall.css 不必改动。
+
+   与 admin / store 两端的靛蓝后台令牌（#4F46E5）刻意不同源：
+   后台是「工具语境」，前台是「促销语境」，这里另起一套橙红色板。
+
+   样张只做宽屏，不含任何媒体查询。
+   ========================================================================== */
+
+:root {
+  /* ---- 可调整 · 品牌色（促销橙红）---- */
+  --brand: #e8452c; /* 主色：价格 / 主按钮 / 强调 */
+  --brand-hover: #d13a22; /* 主色 hover */
+  --brand-active: #b93019; /* 主色 active */
+  --brand-accent: #ff8a00; /* 辅色：券 / 角标 / 次级强调 */
+
+  /* 柔色底：标签底、胶囊底、hover 底。跟随主色换肤时这里一起改 */
+  --brand-soft: #fff1ec; /* 浅橙底 */
+  --brand-soft-2: #fff4e0; /* 浅橙黄底（券 / 会员 / 悬停底） */
+  --brand-glow: rgba(232, 69, 44, 0.16); /* 主色柔光（焦点环 / 阴影） */
+
+  /* 主色渐变：主按钮 / 搜索按钮 / 用户卡 CTA 共用一套，改上面三个主色即整体跟随 */
+  --brand-grad: linear-gradient(135deg, var(--brand), var(--brand-accent));
+  --brand-grad-hover: linear-gradient(
+    135deg,
+    var(--brand-hover),
+    var(--brand-accent)
+  );
+  --brand-grad-active: linear-gradient(
+    135deg,
+    var(--brand-active),
+    var(--brand-accent)
+  );
+
+  /* ---- 可调整 · 语义色 ----
+     本页（首页样张）未用到，留给后续页面：成功提示 / 库存紧张 / 失效 / 中性提示 */
+  --success: #17a34a;
+  --warning: #f59e0b;
+  --danger: #e8452c;
+  --info: #6b6b6b;
+
+  /* ---- 可调整 · 中性色 ---- */
+  --n0: #ffffff;
+  --n50: #fff8f4; /* 暖白底（页面底 / 顶栏底） */
+  --n100: #f7f2ef;
+  --n200: #f0e4de; /* 暖灰边框 */
+  --n300: #e0d3cc;
+  --n400: #b8aca6;
+  --n500: #9a9a9a;
+  --n600: #6b6b6b; /* 次要文字 */
+  --n700: #4a4a4a;
+  --n800: #2a2a2a;
+  --n900: #1f1f1f; /* 主文字 */
+
+  /* ---- 可调整 · 圆角 ---- */
+  --r-sm: 4px;
+  --r-md: 8px; /* 按钮 / 输入 */
+  --r-lg: 12px; /* 卡片 */
+  --r-xl: 16px; /* 大面板 */
+  --r-pill: 999px; /* 胶囊：搜索框 / 角标 */
+
+  /* ---- 可调整 · 阴影（暖调投影，不用冷灰）---- */
+  --sh-sm: 0 1px 2px rgba(120, 60, 40, 0.06);
+  --sh-md: 0 4px 14px -2px rgba(120, 60, 40, 0.1);
+  --sh-lg: 0 14px 32px -8px rgba(120, 60, 40, 0.16);
+
+  /* ---- 可调整 · 动效 ---- */
+  --dur: 200ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- 排版 ---- */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+
+  --t-xs: 12px;
+  --t-sm: 13px;
+  --t-base: 14px;
+  --t-md: 16px;
+  --t-lg: 20px;
+  --t-xl: 26px;
+  --t-2xl: 34px; /* 本页未用到，留给后续页面的次级大标题 */
+  --t-3xl: 44px; /* 轮播大标题 */
+
+  --w-regular: 400;
+  --w-medium: 500;
+  --w-semibold: 600;
+  --w-bold: 700;
+
+  /* ---- 间距（4px 网格）---- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px; /* 本页未用到，留给后续页面 */
+  --s-16: 64px;
+
+  /* ---- 尺寸 ---- */
+  --container: 1280px; /* 宽屏容器（样张不做窄屏适配）*/
+  --header-h: 34px; /* 顶栏高度 */
+}

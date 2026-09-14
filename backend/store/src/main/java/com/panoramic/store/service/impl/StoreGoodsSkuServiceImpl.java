@@ -57,4 +57,13 @@ public class StoreGoodsSkuServiceImpl extends ServiceImpl<StoreGoodsSkuMapper, S
         // StoreGoodsSku 继承 BaseEntity（@TableLogic），remove 为逻辑删除
         remove(Wrappers.<StoreGoodsSku>lambdaQuery().eq(StoreGoodsSku::getSpuId, spuId));
     }
+
+    @Override
+    public boolean offShelfBySpuId(Long spuId) {
+        // 条件更新只命中上架行；update(null, wrapper) 不触发实体填充，update_time 由库的 ON UPDATE 兜底
+        return update(null, Wrappers.<StoreGoodsSku>lambdaUpdate()
+                .eq(StoreGoodsSku::getSpuId, spuId)
+                .eq(StoreGoodsSku::getShelfStatus, StoreGoodsSku.SHELF_ON)
+                .set(StoreGoodsSku::getShelfStatus, StoreGoodsSku.SHELF_OFF));
+    }
 }

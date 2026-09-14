@@ -41,11 +41,12 @@
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
 | ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
 | ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
-| ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 | [README](backend/admin/README.md) |
+| ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分） | [README](frontend/README.md) |
-| ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核 | [README](frontend/admin/README.md) |
+| ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
 | ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
 | └── [mall/](frontend/mall/) | 商城前台（占位，待开发） | [README](frontend/mall/README.md) |
+| [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
 
@@ -70,7 +71,11 @@
    - **仅审核通过**后店主端开放 商品管理/订单管理/库存管理 入口（店铺未过审时页面与接口均 403）
    - **店主在售商品管理**（frontend/store「商品管理」，经 store-bff → store 域 owner 接口）：商品增删改查与分页筛选（分类/品牌/关键字/上下架）、规格属性配置、SKU 明细维护与**按 SKU 上下架**；**上架任一 SKU → 商品自动上架，SKU 全下架 → 商品自动下架**（SPU 状态为推导结果、只读）；已上架 SKU 整行锁定（须先下架才能改/删），存在上架 SKU 时商品规格属性配置只读、商品不可删除
    - **中台模板关联与版本同步**：新增时可按中台 `sku_code` 整单预填；中台 SPU/SKU 均带版本戳 `version`（任何修改即刷新），店主编辑关联商品时 BFF 比对中台版本 → 不一致提示「中台模板已更新」并给「同步」按钮（覆盖商品信息与规格，SKU 按 `sku_code` 对齐、保留已填价格），**不同步也能保存**；中台模板已删则提示「已不存在」
-6. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
+6. **管理后台店铺商品管理 + 商品类别全路径（2026-09-12）**：
+   - admin 后台「店铺管理 → 店铺商品」目录：**全店铺**在售商品列表，按 **类型（分类，含全部子分类的子树匹配）/ 品牌 / 店铺 / 上下架 / 锁定状态 / 名称关键字** 查询（`store:goods:list`），并提供**只读详情页**（基础信息 / 图片 / 富文本详情 / 规格配置 / SKU 明细 / 锁定信息）
+   - **平台锁定 / 解锁**（`store:goods:lock`，锁定原因必填）：锁定即把该商品全部 SKU 级联下架、商品随之推导为下架；**锁定期店主端整行只读**（编辑/上下架/增删改 SKU/删除一律拒绝，域内强制）；解锁只清锁定字段、**不自动恢复上架**（店主手动重上）。店主端只读呈现：列表锁定状态列 + 「锁定信息」弹窗（**只显示原因与时间，不显示锁定人**）
+   - **商品类别展示改为全路径**（如「服饰 / 男装 / T恤」）：admin 标准商品列表、admin 店铺商品列表、店铺端商品列表一致；路径由端 BFF **读时**调 goods-center 批量路径接口解析（域不持分类表、只存快照），解析失败自动回退快照分类名
+7. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
 
 ## 环境依赖
 
@@ -118,5 +123,6 @@ cd frontend/store && npm install && npm run dev   # → http://localhost:5174
 - [x] 店铺管理 + 店主端一期（frontend/store，开店审核闭环）
 - [x] 店主端商品管理（在售商品 SPU/SKU 增删改、按 SKU 上下架联动、中台模板关联与版本同步）
 - [x] BFF 化收口：goods-center 下沉纯域、store-center 拆为 store（域）+ store-bff（店铺端 BFF）、admin 店铺管理 BFF 编排、网关公网收敛为端 BFF 白名单
+- [x] 管理后台店铺商品管理（全店铺查询/只读详情/平台锁定解锁，分类子树筛选）+ 商品类别全路径展示
 - [ ] 商城前台项目（frontend/mall）+ mall-bff / trade-center 下沉
 - [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）

@@ -1,6 +1,7 @@
 package com.panoramic.storebff.bff;
 
 import com.panoramic.common.exception.ServiceException;
+import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.store.api.StoreClient;
 import com.panoramic.common.store.dto.ShopSaveDTO;
@@ -74,29 +75,11 @@ public class StoreShopBffService {
     }
 
     /**
-     * 统一编排执行：业务异常（400 参数/业务）透传，其余（熔断/连接/序列化等）降级为友好提示。
-     * <p>⚠ Feign + 熔断会把下游抛出的业务异常包装成 {@code NoFallbackAvailableException}/
-     * {@code ExecutionException}/{@code CompletionException} 等再抛出，因此须沿 cause 链定位原始
-     * {@link ServiceException}；否则 400 会被误当成连接故障降级为 500「服务暂不可用」。</p>
+     * 统一编排执行：业务异常（400 参数/业务、403、404）透传，其余（熔断/连接/序列化等）降级为友好提示。
+     * <p>剥 cause 链与降级的实现已抽到 common 的 {@link BffFeignCall}（与 admin BFF 共用一份），
+     * 本类只传自己的降级文案。</p>
      */
     private <T> T call(Supplier<T> action) {
-        try {
-            return action.get();
-        } catch (Exception e) {
-            // 沿 cause 链找下游业务异常，剥开熔断/异步包装层
-            for (Throwable t = e; t != null; t = t.getCause()) {
-                if (t instanceof ServiceException se) {
-                    Integer code = se.getCode();
-                    if (code != null && (code == 400 || code == 403)) {
-                        throw se; // 参数/业务(400)、权限(403)：原样透传，由统一异常处理还原给页面
-                    }
-                    log.warn("store 域调用异常，降级处理: code={}, msg={}", se.getCode(), se.getMessage());
-                    throw new ServiceException(500, DEGRADE_MSG);
-                }
-            }
-            // 非业务异常：熔断开启 / 连接失败 / 序列化等 → 降级为友好提示
-            log.error("store 域调用失败，降级处理", e);
-            throw new ServiceException(500, DEGRADE_MSG);
-        }
+        return BffFeignCall.call("store", DEGRADE_MSG, action);
     }
 }

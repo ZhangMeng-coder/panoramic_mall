@@ -3,15 +3,20 @@ package com.panoramic.common.store.api;
 import com.panoramic.common.store.dto.ShopAuditDTO;
 import com.panoramic.common.store.dto.ShopPageQueryDTO;
 import com.panoramic.common.store.dto.ShopSaveDTO;
+import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,6 +26,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+
+import java.util.List;
 
 /**
  * store（店铺业务域，下沉纯域）内部 Feign 客户端。
@@ -32,7 +39,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份 + 熔断 + 错误解码。</li>
  * </ul>
  * 数据权限口径（D5）：owner 方法（store-bff 触发）强制携带 store_id，store 域只作用于「id==store_id 的店」；
- * platform 方法（admin 触发）不传 store_id，全量操作。服务端以 X-User-Type 分流。
+ * platform 方法（admin 触发）不传 store_id，全量操作。owner / platform 的分流由「端 BFF 调哪一侧方法」
+ * 决定，域内不做身份判断（不读 X-User-Type 判权；该头只用于审计留痕）。
  * 服务端路径与映射需与 store 域内部控制器一一对应（前缀 /internal/store）。</p>
  */
 @FeignClient(name = "store", contextId = "storeClient",
@@ -81,7 +89,9 @@ public interface StoreClient {
     void auditShop(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto);
 
     // ---- owner：店铺在售商品（store-bff 调用，必带 store_id；X-User-Type=store）----
-    // 说明：本组接口无 platform 对应物——本轮 admin 不做店铺商品管理（无 platform 侧）。
+    // 说明：owner 侧只作用于 store_id 名下的商品，由 store-bff 从登录态取 store_id 传入；
+    // platform 侧对应物见本文件尾部同名 platform 方法（不传 store_id、全量，admin BFF 调用），
+    // 两侧分流由「端 BFF 调哪一侧」决定，域内不做身份判断（D5）。
     // 出参 StoreGoodsSpuDetailVO 不含中台版本比对结果，由 store-bff 编排时补充。
 
     /**
@@ -130,4 +140,42 @@ public interface StoreClient {
     void updateStoreGoodsSkuShelf(@PathVariable("spuId") Long spuId, @PathVariable("skuId") Long skuId,
                                   @RequestParam("storeId") Long storeId,
                                   @RequestBody StoreGoodsSkuShelfDTO dto);
+
+    // ---- platform：店铺在售商品（admin BFF 调用，不传 store_id，全量；X-User-Type=admin）----
+    // 管理后台「店铺商品管理」：跨店查看 / 只读详情 / 平台锁定解锁。
+    // 锁定语义：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；
+    // 仅平台可解锁，解锁不自动恢复上架（由店主手动重新上架）。
+
+    /**
+     * 店铺商品分页（跨店全量；分类为多值子树匹配，可再按品牌/店铺/上下架/锁定状态筛选）。
+     * <p>⚠ 用 {@code POST + @RequestBody} 而非 query 参数：{@code categoryIds} 是集合，
+     * {@code @SpringQueryMap} 对集合字段的序列化口径不确定，走 body 规避。</p>
+     */
+    @PostMapping("/goods/platform/spu/page")
+    PageResult<StoreGoodsSpuPlatformPageItemVO> platformPageStoreGoods(@RequestBody StoreGoodsSpuPlatformPageQueryDTO dto);
+
+    /**
+     * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）
+     */
+    @GetMapping("/goods/platform/spu/{id}")
+    StoreGoodsSpuPlatformDetailVO platformStoreGoodsDetail(@PathVariable("id") Long id);
+
+    /**
+     * 锁定商品（原因必填）：写锁定字段 + 名下 SKU 级联下架 → SPU 推导为下架
+     */
+    @PostMapping("/goods/platform/spu/{id}/lock")
+    void lockStoreGoods(@PathVariable("id") Long id, @RequestBody StoreGoodsLockDTO dto);
+
+    /**
+     * 解锁商品：清空锁定字段；<b>不恢复上架</b>（SKU 保持下架，需店主手动上架）
+     */
+    @PostMapping("/goods/platform/spu/{id}/unlock")
+    void unlockStoreGoods(@PathVariable("id") Long id);
+
+    /**
+     * 店铺下拉选项（店铺商品列表「按店铺筛选」用）。
+     * <p>不按审核状态过滤：未审核通过的店铺本就没有商品。</p>
+     */
+    @GetMapping("/shops/options")
+    List<ShopOptionVO> listShopOptions();
 }

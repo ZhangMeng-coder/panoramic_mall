@@ -168,3 +168,17 @@ INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort,
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
   (411, 41, '店铺查询', 3, 'store:shop:list',  NULL, 0),
   (412, 41, '店铺审核', 3, 'store:shop:audit', NULL, 1);
+
+-- ============================================================
+-- 幂等权限种子：店铺商品（店铺管理目录(4)下的平台侧店铺在售商品管理）
+--   页面 店铺商品(42, 带路由 /shop-goods，perms=store:goods) → 按钮 查询 / 锁定解锁
+--   路由 /shop-goods 必须与前端 router 的 path 逐字一致，否则侧栏菜单点不开。
+--   ⚠ 角色授权**不由脚本补发**：请在「角色管理 → 分配权限」手工勾选；
+--     权限快照存于 Redis，勾选后相关账号需**重新登录**才生效（超管持 * 不受限）。
+-- ============================================================
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
+  (42, 4, '店铺商品', 2, 'store:goods', 'goods', 2, '/shop-goods');
+
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
+  (421, 42, '商品查询',     3, 'store:goods:list', NULL, 0),
+  (422, 42, '商品锁定解锁', 3, 'store:goods:lock', NULL, 1);

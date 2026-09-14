@@ -110,7 +110,8 @@ const THEME_KEY = 'pm-admin-theme'
 const route = useRoute()
 const router = useRouter()
 
-const activeMenu = computed(() => route.path)
+// 详情类子页面（如 /shop-goods/:id）用 meta.activeMenu 指回列表路由，保证侧栏菜单仍高亮
+const activeMenu = computed(() => route.meta.activeMenu || route.path)
 const pageTitle = computed(() => (route.meta.title ? String(route.meta.title) : ''))
 const user = computed(() => getUser())
 const displayName = computed(() => {

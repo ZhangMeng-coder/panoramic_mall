@@ -7,13 +7,20 @@ import com.panoramic.common.vo.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 店铺在售商品（SPU）实体。
  * <p>字段与中台标准商品同构，但归属店铺（{@code store_id}，= 店主账号 id，账号店同 ID），
  * 且带「中台关联」（{@code goods_spu_id} + {@code center_version} 版本戳快照）与上下架状态。
- * 分类/品牌以「id 引用 + 名称快照」落库（下拉数据来自中台，保存时不再回查中台）。</p>
+ * 分类/品牌以「id 引用 + 名称快照」落库（下拉数据来自中台，保存时不再回查中台——「分类全路径」由端 BFF
+ * 读取时另行调 goods-center 解析，域侧只提供 {@code category_id}）。</p>
  * <p>{@code shelf_status} 不独立可改：它由名下 SKU 联动推导，
  * 不变量为 {@code SPU上架 ⟺ ≥1 个 SKU 上架}（见 {@code StoreGoodsSpuServiceImpl} 的联动刷新）。</p>
+ * <p><b>平台锁定</b>：{@code lock_status == 1} 表示被平台管理员锁定（见
+ * {@code StoreGoodsSpuServiceImpl#lock}）。锁定会把名下 SKU 全部级联下架、SPU 随之推导为下架；
+ * 锁定期 owner 侧整行只读（编辑/上下架/增删改 SKU/删除 全部拒绝）；解锁不自动恢复上架。
+ * {@code lock_user} 是业务列（非审计列），存 {@code UserType:UserId} 原串（如 {@code admin:1}）。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -24,6 +31,11 @@ public class StoreGoodsSpu extends BaseEntity {
     public static final int SHELF_OFF = 0;
     /** 上下架：上架 */
     public static final int SHELF_ON = 1;
+
+    /** 锁定状态：未锁定 */
+    public static final int LOCK_OFF = 0;
+    /** 锁定状态：已锁定（平台锁定） */
+    public static final int LOCK_ON = 1;
 
     /**
      * 主键
@@ -95,4 +107,25 @@ public class StoreGoodsSpu extends BaseEntity {
      * 上下架：0 下架，1 上架（由 SKU 联动推导，不接受前端直接传入）
      */
     private Integer shelfStatus;
+
+    /**
+     * 锁定状态：0 未锁定，1 已锁定（平台锁定）
+     */
+    private Integer lockStatus;
+
+    /**
+     * 锁定原因（平台锁定时必填；店铺端「锁定信息」展示）
+     */
+    private String lockReason;
+
+    /**
+     * 锁定人（业务列，非审计列：UserType:UserId 原串，如 admin:1）。
+     * 仅管理端展示，店铺端不展示（A2）。
+     */
+    private String lockUser;
+
+    /**
+     * 锁定时间
+     */
+    private LocalDateTime lockTime;
 }

@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 标准商品平台 · 分类内部领域接口（goods-center 下沉纯域）。
@@ -46,6 +47,15 @@ public class CategoryController {
     @GetMapping("/tree")
     public List<CategoryTreeVO> tree() {
         return categoryService.tree();
+    }
+
+    /**
+     * 批量取分类全路径（端 BFF 列表/详情读时解析分类全路径用）。
+     * <p>入参为空集合时返回空 Map；结果只含命中的 id（查不到的不出现），由调用方回退快照名。</p>
+     */
+    @PostMapping("/paths")
+    public Map<Long, String> paths(@RequestBody List<Long> categoryIds) {
+        return categoryService.pathNames(categoryIds);
     }
 
     /**

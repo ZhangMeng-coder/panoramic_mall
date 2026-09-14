@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * goods-center（标准商品平台 / 标准商品模板库）内部 Feign 客户端。
@@ -68,6 +69,15 @@ public interface GoodsCenterClient {
 
     @GetMapping("/categories/tree")
     List<CategoryTreeVO> categoryTree();
+
+    /**
+     * 批量取分类全路径（如「服饰 / 男装 / T恤」，以 " / " 连接）。
+     * <p>端 BFF 读时解析用：域（store）不持分类表，故由端 BFF 拿商品行上的 categoryId 集合批量换路径。
+     * 结果只含命中的 id（查不到的不出现在 Map 里），调用方对缺失项回退显示落库快照名。
+     * 入参为空集合时直接返回空 Map。</p>
+     */
+    @PostMapping("/categories/paths")
+    Map<Long, String> categoryPaths(@RequestBody List<Long> categoryIds);
 
     @PutMapping("/categories/{id}")
     void updateCategory(@PathVariable("id") Long id, @RequestBody CategoryUpdateDTO dto);

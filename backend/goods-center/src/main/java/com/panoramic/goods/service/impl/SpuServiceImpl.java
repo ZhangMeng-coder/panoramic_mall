@@ -55,7 +55,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implements SpuService {
 
-    /** 跨实体：分类服务（叶子校验、详情取名、路径链、列表名称回填） */
+    /** 跨实体：分类服务（叶子校验、详情取名、路径链、列表名称与路径回填） */
     private final CategoryService categoryService;
     /** 跨实体：品牌服务（存在性校验、详情取名、列表名称回填） */
     private final BrandService brandService;
@@ -79,11 +79,14 @@ public class SpuServiceImpl extends ServiceImpl<GoodsSpuMapper, GoodsSpu> implem
         List<Long> brandIds = records.stream().map(GoodsSpu::getBrandId).distinct().collect(Collectors.toList());
         Map<Long, String> categoryNames = categoryService.nameMap(categoryIds);
         Map<Long, String> brandNames = brandService.nameMap(brandIds);
+        // 分类全路径（如「服饰 / 男装 / T恤」）：一次批量解析，避免逐行回查造成 N+1
+        Map<Long, String> categoryPaths = categoryService.pathNames(categoryIds);
 
         List<SpuPageItemVO> items = records.stream().map(spu -> {
             SpuPageItemVO vo = new SpuPageItemVO();
             BeanUtils.copyProperties(spu, vo);
             vo.setCategoryName(categoryNames.getOrDefault(spu.getCategoryId(), ""));
+            vo.setCategoryPath(categoryPaths.getOrDefault(spu.getCategoryId(), ""));
             vo.setBrandName(brandNames.getOrDefault(spu.getBrandId(), ""));
             return vo;
         }).collect(Collectors.toList());

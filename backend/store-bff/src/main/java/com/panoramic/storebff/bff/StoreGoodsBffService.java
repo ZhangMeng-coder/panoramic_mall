@@ -1,6 +1,7 @@
 package com.panoramic.storebff.bff;
 
 import com.panoramic.common.exception.ServiceException;
+import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.common.goods.api.GoodsCenterClient;
 import com.panoramic.common.goods.vo.BrandVO;
 import com.panoramic.common.goods.vo.CategoryTreeVO;
@@ -24,9 +25,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * 店铺端 BFF · 店铺在售商品编排。
@@ -40,8 +44,13 @@ import java.util.function.Supplier;
  * {@code center_version}，不一致置 {@code centerOutdated=true} 并附中台快照 {@code centerSpu}，
  * 由前端给「同步」按钮（覆盖 / 不覆盖由店主决定，不阻断保存）；中台已删或不可达时置
  * {@code centerMissing=true} 而不报错。</p>
- * <p>下游异常处理：业务异常（400 参数/业务、403 权限）沿 cause 链剥出后原样透传，
- * 其余（熔断/连接/序列化等）降级为友好提示，避免拖垮调用方。</p>
+ * <p><b>分类全路径（2026-09-12）</b>：列表/详情的 {@code categoryPath} 由本层<b>读时解析</b>——
+ * 域不持分类表，故按页内去重后的 {@code categoryId} 批量调 goods-center 换路径（一次调用，非 N+1）。
+ * 解析走独立 try/catch 降级：中台不可用时仅告警、路径留空，前端回退落库快照 {@code categoryName}，
+ * 绝不让整个列表/详情失败。</p>
+ * <p>下游异常处理：业务异常（400 参数/业务、403 权限、404 不存在）沿 cause 链剥出后原样透传，
+ * 其余（熔断/连接/序列化等）降级为友好提示，避免拖垮调用方。该逻辑已抽到 common 的
+ * {@link BffFeignCall}，本类只传降级文案。</p>
  */
 @Slf4j
 @Service
@@ -64,15 +73,17 @@ public class StoreGoodsBffService {
     // ---- 商品（数据在 store 域，经 owner 接口）----
 
     /**
-     * 我的商品分页（仅当前店主名下）
+     * 我的商品分页（仅当前店主名下）：域分页 + 分类全路径读时解析（降级不阻断）
      */
     public PageResult<StoreGoodsSpuPageItemVO> page(StoreGoodsSpuPageQueryDTO dto) {
         Long storeId = assertShopApprovedAndGetStoreId();
-        return callStore(() -> storeClient.pageStoreGoods(storeId, dto));
+        PageResult<StoreGoodsSpuPageItemVO> result = callStore(() -> storeClient.pageStoreGoods(storeId, dto));
+        fillCategoryPaths(result.getRecords());
+        return result;
     }
 
     /**
-     * 我的商品详情：域详情 + 中台关联版本比对（R10）
+     * 我的商品详情：域详情 + 中台关联版本比对（R10）+ 分类全路径（降级不阻断）
      */
     public StoreGoodsSpuDetailBffVO detail(Long id) {
         Long storeId = assertShopApprovedAndGetStoreId();
@@ -80,6 +91,7 @@ public class StoreGoodsBffService {
 
         StoreGoodsSpuDetailBffVO vo = new StoreGoodsSpuDetailBffVO();
         BeanUtils.copyProperties(domain, vo);
+        vo.setCategoryPath(resolveCategoryPath(domain.getCategoryId()));
         fillCenterLink(vo, domain);
         return vo;
     }
@@ -164,6 +176,66 @@ public class StoreGoodsBffService {
         return callGoods(() -> goodsCenterClient.spuDetailBySkuCode(skuCode));
     }
 
+    // ---- 分类全路径读时解析（域不持分类表，路径只能在本层补）----
+
+    /**
+     * 批量回填列表项的分类全路径（D4）：只对本页去重后的分类 id 发一次请求，避免 N+1。
+     * <p>未命中的行保持 {@code categoryPath == null}，前端回退显示落库快照 {@code categoryName}。</p>
+     *
+     * @param items 本页列表项（就地回填）
+     */
+    private void fillCategoryPaths(List<StoreGoodsSpuPageItemVO> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        List<Long> categoryIds = items.stream()
+                .map(StoreGoodsSpuPageItemVO::getCategoryId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, String> paths = fetchCategoryPaths(categoryIds);
+        if (paths.isEmpty()) {
+            return;
+        }
+        for (StoreGoodsSpuPageItemVO item : items) {
+            item.setCategoryPath(paths.get(item.getCategoryId()));
+        }
+    }
+
+    /**
+     * 解析单条分类全路径（详情用）；未命中返回 null（前端回退快照名）
+     *
+     * @param categoryId 分类 id
+     * @return 如「服饰 / 男装 / T恤」；解析失败或未命中为 null
+     */
+    private String resolveCategoryPath(Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        return fetchCategoryPaths(List.of(categoryId)).get(categoryId);
+    }
+
+    /**
+     * 调 goods-center 批量取分类全路径。
+     * <p><b>降级隔离（D9）</b>：中台不可用 / 熔断 / 业务异常一律只告警并返回空 Map——
+     * 分类路径是展示增强，缺失不能把整个列表或详情拖失败（前端回退显示快照名）。</p>
+     *
+     * @param categoryIds 分类 id 集合（已去重）
+     * @return id -> 路径；不可得时空 Map
+     */
+    private Map<Long, String> fetchCategoryPaths(List<Long> categoryIds) {
+        if (categoryIds == null || categoryIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            Map<Long, String> paths = callGoods(() -> goodsCenterClient.categoryPaths(categoryIds));
+            return paths == null ? Collections.emptyMap() : paths;
+        } catch (ServiceException e) {
+            log.warn("分类全路径解析失败，回退显示快照分类名: categoryIds={}, msg={}", categoryIds, e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
     // ---- 门禁与编排辅助 ----
 
     /**
@@ -240,47 +312,16 @@ public class StoreGoodsBffService {
     }
 
     /**
-     * 调 store 域的统一编排执行
+     * 调 store 域的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
     private <T> T callStore(Supplier<T> action) {
-        return call("store", STORE_DEGRADE_MSG, action);
+        return BffFeignCall.call("store", STORE_DEGRADE_MSG, action);
     }
 
     /**
-     * 调 goods-center 的统一编排执行
+     * 调 goods-center 的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
     private <T> T callGoods(Supplier<T> action) {
-        return call("goods-center", GOODS_DEGRADE_MSG, action);
-    }
-
-    /**
-     * 统一编排执行：业务异常（400 参数/业务、403 权限）透传，其余（熔断/连接/序列化等）降级为友好提示。
-     * <p>⚠ Feign + 熔断会把下游抛出的业务异常包装成 {@code NoFallbackAvailableException}/
-     * {@code ExecutionException}/{@code CompletionException} 等再抛出，因此须沿 cause 链定位原始
-     * {@link ServiceException}；否则 400/403 会被误当成连接故障降级为 500「服务暂不可用」。</p>
-     *
-     * @param downstream 下游服务名（日志用）
-     * @param degradeMsg 降级提示文案
-     * @param action     实际调用
-     */
-    private <T> T call(String downstream, String degradeMsg, Supplier<T> action) {
-        try {
-            return action.get();
-        } catch (Exception e) {
-            // 沿 cause 链找下游业务异常，剥开熔断/异步包装层
-            for (Throwable t = e; t != null; t = t.getCause()) {
-                if (t instanceof ServiceException se) {
-                    Integer code = se.getCode();
-                    if (code != null && (code == 400 || code == 403 || code == 404)) {
-                        throw se; // 参数/业务(400)、权限(403)、不存在(404)：原样透传，由统一异常处理还原给页面
-                    }
-                    log.warn("{} 调用异常，降级处理: code={}, msg={}", downstream, se.getCode(), se.getMessage());
-                    throw new ServiceException(500, degradeMsg);
-                }
-            }
-            // 非业务异常：熔断开启 / 连接失败 / 序列化等 → 降级为友好提示
-            log.error("{} 调用失败，降级处理", downstream, e);
-            throw new ServiceException(500, degradeMsg);
-        }
+        return BffFeignCall.call("goods-center", GOODS_DEGRADE_MSG, action);
     }
 }

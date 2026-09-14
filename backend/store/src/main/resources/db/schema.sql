@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS store_shop (
 --   shelf_status 不独立可改：由名下 SKU 联动推导，不变量为「SPU上架 ⟺ ≥1 个 SKU 上架」。
 --   center_version：上次关联/同步时中台 SPU 的 version（Unix 毫秒），编辑时比对可判断中台模板是否已改，
 --   不一致时由端 BFF 给店主「同步」按钮；店主可选择覆盖或不覆盖，不阻断保存。
+--   lock_*：平台锁定（管理后台「店铺商品管理」）。锁定 → 名下 SKU 全部下架、SPU 随之推导为下架；
+--   锁定期 owner 侧整行只读（编辑/上下架/增删改 SKU/删除 全部拒绝）；仅平台可解锁，解锁不自动恢复上架。
+--   lock_user 是业务列（非审计列），存 UserType:UserId 原串（如 admin:1），仅管理端展示，店铺端不展示。
 CREATE TABLE IF NOT EXISTS store_goods_spu (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   store_id       BIGINT UNSIGNED NOT NULL                COMMENT '所属店铺 id（=店主账号 id，账号店同 ID）',
@@ -64,6 +67,10 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   description    TEXT            DEFAULT NULL            COMMENT '商品详情（富文本）',
   spec_config    JSON            DEFAULT NULL            COMMENT '规格属性配置',
   shelf_status   TINYINT         NOT NULL DEFAULT 0      COMMENT '上下架：0下架，1上架（由 SKU 联动推导）',
+  lock_status    TINYINT         NOT NULL DEFAULT 0      COMMENT '锁定状态：0未锁定，1已锁定（平台锁定）',
+  lock_reason    VARCHAR(255)    DEFAULT NULL            COMMENT '锁定原因（锁定时必填）',
+  lock_user      VARCHAR(32)     DEFAULT NULL            COMMENT '锁定人（UserType:UserId，如 admin:1）',
+  lock_time      DATETIME        DEFAULT NULL            COMMENT '锁定时间',
   create_user    VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user    VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -72,7 +79,8 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   PRIMARY KEY (id),
   KEY idx_store_id (store_id),
   KEY idx_goods_spu_id (goods_spu_id),
-  KEY idx_shelf_status (shelf_status)
+  KEY idx_shelf_status (shelf_status),
+  KEY idx_lock_status (lock_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SPU';
 
 -- 店铺在售商品 SKU 表
@@ -96,3 +104,18 @@ CREATE TABLE IF NOT EXISTS store_goods_sku (
   KEY idx_spu_id (spu_id),
   KEY idx_sku_code (sku_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SKU';
+
+-- 3.1 幂等加列：为已存在的 store_goods_spu 表补充平台锁定列（可重复执行）。
+--     与 db/migrate-goods-lock.sql 内容等价（后者是「已部署库」的一次性迁移留痕），
+--     存量库若已跑过迁移，此处守卫判定为已存在、不重复 ALTER。
+SET @spu_has_lock := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_goods_spu' AND COLUMN_NAME = 'lock_status');
+SET @spu_lock_ddl := IF(@spu_has_lock = 0,
+  'ALTER TABLE store_goods_spu
+     ADD COLUMN lock_status TINYINT NOT NULL DEFAULT 0 COMMENT ''锁定状态：0未锁定，1已锁定（平台锁定）'' AFTER shelf_status,
+     ADD COLUMN lock_reason VARCHAR(255) DEFAULT NULL COMMENT ''锁定原因（锁定时必填）'' AFTER lock_status,
+     ADD COLUMN lock_user VARCHAR(32) DEFAULT NULL COMMENT ''锁定人（UserType:UserId，如 admin:1）'' AFTER lock_reason,
+     ADD COLUMN lock_time DATETIME DEFAULT NULL COMMENT ''锁定时间'' AFTER lock_user,
+     ADD INDEX idx_lock_status (lock_status)',
+  'SELECT 1');
+PREPARE spu_lock_stmt FROM @spu_lock_ddl; EXECUTE spu_lock_stmt; DEALLOCATE PREPARE spu_lock_stmt;

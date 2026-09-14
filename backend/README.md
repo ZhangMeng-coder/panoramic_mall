@@ -10,9 +10,12 @@
 | [common-auth](common-auth/) | 工具包（非服务） | — | 鉴权装配层：`SecurityConfig` / `AuthTokenFilter` / `JwtService` / `LoginUserCacheService`（Redis 登录态 + JJWT）。**只被端 BFF（admin / store-bff / 未来 mall-bff）依赖**——业务域只依赖 `common`，结构上拿不到认证链与 Redis |
 | [gateway](gateway/) | 网关服务 | 8080 | Spring Cloud Gateway 响应式网关，统一入口、路由转发与鉴权透传；公网只路由到端 BFF（`/admin`、`/store`），域服务一律 403 |
 | [goods-center](goods-center/) | 业务服务（下沉纯域） | 8081 | 标准商品平台：分类 / 品牌 / 标准 SPU-SKU 模板；不暴露公网路由，仅被 admin 等 BFF 内部 Feign 调用 |
-| [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核（内部 Feign → goods-center / store） |
+| [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核、**店铺商品管理**（跨店查询/详情/锁定解锁，内部 Feign → goods-center / store） |
 | [store](store/) | 业务服务（下沉纯域） | 8083 | 店铺域：店铺 store_shop + 审核状态机 + 店主在售商品 store_goods_spu/store_goods_sku（账号店同 ID，id==店主账号 id）；不暴露公网路由，仅被 store-bff/admin 内部 Feign 调用 |
 | [store-bff](store-bff/) | 业务服务（店铺端 BFF） | 8084 | 店主端：店主账号 store_user（注册即登录、签发 type=store）+ 店铺资料编排 + 在售商品编排与中台版本比对（内部 Feign → store / goods-center） |
+
+> 📋 **各模块的对外接口清单不在此处，统一登记在 [`docs/contracts/`](../docs/contracts/)** —— 页面级（admin / store-bff）、内部 Feign（goods-center / store）、跨服务隐式契约（[cross-cutting.md](../docs/contracts/cross-cutting.md)）三层。改动接口时**同一改动内**更新对应契约文件，提交前跑 `node docs/contracts/drift-check.mjs`。
+> 各模块 README 只写**服务说明**（职责 / 架构位置 / 实体标记 / 边界），不重复列接口。
 
 ## 技术栈
 
@@ -71,6 +74,7 @@ curl http://localhost:8080/discovery/services   # 网关探活：查看已注册
 > goods-center / store 已下沉纯域，**不再有公网路由**。页面链路全部改为端 BFF 编排：
 > - 商品模板：`GET http://localhost:8080/admin/goods/categories/tree` → 网关 `/admin/**`（StripPrefix=1）→ admin(8082) BFF 编排 → 内部 Feign `/internal/goods/**` → goods-center(8081)
 > - 店铺管理：`GET http://localhost:8080/admin/shop/shops` → admin(8082) BFF 编排 → 内部 Feign `/internal/store/**` → store(8083)
+> - 店铺商品管理：`GET http://localhost:8080/admin/shop/goods/page` → admin(8082) BFF（分类子树展开 + 分类全路径解析，另经 Feign → goods-center）→ 内部 Feign `/internal/store/goods/platform/**` → store(8083)
 > - 店主端：`/store/auth/**`、`/store/shops/**`、`/store/goods/**` → store-bff(8084)（店铺/商品编排内部 Feign → store；分类/品牌下拉与中台模板比对 → goods-center）
 
 ## 请求链路
@@ -96,4 +100,6 @@ store 前端(5174) ──/store──────────────┤
 - **鉴权只到端 BFF**：`common-auth`（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`）只被 admin / store-bff 依赖，业务域只依赖 `common` → 域服务不装配认证链、不碰 Redis、不做任何权限判断（内部令牌 `X-Internal-Token` 已删除）。⚠ 域端口只在内网可达是前提
 - 服务内跨实体只走对方 owner service
 - 店主端接口（`/store/auth`、`/store/shops`、`/store/goods`）由 store-bff 登录鉴权后编排到 store 域（owner，store_id=账号 id）；`/store/goods/**` 额外由 BFF 校验「店铺已审核通过」（未过审 `code=403`，域内不做该判断）。平台店铺管理接口（admin 端 `/admin/shop/shops/**`）以 `@PreAuthorize` + 权限串（`store:shop:list/audit`）控制，权限种子见 `admin/db/schema.sql` 与 `backfill-store-permission.sql`；admin 不读店主账号
+- **平台「店铺商品管理」**（admin 端 `/admin/shop/goods/**`，2026-09-12 新增）权限串 `store:goods:list`（分页/详情/三个筛选下拉）/ `store:goods:lock`（锁定/解锁），权限种子见 `admin/db/schema.sql`（页 `42 店铺商品` 挂目录 `4 店铺管理`）；**分类筛选为子树匹配**——前端只传单个 `categoryId`，admin BFF 取 goods-center 分类树展开为「该节点 + 全部后代」的 `categoryIds` 再传给域（域不持分类表，只做 `IN` 过滤）；**分类全路径**由 BFF 读时调 goods-center 批量路径接口解析并降级（失败留空、前端回退快照名）。锁定的语义边界见 [store/README.md](store/README.md)「平台锁定规则（R12）」
 - 详情见各模块 README：店铺域见 [store/README.md](store/README.md)、店铺端 BFF 见 [store-bff/README.md](store-bff/README.md)。
+- **以上这些跨服务约定（RespData 形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串一致性等）的完整登记与逐条核对方式见 [docs/contracts/cross-cutting.md](../docs/contracts/cross-cutting.md)** —— 共 15 条，每条标注定义位置、消费位置、破坏后果与静态核对方式。本节只讲原则，条目不在此重复。

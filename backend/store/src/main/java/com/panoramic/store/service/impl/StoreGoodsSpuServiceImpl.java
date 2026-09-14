@@ -10,20 +10,26 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.goods.dto.SpecAttr;
 import com.panoramic.common.goods.dto.SpecConfigItem;
+import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSkuVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
+import com.panoramic.common.util.UserContext;
 import com.panoramic.store.entity.StoreGoodsSku;
 import com.panoramic.store.entity.StoreGoodsSpu;
 import com.panoramic.store.mapper.StoreGoodsSpuMapper;
 import com.panoramic.store.service.StoreGoodsSkuService;
 import com.panoramic.store.service.StoreGoodsSpuService;
+import com.panoramic.store.service.StoreShopService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -31,6 +37,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -44,11 +51,16 @@ import java.util.stream.Collectors;
 
 /**
  * 店铺在售商品（SPU）服务实现（store 域下沉纯域）。
- * <p><b>数据权限（R11）</b>：本实现全部方法为 owner 侧，入口一律 {@link #getOwnedOrThrow}
+ * <p><b>owner 侧（数据权限 R11）</b>：owner 方法入口一律 {@link #getOwnedOrThrow}
  * 以「id + store_id」双条件取行——他人商品与不存在的商品同样报「商品不存在」，
- * 不泄露存在性；SKU 侧操作先经 {@link #getOwnedSkuOrThrow} 校验 SPU 归属。</p>
+ * 不泄露存在性；SKU 侧操作先经 {@link #getOwnedSkuOrThrow} 校验 SPU 归属。
+ * <b>owner 侧锁定只读守卫（R12）</b>：改 / 删 / 改 SKU / 上下架 在取行后立即
+ * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
+ * <p><b>platform 侧（跨店全量）</b>：{@link #platformPage} / {@link #platformDetail} 不带 store_id 过滤，
+ * 供 admin BFF 编排「店铺商品管理」；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
  * <p><b>上下架不变量</b>：SPU 的 {@code shelf_status} 从不直接接受入参，只由
- * {@link #refreshShelfStatus} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架}。</p>
+ * {@link #refreshShelfStatus} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架}；
+ * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。</p>
  * <p><b>域内不做鉴权/审核判断</b>：店铺 {@code status == 2} 的门禁由端 BFF 前置（R9），
  * 审计字段由 MyMetaObjectHandler 经 UserContext 自动填充，本类一律不手写。</p>
  */
@@ -58,8 +70,10 @@ import java.util.stream.Collectors;
 public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, StoreGoodsSpu>
         implements StoreGoodsSpuService {
 
-    /** 跨实体：SKU 服务（列表/计数/级联删除；不直接持有 SKU Mapper） */
+    /** 跨实体：SKU 服务（列表/计数/级联删除/级联下架；不直接持有 SKU Mapper） */
     private final StoreGoodsSkuService skuService;
+    /** 跨实体：店铺服务（平台列表/详情回填 storeName） */
+    private final StoreShopService shopService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -89,13 +103,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
 
     @Override
     public StoreGoodsSpuDetailVO detail(Long storeId, Long id) {
-        StoreGoodsSpu spu = getOwnedOrThrow(storeId, id);
         StoreGoodsSpuDetailVO vo = new StoreGoodsSpuDetailVO();
-        // imageList/specConfig 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
-        BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
-        vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
-        vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
-        vo.setSkus(skuService.listBySpuId(id).stream().map(this::toSkuVO).collect(Collectors.toList()));
+        buildDetail(getOwnedOrThrow(storeId, id), vo);
         return vo;
     }
 
@@ -126,6 +135,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     @Transactional(rollbackFor = Exception.class)
     public void update(Long storeId, Long id, StoreGoodsSpuUpdateDTO dto) {
         StoreGoodsSpu spu = getOwnedOrThrow(storeId, id);
+        assertNotLocked(spu, "编辑");
         validateSpecConfig(dto.getSpecConfig());
 
         // R6：存在上架 SKU 时规格配置只读（防止已上架 SKU 的规格组合沦为孤儿）
@@ -148,7 +158,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long storeId, Long id) {
-        getOwnedOrThrow(storeId, id);
+        StoreGoodsSpu spu = getOwnedOrThrow(storeId, id);
+        assertNotLocked(spu, "删除");
         // R8：存在已上架 SKU 时拒绝删除
         if (skuService.hasOnShelfSku(id)) {
             throw new ServiceException("商品存在已上架 SKU，请先全部下架后再删除");
@@ -162,6 +173,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     @Transactional(rollbackFor = Exception.class)
     public void replaceSkus(Long storeId, Long id, StoreGoodsSkuReplaceDTO dto) {
         StoreGoodsSpu spu = getOwnedOrThrow(storeId, id);
+        assertNotLocked(spu, "修改 SKU");
         List<StoreGoodsSkuDTO> skus = dto.getSkus() == null ? new ArrayList<>() : dto.getSkus();
         List<SpecConfigItem> config = readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {});
         validateSkus(config, skus);
@@ -225,6 +237,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     @Transactional(rollbackFor = Exception.class)
     public void updateSkuShelf(Long storeId, Long spuId, Long skuId, Integer shelfStatus) {
         StoreGoodsSpu spu = getOwnedOrThrow(storeId, spuId);
+        assertNotLocked(spu, "上下架");
         StoreGoodsSku sku = getOwnedSkuOrThrow(spuId, skuId);
         sku.setShelfStatus(shelfStatus);
         skuService.updateById(sku);
@@ -232,7 +245,155 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         refreshShelfStatus(spu);
     }
 
+    // ---- platform 侧（admin BFF 调用，跨店全量）----
+
+    @Override
+    public PageResult<StoreGoodsSpuPlatformPageItemVO> platformPage(StoreGoodsSpuPlatformPageQueryDTO dto) {
+        Page<StoreGoodsSpu> spuPage = dto.toPage(StoreGoodsSpu.class);
+        boolean hasCategoryFilter = dto.getCategoryIds() != null && !dto.getCategoryIds().isEmpty();
+        IPage<StoreGoodsSpu> result = page(spuPage,
+                Wrappers.<StoreGoodsSpu>lambdaQuery()
+                        // 分类为多值子树匹配：categoryIds 已由端 BFF 用分类树展开（含全部后代）
+                        .in(hasCategoryFilter, StoreGoodsSpu::getCategoryId, dto.getCategoryIds())
+                        .eq(dto.getBrandId() != null, StoreGoodsSpu::getBrandId, dto.getBrandId())
+                        .eq(dto.getStoreId() != null, StoreGoodsSpu::getStoreId, dto.getStoreId())
+                        .eq(dto.getShelfStatus() != null, StoreGoodsSpu::getShelfStatus, dto.getShelfStatus())
+                        .eq(dto.getLockStatus() != null, StoreGoodsSpu::getLockStatus, dto.getLockStatus())
+                        .like(StringUtils.hasText(dto.getKeyword()), StoreGoodsSpu::getName, dto.getKeyword())
+                        .orderByDesc(StoreGoodsSpu::getId));
+
+        List<StoreGoodsSpu> records = result.getRecords();
+        // 店铺名与 SKU 数量批量回填，避免 N+1
+        Map<Long, String> shopNames = shopService.nameMap(
+                records.stream().map(StoreGoodsSpu::getStoreId).collect(Collectors.toList()));
+        Map<Long, Integer> skuCounts = skuService.countMapBySpuIds(
+                records.stream().map(StoreGoodsSpu::getId).collect(Collectors.toList()));
+        List<StoreGoodsSpuPlatformPageItemVO> items = records.stream().map(spu -> {
+            StoreGoodsSpuPlatformPageItemVO vo = new StoreGoodsSpuPlatformPageItemVO();
+            BeanUtils.copyProperties(spu, vo);
+            vo.setStoreName(shopNames.getOrDefault(spu.getStoreId(), ""));
+            vo.setSkuCount(skuCounts.getOrDefault(spu.getId(), 0));
+            return vo;
+        }).collect(Collectors.toList());
+        return new PageResult<>(result.getTotal(), items);
+    }
+
+    @Override
+    public StoreGoodsSpuPlatformDetailVO platformDetail(Long id) {
+        StoreGoodsSpu spu = getByIdOrThrow(id);
+        StoreGoodsSpuPlatformDetailVO vo = new StoreGoodsSpuPlatformDetailVO();
+        buildDetail(spu, vo);
+        vo.setStoreName(spu.getStoreId() == null
+                ? "" : shopService.nameMap(List.of(spu.getStoreId())).getOrDefault(spu.getStoreId(), ""));
+        return vo;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void lock(Long id, StoreGoodsLockDTO dto) {
+        StoreGoodsSpu spu = getByIdOrThrow(id);
+        if (isLocked(spu)) {
+            throw new ServiceException("商品已锁定，无需重复操作");
+        }
+        // 锁定字段用条件更新显式写入：以「未锁定」为条件，防并发重复锁定；
+        // 且 updateById 会跳过 null 字段，锁定位无法用实体逐字段赋值可靠落库
+        boolean updated = update(null, Wrappers.<StoreGoodsSpu>lambdaUpdate()
+                .eq(StoreGoodsSpu::getId, id)
+                .eq(StoreGoodsSpu::getLockStatus, StoreGoodsSpu.LOCK_OFF)
+                .set(StoreGoodsSpu::getLockStatus, StoreGoodsSpu.LOCK_ON)
+                .set(StoreGoodsSpu::getLockReason, dto.getReason())
+                .set(StoreGoodsSpu::getLockUser, currentActor())
+                .set(StoreGoodsSpu::getLockTime, LocalDateTime.now()));
+        if (!updated) {
+            throw new ServiceException("商品已锁定，无需重复操作");
+        }
+        // 级联下架名下全部 SKU（锁上架商品 → 自动下架），再由不变量推导 SPU（D2）
+        skuService.offShelfBySpuId(id);
+        // ⚠ 必须重取实体：上面的条件更新绕过实体，手上这行的 lock_* 仍是旧值，
+        // 直接拿来 updateById 会把 lock_status=0 写回去，把刚落的锁抹掉
+        refreshShelfStatus(getById(id));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void unlock(Long id) {
+        StoreGoodsSpu spu = getByIdOrThrow(id);
+        if (!isLocked(spu)) {
+            throw new ServiceException("商品未锁定");
+        }
+        // 解锁必须用显式 set null 清字段：MyBatis-Plus 默认 NOT_NULL 策略下 updateById 会跳过 null，
+        // 库里上一轮的 lock_reason/lock_user/lock_time 清不掉
+        update(null, Wrappers.<StoreGoodsSpu>lambdaUpdate()
+                .eq(StoreGoodsSpu::getId, id)
+                .eq(StoreGoodsSpu::getLockStatus, StoreGoodsSpu.LOCK_ON)
+                .set(StoreGoodsSpu::getLockStatus, StoreGoodsSpu.LOCK_OFF)
+                .set(StoreGoodsSpu::getLockReason, null)
+                .set(StoreGoodsSpu::getLockUser, null)
+                .set(StoreGoodsSpu::getLockTime, null));
+        // 不动 SKU 与 shelf_status：解锁后保持下架，由店主手动重新上架（D2）
+    }
+
     // ---- 联动与规则辅助 ----
+
+    /**
+     * 组装详情出参（owner / platform 两侧共用，避免复制 JSON 转换与 SKU 组装代码）。
+     *
+     * @param spu 店铺商品实体（已确权）
+     * @param vo  目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
+     */
+    private void buildDetail(StoreGoodsSpu spu, StoreGoodsSpuDetailVO vo) {
+        // imageList/specConfig 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
+        BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
+        vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
+        vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
+        vo.setSkus(skuService.listBySpuId(spu.getId()).stream().map(this::toSkuVO).collect(Collectors.toList()));
+    }
+
+    /**
+     * owner 侧锁定只读守卫（R12）：商品被平台锁定期，店主侧改/删/改 SKU/上下架 一律拒绝。
+     *
+     * @param spu    店铺商品实体（已确权）
+     * @param action 操作名（拼进提示，如「编辑」「删除」「修改 SKU」「上下架」）
+     */
+    private void assertNotLocked(StoreGoodsSpu spu, String action) {
+        if (isLocked(spu)) {
+            throw new ServiceException("商品已被平台锁定，不可" + action + "，请联系平台管理员");
+        }
+    }
+
+    /**
+     * 是否处于平台锁定态
+     */
+    private boolean isLocked(StoreGoodsSpu spu) {
+        return spu != null && spu.getLockStatus() != null && spu.getLockStatus() == StoreGoodsSpu.LOCK_ON;
+    }
+
+    /**
+     * 当前操作人标识（格式 {@code UserType:UserId}，如 {@code admin:1}），用于 lock_user 留痕。
+     * <p>与 {@code MyMetaObjectHandler#currentOperator} 同口径：拿不到 userId（未登录 / 未带身份头）返回 null。
+     * 这是业务列而非审计列（D7），故在此直取写入，不经自动填充。</p>
+     */
+    private String currentActor() {
+        Long userId = UserContext.getUserId();
+        if (userId == null) {
+            return null;
+        }
+        return UserContext.getUserType().trim() + ":" + userId;
+    }
+
+    /**
+     * 按 id 取商品（platform 侧：跨店，不校验归属），不存在即报错
+     *
+     * @param id 店铺商品 id
+     * @return 店铺商品实体
+     */
+    private StoreGoodsSpu getByIdOrThrow(Long id) {
+        StoreGoodsSpu spu = getById(id);
+        if (spu == null) {
+            throw new ServiceException("商品不存在");
+        }
+        return spu;
+    }
 
     /**
      * 按名下 SKU 重算并回写 SPU 上下架状态（R2/R3）。
