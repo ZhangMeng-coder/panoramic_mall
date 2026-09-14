@@ -1,5 +1,23 @@
 <script setup lang="ts">
-import { loggedIn } from '../mock/session'
+import { computed } from 'vue'
+import { clearAuth, getToken, getUser } from '../store/auth'
+import { authApi } from '../api/auth'
+import { showToast } from '../composables/useToast'
+
+/** 有 token 即视为已登录；用户信息可能还在后台重建（昵称先留空） */
+const loggedIn = computed(() => Boolean(getToken()))
+const nickname = computed(() => getUser()?.nickname || '')
+
+/** 退出：先请服务端下线（删 Redis 快照），**接口失败也照样本地清**（token 失效时本来就没得清） */
+async function logout(): Promise<void> {
+  try {
+    await authApi.logout()
+  } catch {
+    // 忽略：本地登出照样生效
+  }
+  clearAuth()
+  showToast('已退出登录', 'success')
+}
 </script>
 
 <template>
@@ -8,12 +26,12 @@ import { loggedIn } from '../mock/session'
     <div class="container topbar__inner">
       <div class="topbar__account">
         <span class="topbar__greet">
-          <template v-if="loggedIn">Hi，<b>张小明</b></template>
-          <template v-else>你好，<a class="topbar__login" href="#">请登录</a></template>
+          <template v-if="loggedIn">Hi，<b>{{ nickname }}</b></template>
+          <template v-else>你好，<router-link class="topbar__login" to="/login">请登录</router-link></template>
         </span>
         <span class="topbar__divider"></span>
-        <a v-if="loggedIn" class="topbar__logout" href="#">退出</a>
-        <a v-else class="topbar__reg" href="#">免费注册</a>
+        <a v-if="loggedIn" class="topbar__logout" href="#" @click.prevent="logout">退出</a>
+        <router-link v-else class="topbar__reg" to="/register">免费注册</router-link>
       </div>
 
       <nav class="topbar__nav">

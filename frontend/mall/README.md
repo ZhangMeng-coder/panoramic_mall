@@ -1,7 +1,8 @@
 # 全景商城 — 前台商城（mall）
 
 mall 前台（用户购物端）的正式前端工程：**Vue 3 + Vite + TypeScript**。
-当前**页面内容全部静态写死**（数据在 `src/mock/`），**不发起任何接口请求**（后端 mall-bff 已就绪，但页面尚未接入）。
+**账号功能已接入后端 `mall-bff`**（取码 / 注册 / 登录 / 登出 / 当前顾客，共 5 条）；
+**首页六个区块的数据仍全部静态写死**（在 `src/mock/`），首页数据聚合属 mall-bff 二期。
 
 > **风格基准**：本工程即 mall 前台的风格基准，换肤唯一入口是 [`src/styles/tokens.css`](./src/styles/tokens.css)。
 > 约束条文见根目录 [CLAUDE.md](../../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」。
@@ -27,25 +28,32 @@ npm run dev      # http://localhost:5175
 ```
 mall/
 ├── index.html              Vite 入口（只有 #app，样式由 main.ts 引入）
-├── vite.config.ts          端口 5175 + /mall 代理（按契约预留，当前无调用方）
+├── vite.config.ts          端口 5175 + /mall 代理（→ 网关 8080 → mall-bff 8085）
 ├── tsconfig.json           strict: true
 └── src/
-    ├── main.ts             createApp + router + 载入三个 css（顺序：令牌 → 基线 → 区块）
-    ├── App.vue             <router-view />
-    ├── router/index.ts     hash 模式；/ → HomeView，兜底重定向 /
+    ├── main.ts             createApp + router + 载入四个 css（令牌 → 基线 → 区块 → 账号页）
+    ├── App.vue             <router-view /> + <ToastHost />（全局提示条）
+    ├── router/index.ts     hash 模式；/ 首页、/login、/register；兜底重定向 /；全局守卫
     ├── styles/
     │   ├── tokens.css      ★ 唯一换肤入口（只改这个文件即可整体换色）
     │   ├── base.css        reset + 排版基线 + 容器 + 通用工具类
-    │   └── mall.css        六个区块的样式，顺序与 HomeView 一致
-    ├── types/mall.ts       Category / Banner / Goods / GoodsTag
-    ├── mock/               静态数据：categories / banners / goods / hotwords / session
-    ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标）
-    ├── composables/        useCarousel.ts（自动播放 / 箭头 / 圆点 / 悬停暂停）
-    ├── components/         六个区块 + 页脚（GoodsCard 为商品卡子组件）
-    └── views/HomeView.vue  按基准顺序组装六个区块
+    │   ├── mall.css        首页六个区块的样式，顺序与 HomeView 一致
+    │   └── account.css     登录 / 注册页 + 轻提示条（只消费令牌）
+    ├── types/
+    │   ├── mall.ts         Category / Banner / Goods / GoodsTag
+    │   └── auth.ts         CurrentUser / LoginResult / 登录注册请求体
+    ├── api/
+    │   ├── request.ts      axios 实例 + 拦截器（解 RespData、统一报错）
+    │   └── auth.ts         5 条账号接口（路径照 docs/contracts/mall-bff.md）
+    ├── store/auth.ts       C 端登录态（token 存 localStorage，user 驻留内存）
+    ├── mock/               首页静态数据：categories / banners / goods / hotwords
+    ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标 / 手机号打码）
+    ├── composables/        useCarousel.ts（轮播）、useSmsCode.ts（取码倒计时）、useToast.ts（提示条）
+    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost
+    └── views/              HomeView.vue（六区块）+ LoginView.vue + RegisterView.vue
 ```
 
-## 页面结构（自上而下，顺序即基准）
+## 页面结构（首页自上而下，顺序即基准）
 
 | # | 区块 | 组件 |
 |---|---|---|
@@ -57,10 +65,27 @@ mall/
 | ⑥ | 热门商品列表（5 列 × 2 行 = 10 件） | `GoodsGrid.vue` + `GoodsCard.vue` |
 | — | 极简页脚 | `SiteFooter.vue` |
 
-## 登录态
+登录页（`/login`）与注册页（`/register`）用 `AccountShell.vue` 复用同一套顶栏与页脚。
 
-尚未接入登录，`src/mock/session.ts` 里写死 `loggedIn = false`（未登录态）。
-顶栏与用户信息框**两套形态都已实现** —— 把该常量改成 `true` 即可查看已登录版式，不用改任何组件。
+## 账号与登录态（已接入 mall-bff）
+
+| 动作 | 接口 | 入口 |
+|---|---|---|
+| 获取验证码 | `POST /mall/auth/sms-code` | 登录页 / 注册页 |
+| 注册（**注册即登录**） | `POST /mall/auth/register` | `/register` |
+| 登录 | `POST /mall/auth/login` | `/login` |
+| 退出 | `POST /mall/auth/logout` | 顶栏「退出」 |
+| 当前顾客 | `GET /mall/auth/me` | 路由守卫（刷新后重建用户态） |
+
+- **账号即手机号**，验证方式是**手机号 + 短信验证码**，没有密码。
+- ⚠ 短信是**模拟通道**：后端取码只打一行日志、不发真实短信，校验与**固定码 `888888`** 比对。
+  因此登录 / 注册页上固定有一行「演示环境：短信为模拟通道，验证码固定 888888」——
+  **去掉它页面上就没有任何途径得知验证码**，这不是假功能，是契约本身。
+- 登录态：`localStorage['pm-mall-token']` 存 token；用户信息只驻留内存，刷新后由守卫拉 `/auth/me` 重建。
+- ⚠ **401 不自动跳登录页** —— 与 store / admin 两端的**刻意差异**：mall 首页是公开页，
+  带过期 token 的游客不该被弹走，页面照常按未登录态渲染；跳不跳由守卫 / 调用方决定。
+- **首页不要求登录**，游客可正常浏览（守卫只做「已登录别去登录页」和「刷新重建用户态」两件事）。
+- 用户信息框（⑤）里的优惠券 / 积分 / 收藏**恒为 0**：这三项接口属二期，不编造假数字。
 
 ## 换风格改哪里
 
@@ -90,28 +115,26 @@ mall/
 
 ## 明确**不做**的事
 
-- ❌ 不接任何接口（无 API、无 mock 服务），数据全在 `src/mock/`
+- ❌ **首页六区块不接接口**：数据全在 `src/mock/`（账号接口已接入，见上）
 - ❌ 不做手机 / 窄屏适配 —— **只做宽屏**，容器固定 1280px，没有任何媒体查询
 - ❌ 不做暗色模式（C 端商城不做，与 admin / store 的 `.dark` 是两回事）
 - ❌ 不引外部图片与字体 —— 图位一律用 **CSS 渐变占位**（`utils/gradient.ts`）
 - ❌ 页面里**不使用任何 Element Plus 组件**（见下）
+- ❌ 「购物车 / 我的订单」仍是死链（后端没有对应接口）
 
 ## 关于 Element Plus
 
 `element-plus` 在 `package.json` 依赖里，但**仅作后续页面（表单 / 弹窗 / 分页）的备用能力**：
-`main.ts` 不注册 EP、不引 EP 样式，首页零 EP 组件 —— **前台保持自己单独一套风格，不做样式变换**。
+`main.ts` 不注册 EP、不引 EP 样式，**账号页的表单与提示条也都是手写的**（`styles/account.css`）——
+**前台保持自己单独一套风格，不做样式变换**。
 
 将来某一页真要用 EP，在**那一页**按需引组件与样式，并把 EP 变量重映射到 `src/styles/tokens.css` 的橙红令牌，
 不要全局引 `element-plus/dist/index.css`（会把整站观感拉成后台风）。
 
 ## 接口与分层
 
-mall 前台的 BFF **`mall-bff` 已就绪**（`backend/mall-bff`，端口 8085，身份 `type=user`）——
-**一期只做 C 端顾客账号**（取码 / 注册 / 登录 / 登出 / me，共 5 条），**不调任何业务域**；
-首页数据聚合是二期。契约登记在 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
+页面只经网关访问端 BFF：`vite.config.ts` 的 `/mall` 代理 → 网关 8080（`StripPrefix=1`）→ `mall-bff`(8085)。
+账号 5 条**已接入**（`src/api/auth.ts`，路径照契约表 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)）。
 
-按仓库分层约定，页面只经网关访问端 BFF：`vite.config.ts` 里的 `/mall` 代理已按契约里的网关前缀配好，
-**接页面时无需改代理配置**。⚠ 但本工程**当前仍未接入任何接口**——首页六个区块的数据依然全部来自 `src/mock/`。
-
-> 接口形态提醒（接入时照契约表写，不照后端代码写）：账号即手机号、短信为**模拟通道**（固定码 `888888`，
-> 取码接口只打日志不发真实短信），登录成功返回 `{token, user}`，后续请求带 `Authorization: Bearer <token>`。
+首页数据聚合是**二期**：届时 mall-bff 经 Feign 调 goods-center 取得商品 / 分类，页面再把 `src/mock/` 换成接口数据。
+在此之前，首页六个区块的数据来源就是 `src/mock/`。

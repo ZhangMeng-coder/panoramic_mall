@@ -6,7 +6,7 @@
 |---|---|---|
 | [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + Element Plus |
 | [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + Element Plus |
-| [mall/](./mall/) | 商城前台（用户购物端）——页面内容当前**全部静态写死**，尚未接接口 | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
+| [mall/](./mall/) | 商城前台（用户购物端）——**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容仍**静态写死** | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
 
 ## 本地开发
 
@@ -21,7 +21,7 @@ cd store && npm install && npm run dev
 cd mall && npm install && npm run dev
 ```
 
-三个端均通过 Vite dev proxy 转发至网关 `http://localhost:8080`（admin：`/admin`、`/goods`、`/store`、`/discovery`；store：`/store`、`/auth`；mall：`/mall` —— 后端 **mall-bff（8085）已就绪**，取码/注册/登录 5 条接口可用，但页面**尚未接入**、当前无调用方）。
+三个端均通过 Vite dev proxy 转发至网关 `http://localhost:8080`（admin：`/admin`、`/goods`、`/store`、`/discovery`；store：`/store`、`/auth`；mall：`/mall` —— 后端 **mall-bff（8085）** 的取码/注册/登录/退出/me 共 5 条接口**已接入 mall 的登录与注册页**；首页数据仍是静态的，聚合属二期）。
 
 > 管理后台与店铺端共用同一套设计令牌（`src/styles/tokens.css` 色板 + Element Plus 主题映射），明暗主题各自持久化（`pm-admin-theme` / `pm-store-theme`）。
 >

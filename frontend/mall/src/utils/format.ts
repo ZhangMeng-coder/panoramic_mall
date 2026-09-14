@@ -12,6 +12,11 @@ export function priceParts(price: number): { int: string; dec: string } {
   return { int, dec: `.${dec}` }
 }
 
+/** 手机号打码：13800138000 -> 138****8000（只用来展示顾客自己的账号，C 端惯例） */
+export function maskPhone(phone: string): string {
+  return phone.length === 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
+}
+
 /** 角标样式：促销类实心主色（无修饰符），服务类白底主色字，其余白底灰字 */
 export function tagClass(name: string): string {
   if (name === '直降') return ''

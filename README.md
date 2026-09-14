@@ -1,6 +1,6 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，首页内容仍静态写死）与**商城前台 BFF（mall-bff，C 端顾客账号）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，账号已接入 mall-bff，首页内容仍静态写死）与**商城前台 BFF（mall-bff，C 端顾客账号）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
 
 ## 系统架构
 
@@ -43,7 +43,7 @@
 | [frontend/](frontend/) | 前端（按项目拆分） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
 | ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（5175）：Vue 3 + Vite + TS，首页内容静态写死、尚未接接口 | [README](frontend/mall/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：Vue 3 + Vite + TS；**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容静态写死 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
@@ -79,6 +79,7 @@
    - ⚠ 短信为**模拟实现**：取码接口只写一行日志，**不发真实短信、不落库、不落 Redis**，校验与固定码 `888888` 比对（配置项 `panoramic.mall.sms-fixed-code`）
    - 注册即登录（`mall_user` 建号后直接签发 JWT + Redis 会话 `panoramic:login:user:{id}`）；C 端**不接 RBAC**（无 `@PreAuthorize`，与店主端同理）
    - **一期不调任何业务域**（无 Feign 客户端）；首页数据聚合为二期
+   - **mall 前台已接入**（2026-09-14）：`frontend/mall` 的 `/login` 与 `/register` 两页打通取码 / 注册 / 登录，顶栏接真实登出，刷新由路由守卫拉 `/auth/me` 重建登录态；**首页六区块仍读静态 `src/mock/`**
 8. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
 
 ## 环境依赖
@@ -130,8 +131,9 @@ cd frontend/mall  && npm install && npm run dev   # → http://localhost:5175
 - [x] 店主端商品管理（在售商品 SPU/SKU 增删改、按 SKU 上下架联动、中台模板关联与版本同步）
 - [x] BFF 化收口：goods-center 下沉纯域、store-center 拆为 store（域）+ store-bff（店铺端 BFF）、admin 店铺管理 BFF 编排、网关公网收敛为端 BFF 白名单
 - [x] 管理后台店铺商品管理（全店铺查询/只读详情/平台锁定解锁，分类子树筛选）+ 商品类别全路径展示
-- [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据（未接接口）
+- [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据
 - [x] 商城前台 BFF 一期（mall-bff）：C 端顾客账号（手机号 + 模拟短信验证码，签发 `type=user`）+ 网关 `/mall/**` 路由
-- [ ] mall-bff 二期：首页数据聚合（经 Feign 调 goods-center 的商品/分类）、`frontend/mall` 接入接口
+- [x] mall 前台接入账号接口：登录 / 注册两页 + 顶栏登录态 + 刷新重建（首页数据仍静态）
+- [ ] mall-bff 二期：首页数据聚合（经 Feign 调 goods-center 的商品/分类）、`frontend/mall` 首页接入接口
 - [ ] trade-center 下沉（购物车 / 订单 / 评价）
 - [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）
