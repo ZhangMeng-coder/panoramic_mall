@@ -1,64 +1,13 @@
 /* ============================================================================
-   全景商城 · 前台（mall）风格样张 —— 页面区块样式
+   全景商城 · 前台（mall）—— 页面区块样式
    ----------------------------------------------------------------------------
-   区块顺序即 index.html 的顺序：
+   区块顺序即 views/HomeView.vue 的顺序：
      ① .topbar 顶部用户条   ② .search 万能搜索长框   ③ .cats 全分类展示
      ④ .carousel 大型滚动广告框  ⑤ .usercard 用户信息展示框  ⑥ .goods 热门商品列表
-   另有 .demo-bar（样张说明条）与 .foot（极简页脚）。
+   另有 .foot（极简页脚）。
 
    只做宽屏：无任何媒体查询，容器固定 1280px。
    ========================================================================== */
-
-/* ============================================================================
-   ⓞ 样张说明条 + 演示开关（纯演示外壳，不属于页面设计）
-   ========================================================================== */
-
-.demo-bar {
-  background: #fffbe8;
-  border-bottom: 1px dashed #e0c98a;
-  color: #8a6d1f;
-  font-size: var(--t-xs);
-}
-
-.demo-bar__inner {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  height: 30px;
-}
-
-.demo-bar__dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #e8b62c;
-}
-
-.demo-bar strong {
-  font-weight: var(--w-semibold);
-}
-
-.demo-bar__sep {
-  color: #d9c48a;
-}
-
-.demo-toggle {
-  margin-left: var(--s-3);
-  padding: 2px 10px;
-  border: 1px dashed var(--n400);
-  border-radius: var(--r-pill);
-  color: var(--n600);
-  font-size: var(--t-xs);
-  transition: color var(--dur) var(--ease),
-    border-color var(--dur) var(--ease), background var(--dur) var(--ease);
-}
-
-.demo-toggle:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-  background: var(--brand-soft);
-}
 
 /* ============================================================================
    ① 顶部用户条

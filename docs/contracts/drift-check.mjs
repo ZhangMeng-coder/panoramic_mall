@@ -600,20 +600,49 @@ function checkGateway(meta, text, scope) {
   const gwPaths = wl ? wl[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
   for (const p of gwPaths) if (!text.includes(p)) fail(scope, `网关白名单有、契约页没有：${p}`);
 
-  // 两侧白名单互为子集（网关带前缀、服务不带）
-  const svcWhitelists = {};
-  for (const svc of ['admin', 'store-bff']) {
-    const y = read(path.join(ROOT, 'backend', svc, 'src', 'main', 'resources', 'application.yml'));
-    const m2 = y.match(/whitelist-paths\s*:\s*(.+)/);
-    svcWhitelists[svc] = m2 ? m2[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+  // 路由块：以 "- id:" 切分，每块取 `uri: lb://<svc>` 与 `Path=/<前缀>/**`
+  const routeTargets = yml.split(/\n\s*-\s*id:\s*/).slice(1).map((blk) => {
+    const u = blk.match(/uri:\s*lb:\/\/([A-Za-z0-9._-]+)/);
+    if (!u) return null;
+    const p = blk.match(/Path=(\/[A-Za-z0-9._/-]*?)\/\*\*/);
+    return { svc: u[1], prefix: p ? gwPath(p[1]) : null };
+  }).filter(Boolean);
+
+  // 端 BFF 名单**从 `bff-services` 的值推导**（不硬编码），路由前缀从路由块推导——
+  // 否则新增一个端 BFF 只在网关加路由时，本项会静默跳过它的两侧白名单交叉核对。
+  const svcList = bffVal ? bffVal.split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const prefixOf = {};
+  for (const svc of svcList) {
+    const hits = routeTargets.filter((r) => r.svc === svc);
+    if (hits.length !== 1 || !hits[0].prefix) {
+      fail(scope, `无法为端 BFF「${svc}」推出唯一的路由前缀（uri: lb://${svc} ↔ Path=/<前缀>/**，命中 ${hits.length} 条）`
+        + `——两侧白名单交叉核对需要它，故直接失败，不允许静默跳过`);
+      continue;
+    }
+    prefixOf[svc] = hits[0].prefix;
   }
+  // 反向哨兵：路由的转发目标不在 bff-services 里 = 死配置（经网关一律 403）
+  for (const r of routeTargets) {
+    if (svcList.length && !svcList.includes(r.svc)) {
+      warn(scope, `路由 lb://${r.svc} 的转发目标不在 bff-services 里——该路由经网关一律 403（死配置）`);
+    }
+  }
+
+  // 两侧白名单互为子集（网关带前缀、服务不带）
   const norm = (p, prefix) => {
     let s = p;
     if (prefix && s.startsWith(prefix)) s = s.slice(prefix.length) || '/';
     return normPath(s);
   };
-  for (const [svc, list] of Object.entries(svcWhitelists)) {
-    const prefix = svc === 'admin' ? '/admin' : '/store';
+  for (const svc of Object.keys(prefixOf)) {
+    const localYml = path.join(ROOT, 'backend', svc, 'src', 'main', 'resources', 'application.yml');
+    if (!fs.existsSync(localYml)) {
+      fail(scope, `端 BFF「${svc}」的服务侧 application.yml 不存在（${rel(localYml)}）——两侧白名单无法核对`);
+      continue;
+    }
+    const m2 = (read(localYml) || '').match(/whitelist-paths\s*:\s*(.+)/);
+    const list = m2 ? m2[1].split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const prefix = prefixOf[svc];
     const gwForSvc = new Set(gwPaths.filter((p) => p.startsWith(prefix)).map((p) => norm(p, prefix)));
     for (const p of list) {
       const np = normPath(p);

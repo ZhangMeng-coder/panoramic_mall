@@ -14,7 +14,7 @@
 
 ## 分层与内部服务调用（BFF 化，进行中）
 
-目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` 与 `store-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由。mall-bff、trade-center 等仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
+目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由。trade-center 仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
 
 **模块归属（鉴权装配层已独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/Feign 契约）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类，放 `common-auth`；只被业务代码共用的放 `common`。
 
@@ -35,7 +35,9 @@
   - **平台锁定（R12，2026-09-12）**：`store_goods_spu` 的 `lock_status/lock_reason/lock_user/lock_time` 四列即锁定态（不建独立锁定表）。**锁定 = 名下已上架 SKU 级联下架 → 由 `refreshShelfStatus` 推导 SPU 下架**（不变量仍是唯一写者，绝不直接改 `shelf_status`）；**锁定期 owner 侧整行只读**（编辑/删除/改 SKU/上下架一律拒绝，`assertNotLocked` 域内强制，不只靠前端禁用按钮）；**解锁只清锁定字段、不恢复上架**（店主手动重上）；锁定写入用条件更新（`where lock_status=0`）防并发重复锁定，解锁必须 `lambdaUpdate().set(col, null)` 显式清（`updateById` 跳过 null）。`lock_user` 是**业务列**（D7，可在 service 内显式写入），存审计同格式 `UserType:UserId`（如 `admin:1`）；**商户端不展示锁定人**，仅管理端展示。
   - **跨域「分类全路径」由端 BFF 读时解析（2026-09-12）**：域只存「分类 id 引用 + 名称快照」，**不持分类表、不解析路径**；端 BFF 读时按页内去重后的 `categoryId` 批量调 goods-center `/categories/paths` 补 `categoryPath`（一次调用，非 N+1），**解析失败只告警、路径留空**，前端回退快照名（展示增强不得拖垮主流程）。分类**子树匹配**同理：前端只传单个 `categoryId`，由端 BFF 用分类树展开成「该节点 + 全部后代」的 `categoryIds` 再传域（域只做 `IN`）。
 
-**鉴权与登录态（各端各管各的）**：每个端 BFF 只提供**自己身份**的登录接口（admin → `/auth/login` 签 `type=admin`；store-bff → `/auth/register|login` 签 `type=store`；mall-bff 待建，`type=user`）。三端共用同一把 `jwt-secret` 与同一套 `type` claim 契约（`LoginUser.CLAIM_USER_TYPE`），但**登录用户模型与 Redis 键命名空间按身份隔离**：
+**鉴权与登录态（各端各管各的）**：每个端 BFF 只提供**自己身份**的登录接口（admin → `/auth/login` 签 `type=admin`；store-bff → `/auth/register|login` 签 `type=store`；mall-bff → `/auth/sms-code|register|login` 签 `type=user`）。三端共用同一把 `jwt-secret` 与同一套 `type` claim 契约（`LoginUser.CLAIM_USER_TYPE`），但**登录用户模型与 Redis 键命名空间按身份隔离**：
+
+- **⚠ 端 BFF 未必都接 RBAC**：**只有 admin（平台管理员）有 RBAC**，其 `@PreAuthorize` 是唯一授权点。**store-bff（店主）与 mall-bff（C 端顾客）都没有、也不应有任何 `@PreAuthorize`**——店主登录后对自己店全权限、顾客对自己的数据全权限，**这是预期状态，不是漏登记**。新增 BFF 端时按「该端是否有角色/权限维度」决定，不要把「controller 里没有 `@PreAuthorize`」当成缺陷去补。
 
 - **Redis 登录态键 = `panoramic:login:{userType}:{userId}`**（如 `panoramic:login:admin:1` / `panoramic:login:store:7` / `panoramic:login:user:42`）。前缀由 Nacos `auth.yml` 的 `panoramic.auth.redis-prefix`（= `panoramic:login`）提供，网关按 JWT 的 `type` claim 拼同一把键校验——**键格式是网关 ↔ 端 BFF 的共享契约，不可单边改动**。
 - 网关只做「验签 + 查登录态 + 注入 `X-User-Id`/`X-User-Type`」，不做身份类型判断；身份类型由签发的 `type` claim 携带、全链路透传。
@@ -45,7 +47,9 @@
 
 ## 对外契约清单（docs/contracts）
 
-**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`）③ 跨服务隐式（`cross-cutting.md`，共 15 条），外加基础设施（`gateway.md`）。
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 15 条），外加基础设施（`gateway.md`）。
+
+⚠ **检查器的端 BFF 名单不硬编码**：`drift-check.mjs` 从网关 `bff-services` 的值推导服务名单、从路由（`uri: lb://<svc>` ↔ `Path=/<前缀>/**`）推导前缀，进而逐个核对「两侧白名单互为子集」；某个端 BFF 推不出唯一前缀即**直接失败**（不降级为警告）。新增端 BFF 时不要回头去改检查器的名单。
 
 **⚠ 契约表是页面契约的唯一裁决点：写/改前端时只照表写，不照后端代码写。** 表里「路径 / 方法 / 权限串 / 入出参类型」即全部契约；字段定义去 `common` 的 DTO 类看，表里**不抄字段**（抄一份就是制造第二个会漂移的地方）。
 
@@ -60,19 +64,20 @@
 
 ## mall 前台（用户端）视觉与结构约定
 
-`frontend/mall` 是 mall 前台的**风格基准样张**（零构建静态页，双击 `index.html` 即可看）。⚠ 它约束的是**视觉与结构，不是技术形态**——正式实现仍按上面的目标分层走，但**长什么样、分哪几块，以样张为准**。生成/修改 mall 前台任何页面时一律遵守：
+`frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175），页面内容当前**全部静态写死**（数据在 `src/mock/`）、不发起任何请求。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
 
-- **色板唯一来源**：只消费 `frontend/mall/styles/tokens.css` 的令牌，**禁止硬编码**色值 / 圆角 / 阴影；换肤只改这一个文件（样张存在的意义就在于此）。
-- **风格不混用**：前台是 **C 端促销风（橙红主色）**，与 admin / store 的靛蓝后台令牌**刻意不同源**；不要把后台那套 `tokens.css` 引进来，也不要把橙色板反向引回后台。
-- **结构基准**：首页六区块顺序即基准——顶部用户条 → 万能搜索长框 → 全分类展示 → 大型滚动广告框 → 用户信息展示框 → 热门商品列表；新增页面的顶栏 / 页脚沿用同一套（`styles/mall.css` 的 `.topbar` / `.foot`）。
+- **色板唯一来源**：只消费 `frontend/mall/src/styles/tokens.css` 的令牌，**禁止硬编码**色值 / 圆角 / 阴影；换肤只改这一个文件。
+- **风格不混用**：前台是 **C 端促销风（橙红主色）**，与 admin / store 的靛蓝后台令牌**刻意不同源**；不要把后台那套 `tokens.css` 引进来，也不要把橙色板反向引回后台。**前台是单独一套风格，不做样式变换**——`element-plus` 虽在依赖里，但只作后续页面（表单 / 弹窗 / 分页）的备用能力：**不注册 EP、不引 EP 样式、页面里不出现 EP 组件**；将来某页要用，在那一页按需引入并把 EP 变量重映射到前台令牌，不全局引 `element-plus/dist/index.css`。
+- **结构基准**：首页六区块顺序即基准——顶部用户条 → 万能搜索长框 → 全分类展示 → 大型滚动广告框 → 用户信息展示框 → 热门商品列表；新增页面的顶栏 / 页脚沿用同一套（`src/styles/mall.css` 的 `.topbar` / `.foot`）。
 - **只做宽屏**：容器固定 1280px，**不写媒体查询**，不做手机 / 窄屏适配。
 - **不做暗色模式**（C 端商城不做，与 admin / store 的 `.dark` 两回事）。
 - **未登录态固定形态**：顶栏左侧「请登录 / 免费注册」文字 link，右侧「购物车 / 我的订单」。
 - **不引外部图片与字体**：占位或无图场景用 **CSS 渐变占位**，不接外链图床 / CDN / 外部字体。
-- **样张先行**：要新增区块或调整风格时，**先在 `frontend/mall` 样张里改好、定了，再落到正式页面**；样张始终是唯一风格源头，不各页各写一套。
+- **基准先行**：要新增区块或调整风格时，**先在 `frontend/mall` 工程里改好、定了，再往外铺**；该工程始终是唯一风格源头，不各页各写一套。
 
-⚠ 样张里的「风格样张」说明条与「切换登录态」按钮是**演示外壳**，落正式页面时删掉。
-⚠ 样张的**内容范围**（10 分类铺满一行、商品卡 5 列 × 2 行、价格三层字号、角标 / 原价 / 销量位）与 `scripts/data.js` 里逐条探边界的假数据，是刻意的基准，不要随手改小。
+⚠ **内容范围**（10 分类铺满一行、商品卡 5 列 × 2 行、价格三层字号、角标 / 原价 / 销量位）与 `src/mock/*.ts` 里逐条探边界的假数据（各文件顶部的 `[探]` 注释），是刻意的基准，不要随手改小。
+⚠ 演示外壳（原样张的「风格样张」说明条与「切换登录态」按钮）**已删除**；登录态改由 `src/mock/session.ts` 的 `loggedIn` 常量控制（默认未登录，改成 `true` 可看已登录版式）。
+⚠ 类型检查已挂进构建：`npm run build` = `vue-tsc --noEmit && vite build`，类型不过即构建失败。
 
 ## 代码验证只到“编译通过”
 

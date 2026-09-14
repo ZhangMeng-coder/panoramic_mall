@@ -11,12 +11,13 @@ config: backend/gateway/src/main/resources/application.yml
 
 ## 一、路由
 
-配置位置：`gateway/src/main/resources/application.yml:31-43`（仅有 2 条路由，无其他）
+配置位置：`gateway/src/main/resources/application.yml:31-50`（仅有 3 条路由，无其他）
 
 | route id | 断言路径 | 转发目标 | 过滤器 |
 |---|---|---|---|
 | `admin-route` | `Path=/admin/**` | `lb://admin` | `StripPrefix=1` |
 | `store-bff-route` | `Path=/store/**` | `lb://store-bff` | `StripPrefix=1` |
+| `mall-bff-route` | `Path=/mall/**` | `lb://mall-bff` | `StripPrefix=1` |
 
 ⚠ **域服务没有路由**（商品域 `/goods/**` 的历史路由已随下沉移除）。新增端 BFF 时才加路由，
 且必须同步登记进下面的白名单，否则流量进不来。
@@ -28,8 +29,8 @@ config: backend/gateway/src/main/resources/application.yml
 
 | 项 | 值 | 位置 |
 |---|---|---|
-| 配置键 | `panoramic.gateway.bff-services` | `application.yml:52` |
-| 当前值 | `admin,store-bff`（逗号分隔，**无空格**） | 同上 |
+| 配置键 | `panoramic.gateway.bff-services` | `application.yml:59` |
+| 当前值 | `admin,store-bff,mall-bff`（逗号分隔，**无空格**） | 同上 |
 | 强制者 | `BffRouteGuardFilter` | `gateway/filter/BffRouteGuardFilter.java` |
 
 `BffRouteGuardFilter` 的判定语义（改动前务必读完）：
@@ -48,13 +49,16 @@ config: backend/gateway/src/main/resources/application.yml
 
 ### 网关侧
 
-`gateway/src/main/resources/application.yml:54` → `panoramic.auth.whitelist-paths`：
+`gateway/src/main/resources/application.yml:61` → `panoramic.auth.whitelist-paths`：
 
 | 路径 | 说明 |
 |---|---|
 | `/admin/auth/login` | 平台管理登录 |
 | `/store/auth/login` | 店主登录 |
 | `/store/auth/register` | 店主注册（注册即登录） |
+| `/mall/auth/login` | 顾客登录（手机号 + 验证码） |
+| `/mall/auth/register` | 顾客注册（注册即登录） |
+| `/mall/auth/sms-code` | 顾客取短信验证码（**在登录之前被调用**，漏登记则取码按钮直接 401） |
 | `/discovery/**` | 服务发现探活 |
 
 ### 服务本地侧
@@ -63,6 +67,7 @@ config: backend/gateway/src/main/resources/application.yml
 |---|---|---|
 | admin | `/auth/login` | `admin/src/main/resources/application.yml` |
 | store-bff | `/auth/login`, `/auth/register` | `store-bff/src/main/resources/application.yml` |
+| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code` | `mall-bff/src/main/resources/application.yml` |
 
 ⚠ 只改一处 → 要么登录接口被拦（登不进去），要么本应鉴权的接口裸露到公网。
 

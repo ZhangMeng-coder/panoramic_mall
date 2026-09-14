@@ -1,34 +1,31 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，以及**商城店铺端（店铺管理 + 在售商品管理）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，首页内容仍静态写死）与**商城前台 BFF（mall-bff，C 端顾客账号）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
 
 ## 系统架构
 
 ```
-┌────────────────────────────────────────── 前端层 ──────────────────────────────────────────┐
-│  admin（管理后台 :5173）    store（商城店铺端 :5174）    mall（商城前台，待开发）            │
-└────────────┬──────────────────────────────────┬────────────────────────────────────────────┘
-             │  /goods、/admin、/store、/discovery（Vite dev proxy → 网关 8080）
-┌────────────▼──────────────────────────────────▼────────────────────────────────────────────┐
-│  gateway  API 网关（:8080，Spring Cloud Gateway / WebFlux）                                  │
-│    公网入口 = 端 BFF 白名单（BffRouteGuardFilter 强制，域服务一律 403）                         │
-│    /admin/** ─▶ lb://admin（端 BFF）         /store/** ─▶ lb://store-bff（店铺端 BFF）        │
-└───────┬───────────────────────┬───────────────────────────────┬──────────────────────────────┘
-        │ Nacos 注册发现(:8848)  │                                │ 内部 Feign（身份头 X-User-Id/X-User-Type + 熔断）
-┌───────▼───────────────┐  ┌─────▼────────────────────────────┐ ┌──────▼───────────────────────┐
-│ admin 端 BFF（:8082）   │  │ store-bff 店铺端 BFF（:8084）      │ │ store 店铺域（:8083，纯域）     │
-│ 平台账号/RBAC 合一+编排  │  │ 店主账号 store_user + 店铺/商品编排  │ │ 店铺 store_shop + 在售商品      │
-└───────┬───────────────┘  └───────────────────────────────────┘ └──────┬──────────────────────┘
-        │ 内部 Feign                                                   ▲        │ 内部 Feign
-        └──────────────────────┬───────────────────────────────────────┘        │
-                 ┌─────────────▼──────────────────────┐                       │
-                 │ goods-center 商品域（:8081，纯域）    │◄──────────────────────┘
-                 │ 分类/品牌/SPU-SKU（中台模板）          │
-                 └─────────────────────────────────────┘
-                                        MySQL 8（库 panoramic_mall：goods_* / sys_* / store_*）
+┌───────────────────────────────────────── 前端层 ─────────────────────────────────────────┐
+│  admin（管理后台 :5173）    store（商城店铺端 :5174）    mall（商城前台 :5175）          │
+└────────────┬─────────────────────────────────┬───────────────────────────────────────────┘
+             │  /admin、/store、/mall、/discovery（Vite dev proxy → 网关 8080）
+┌────────────▼─────────────────────────────────▼───────────────────────────────────────────┐
+│  gateway  API 网关（:8080，Spring Cloud Gateway / WebFlux）                              │
+│    公网入口 = 端 BFF 白名单（BffRouteGuardFilter 强制，域服务一律 403）                  │
+│      /admin/** ─▶ lb://admin        /store/** ─▶ lb://store-bff                          │
+│      /mall/**  ─▶ lb://mall-bff     /discovery/** 探活（不在路由内）                     │
+└───────┬─────────────────────────────────────────┬────────────────────────────────────────┘
+       │ Nacos 注册发现(:8848)                   │ 内部 Feign（X-User-Id/X-User-Type + 熔断）
+┌───────────────────────────────────────────┐  ┌───────────────────────────────────────────┐
+│  端 BFF 层（账号表 + type 的 JWT）        │  │  纯域层（不鉴权、无 Redis、无公网路由）   │
+│  admin（:8082）平台账号 + RBAC + 编排     │  │  goods-center（:8081）分类/品牌/SPU-SKU   │
+│  store-bff（:8084）店主账号 + 店铺商品    │  │  store（:8083）store_shop + 在售商品      │
+│  mall-bff（:8085）顾客账号（一期不调域）  │  │  （域端口只在内网可达是安全前提）         │
+└───────────────────────────────────────────┘  └───────────────────────────────────────────┘
+              MySQL 8（库 panoramic_mall：goods_* / sys_* / store_* / mall_*）
 ```
 
-> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。登录会话由 JWT `type` claim + Redis 键 `panoramic:login:{type}:{userId}` 区分平台管理员（admin）/ 店主（store）/ C 端顾客（user，待建）三套账号体系。业务域（goods-center / store）与端 BFF（admin / store-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、只透传身份头 + 熔断降级；域内不做权限判断）。审计字段 `create_user`/`update_user` 为 `VARCHAR(32)`，值 `UserType:UserId`。
+> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。登录会话由 JWT `type` claim + Redis 键 `panoramic:login:{type}:{userId}` 区分平台管理员（admin）/ 店主（store）/ C 端顾客（user）三套账号体系，三端各自签发自己 `type` 的令牌。业务域（goods-center / store）与端 BFF（admin / store-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、只透传身份头 + 熔断降级；域内不做权限判断）。⚠ **mall-bff 一期只做顾客账号、不调任何业务域**（无 Feign 客户端），首页数据聚合是二期。审计字段 `create_user`/`update_user` 为 `VARCHAR(32)`，值 `UserType:UserId`。
 
 ## 仓库结构
 
@@ -41,17 +38,18 @@
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
 | ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
 | ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
+| ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）；一期不调业务域 | [README](backend/mall-bff/README.md) |
 | ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
 | ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（占位，待开发） | [README](frontend/mall/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：Vue 3 + Vite + TS，首页内容静态写死、尚未接接口 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
 
 - **后端**：Java 21 · Spring Boot 4.0.7 · Spring Cloud 2025.1.2 · Spring Cloud Alibaba 2025.1.0.0 · Nacos · MyBatis-Plus 3.5.16 · MySQL 8 · Lombok
-- **前端**：Vue 3 · Vite 7 · Vue Router 4 · Element Plus · Axios（管理后台 / 店铺端共用一套设计令牌）
+- **前端**：Vue 3 · Vite 7 · Vue Router 4 · TypeScript（商城前台）· Element Plus · Axios（管理后台 / 店铺端共用一套设计令牌）
 - 页面接口统一返回 `RespData{code,msg,data}`（成功 `code=200`）；内部域接口不包 RespData、直接返回业务类型，错误转真实 HTTP 状态 + `{code,msg}` 由 Feign ErrorDecoder 还原
 
 ## 已实现功能
@@ -75,7 +73,13 @@
    - admin 后台「店铺管理 → 店铺商品」目录：**全店铺**在售商品列表，按 **类型（分类，含全部子分类的子树匹配）/ 品牌 / 店铺 / 上下架 / 锁定状态 / 名称关键字** 查询（`store:goods:list`），并提供**只读详情页**（基础信息 / 图片 / 富文本详情 / 规格配置 / SKU 明细 / 锁定信息）
    - **平台锁定 / 解锁**（`store:goods:lock`，锁定原因必填）：锁定即把该商品全部 SKU 级联下架、商品随之推导为下架；**锁定期店主端整行只读**（编辑/上下架/增删改 SKU/删除一律拒绝，域内强制）；解锁只清锁定字段、**不自动恢复上架**（店主手动重上）。店主端只读呈现：列表锁定状态列 + 「锁定信息」弹窗（**只显示原因与时间，不显示锁定人**）
    - **商品类别展示改为全路径**（如「服饰 / 男装 / T恤」）：admin 标准商品列表、admin 店铺商品列表、店铺端商品列表一致；路径由端 BFF **读时**调 goods-center 批量路径接口解析（域不持分类表、只存快照），解析失败自动回退快照分类名
-7. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
+7. **商城前台 BFF 一期（C 端顾客账号，2026-09-14）**：
+   - 新建 `backend/mall-bff`（8085，第三套身份 `type=user`），网关新增 `/mall/**` 路由并纳入端 BFF 白名单，**5 条接口**：取码 / 注册 / 登录 / 登出 / 当前登录顾客（经网关 `/mall/auth/**`）
+   - **账号即手机号**：`phone` 既是登录账号也是唯一键；验证方式为**手机号 + 短信验证码**，无密码
+   - ⚠ 短信为**模拟实现**：取码接口只写一行日志，**不发真实短信、不落库、不落 Redis**，校验与固定码 `888888` 比对（配置项 `panoramic.mall.sms-fixed-code`）
+   - 注册即登录（`mall_user` 建号后直接签发 JWT + Redis 会话 `panoramic:login:user:{id}`）；C 端**不接 RBAC**（无 `@PreAuthorize`，与店主端同理）
+   - **一期不调任何业务域**（无 Feign 客户端）；首页数据聚合为二期
+8. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
 
 ## 环境依赖
 
@@ -92,7 +96,7 @@
 ```bash
 # 1. 启动外部依赖：Nacos、MySQL。
 #    库与表用各模块的 db/schema.sql 创建（均 IF NOT EXISTS，可重复执行）：
-#      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop + store_goods_*；store-bff → store_user
+#      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop + store_goods_*；store-bff → store_user；mall-bff → mall_user
 #    另需把 backend/nacos-config/ 下的共享配置发布到 Nacos（服务侧 import 不带 optional:，缺任一则启动失败）：
 #      datasource-mysql.yml / datasource-redis.yml / auth.yml / feign-circuitbreaker.yml → 见 backend/nacos-config/README.md
 
@@ -106,6 +110,7 @@ mvn -pl goods-center spring-boot:run   # 8081 商品域（纯域）
 mvn -pl admin spring-boot:run          # 8082 平台管理（端 BFF）
 mvn -pl store spring-boot:run          # 8083 店铺域（纯域）
 mvn -pl store-bff spring-boot:run      # 8084 店铺端 BFF
+mvn -pl mall-bff spring-boot:run       # 8085 商城前台 BFF（C 端）
 
 # 4. 验证链路
 curl http://localhost:8080/discovery/services
@@ -113,6 +118,7 @@ curl http://localhost:8080/discovery/services
 # 5. 启动前端（各一个终端）
 cd frontend/admin && npm install && npm run dev   # → http://localhost:5173
 cd frontend/store && npm install && npm run dev   # → http://localhost:5174
+cd frontend/mall  && npm install && npm run dev   # → http://localhost:5175
 ```
 
 ## 开发路线（规划）
@@ -124,5 +130,8 @@ cd frontend/store && npm install && npm run dev   # → http://localhost:5174
 - [x] 店主端商品管理（在售商品 SPU/SKU 增删改、按 SKU 上下架联动、中台模板关联与版本同步）
 - [x] BFF 化收口：goods-center 下沉纯域、store-center 拆为 store（域）+ store-bff（店铺端 BFF）、admin 店铺管理 BFF 编排、网关公网收敛为端 BFF 白名单
 - [x] 管理后台店铺商品管理（全店铺查询/只读详情/平台锁定解锁，分类子树筛选）+ 商品类别全路径展示
-- [ ] 商城前台项目（frontend/mall）+ mall-bff / trade-center 下沉
+- [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据（未接接口）
+- [x] 商城前台 BFF 一期（mall-bff）：C 端顾客账号（手机号 + 模拟短信验证码，签发 `type=user`）+ 网关 `/mall/**` 路由
+- [ ] mall-bff 二期：首页数据聚合（经 Feign 调 goods-center 的商品/分类）、`frontend/mall` 接入接口
+- [ ] trade-center 下沉（购物车 / 订单 / 评价）
 - [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）

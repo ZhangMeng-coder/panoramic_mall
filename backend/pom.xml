@@ -23,6 +23,7 @@
         <module>goods-center</module>
         <module>store</module>
         <module>store-bff</module>
+        <module>mall-bff</module>
         <module>admin</module>
         <module>common</module>
         <!-- 鉴权装配层：只被端 BFF 依赖；业务域只依赖 common，故结构上拿不到认证链与 Redis -->

@@ -1,0 +1,39 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: mall-bff
+  config:
+    # 共享配置统一收敛到 Nacos：本服务按需引入 datasource-mysql(含 mybatis-plus) / datasource-redis / auth / feign-circuitbreaker
+    # ⚠ 不带 optional: 前缀——配置中心不可用或任一 dataId 缺失时**启动即失败**，不做静默降级
+    #   （本地开发环境 Nacos 本身就是必需依赖；且 feign-circuitbreaker 缺失会回落 resilience4j 默认超时 1s，属已知有问题的行为）
+    # ⚠ 一期本模块没有任何 Feign 客户端，feign-circuitbreaker 属空转——但仍随「终端 BFF 加载四个」的
+    #   加载矩阵一并引入（见 docs/contracts/cross-cutting.md 第 11 条）：配置是惰性的、不产生副作用，
+    #   且二期接 home 聚合调 goods-center 时无需再改本文件。
+    import:
+      - nacos:datasource-mysql.yml
+      - nacos:datasource-redis.yml
+      - nacos:auth.yml
+      - nacos:feign-circuitbreaker.yml
+  cloud:
+    nacos:
+      # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
+      username: @nacos.username@
+      password: @nacos.password@
+      discovery:
+        server-addr: @nacos.server-addr@
+      config:
+        # 配置中心与注册中心同址
+        server-addr: @nacos.server-addr@
+
+# 服务侧白名单（路由前缀已剥离）：C 端自助的取码/注册/登录放行，其余（/auth/logout、/auth/me）需顾客登录态
+# （common 本地认证链：JWT + Redis 快照，type=user）。数据源/mybatis-plus/jwt-secret/redis/熔断参数等
+# 由 Nacos 共享配置提供（datasource-mysql.yml / datasource-redis.yml / auth.yml / feign-circuitbreaker.yml），不再本地重复。
+# ⚠ /auth/sms-code 必须登记：它在登录之前被调用（「获取验证码」按钮），漏登记则取码直接 401。
+panoramic:
+  auth:
+    whitelist-paths: /auth/login,/auth/register,/auth/sms-code
+  mall:
+    # 模拟短信：不接真实短信通道，取码接口只打日志，校验时与下方固定码比对
+    sms-fixed-code: 888888

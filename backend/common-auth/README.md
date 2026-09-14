@@ -1,6 +1,6 @@
 # common-auth — 鉴权装配层
 
-**非独立服务、不参与启动**，只作为依赖被**端 BFF** 引用（admin / store-bff / 未来的 mall-bff）。基包 `com.panoramic.common.auth`。
+**非独立服务、不参与启动**，只作为依赖被**端 BFF** 引用（admin / store-bff / mall-bff）。基包 `com.panoramic.common.auth`。
 
 ## 为什么单独一个模块
 
@@ -30,6 +30,6 @@
 |---|---|---|---|
 | admin | `admin` | `panoramic:login:admin:1` | 已有 |
 | store-bff | `store` | `panoramic:login:store:7` | 已有 |
-| mall-bff | `user` | `panoramic:login:user:42` | 待建（常量 `LoginUser.USER_TYPE_USER` 已预留） |
+| mall-bff | `user` | `panoramic:login:user:42` | 已有（一期只做账号，不调域） |
 
 > 修改本模块后需执行 `mvn -pl common-auth install` 并重启依赖它的端 BFF 才生效。

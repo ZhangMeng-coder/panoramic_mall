@@ -6,33 +6,56 @@ scanDirs: backend/mall-bff/src/main/java/com/panoramic/mallbff/controller
 typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 -->
 
-# 商城前台 BFF（mall-bff）· 第 ① 层 —— **待建**
+# 商城前台 BFF（mall-bff）· 第 ① 层
 
-> ⚠ **本服务尚不存在。** 此文件为占位，用于固定它在契约体系中的位置与既定约定。
-> 待建项记录在仓库根 `todo.md`。
+> 商城**前台（C 端顾客）**的端 BFF，端口 **8085**，网关前缀 `/mall/**`（`StripPrefix=1`）。
+> 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff），签发**第三套身份** `type=user`。
+> 一期范围 = **顾客账号骨架**（取码/注册/登录/登出/me），**不调任何业务域**；首页数据聚合是二期。
 
-## 一、已确定、不可改的部分
+## 一、接口形态
 
-| 项 | 约定 | 依据 |
-|---|---|---|
-| 身份类型 | 签发 `type=user` 的令牌（第三套身份空间） | [cross-cutting.md](./cross-cutting.md) 第 4 条；`LoginUser.USER_TYPE_USER` |
-| Redis 键 | `panoramic:login:user:{userId}` | 同上第 5 条 |
-| 网关前缀 | `/mall/**` → `lb://mall-bff`（`StripPrefix=1`） | [gateway.md](./gateway.md) |
-| 网关白名单 | 上线时**必须**把 `mall-bff` 加进 `panoramic.gateway.bff-services`，否则该端全部 403 | 同上第二节 |
-| 鉴权白名单 | 登录/注册路径需**同时**登记在网关侧与服务本地侧 | 同上第三节 |
-| 内部依赖 | 经 Feign 调 goods-center（商品/分类/品牌）；交易类后续接 `trade-center` | [cross-cutting.md](./cross-cutting.md) 第 13 条 |
-| 前端形态 | `frontend/mall` 从零构建静态样张转为 Vue 3 + Vite 子项目（建议端口 5175） | 根 `CLAUDE.md`「mall 前台（用户端）视觉与结构约定」 |
+页面级通用规则见 [README.md](./README.md)：**必包** `RespData{code,msg,data}`。
+字段定义**不在本表**，去下列类型所在的源码看（表里不抄字段，抄一份就是制造第二个会漂移的地方）。
 
-## 二、前端契约的**视觉与结构**基准
+| 类型 | 所在包 |
+|---|---|
+| `SmsCodeDTO` / `RegisterDTO` / `LoginDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
+| `CurrentUserVO` / `LoginResultVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
+| `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-mall 前台的**页面契约**目前由样张固定，不是本文档：
+## 二、接口清单（5 条）
 
-- 风格与结构基准：`frontend/mall`（风格样张）
+| 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
+|---|---|---|---|---|---|---|
+| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:37 | |
+| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:46 | |
+| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:54 | |
+| POST | /auth/logout | — | — | `Void` | AuthController.java:62 | |
+| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:74 | |
+
+⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
+登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
+
+### 形状与行为口径（表里放不下的）
+
+| 项 | 口径 |
+|---|---|
+| 账号形态 | **账号即手机号**：`phone` 为登录账号（`mall_user` 唯一键 `uk_phone`）；`username` 不是独立列，导出到快照与 `CurrentUserVO` 时与 `phone` 同值 |
+| 验证方式 | 手机号 + **短信验证码**，无密码。⚠ 短信为**模拟实现**：取码只打日志、不放真实短信、不落库、不落 Redis；校验与固定码 `panoramic.mall.sms-fixed-code`（默认 `888888`）比对 |
+| 免鉴权路径 | `/auth/sms-code`、`/auth/register`、`/auth/login`（**两处各写一份**，见 [gateway.md](./gateway.md) 第三节）。⚠ `sms-code` 在登录**之前**被调用，漏登记则「获取验证码」直接 401 |
+| 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
+| 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
+| 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
+| 登出 | 删除 Redis 快照即服务端下线；本地 token 由前端清除 |
+| 内部依赖 | **一期没有**：`@EnableFeignClients` 未启用、`com.panoramic.common.mall` 包不存在。二期接 goods-center（商品/分类）做首页聚合时再加 |
+
+## 三、前端契约的**视觉与结构**基准
+
+mall 前台的**页面契约**（长什么样、分哪几块）由前端工程自身固定，不是本文档：
+
+- 风格与结构基准：`frontend/mall`（Vue 3 + Vite + TypeScript，端口 5175）
 - 约束条文：根 `CLAUDE.md` 的「mall 前台（用户端）视觉与结构约定」
 
-⚠ 该约定约束的是**视觉与结构，不是技术形态**：正式实现仍按 BFF 分层走，但**长什么样、分哪几块以样张为准**，
-且「样张先行」——新增区块先在样张里改好、定了，再落到正式页面。
-
-## 三、接口清单
-
-**待建** —— 服务创建后按 [README.md](./README.md) 的格式补齐本表，并同步更新索引里的条数。
+⚠ 该约定约束的是**视觉与结构，不是技术形态**：前端按 BFF 分层走，但**长什么样、分哪几块以 `frontend/mall` 为准**，
+且「基准先行」——新增区块先在该工程里改好、定了，再往外铺。
+⚠ 前端当前**首页仍全部静态写死、不发起请求**；本表这 5 条接口已可用，但尚未有页面接入。

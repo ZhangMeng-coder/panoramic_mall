@@ -1,62 +1,78 @@
 # 全景商城 — 前台商城（mall）
 
-> ⚠ **当前是「风格样张」，不是最终实现。**
-> 这一版的目的只有一个：用实物确认**整体风格 / 展示结构 / 内容范围**这三件事。
-> 风格定了之后再谈接接口、拆页面、做正式实现。
+mall 前台（用户购物端）的正式前端工程：**Vue 3 + Vite + TypeScript**。
+当前**页面内容全部静态写死**（数据在 `src/mock/`），**不发起任何接口请求**（后端 mall-bff 已就绪，但页面尚未接入）。
 
-## 怎么打开
+> **风格基准**：本工程即 mall 前台的风格基准，换肤唯一入口是 [`src/styles/tokens.css`](./src/styles/tokens.css)。
+> 约束条文见根目录 [CLAUDE.md](../../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」。
+> **前台是单独一套风格**：C 端促销风橙红板，与 admin / store 的靛蓝后台令牌**刻意不同源**，两套不通用。
 
-**双击 `index.html` 即可。** 零依赖、零构建、零网络请求 —— 不需要 `npm install`、不需要起 dev server。
+## 本地开发
 
-> 页面里的商品图、广告图全是 **CSS 渐变占位**，没有引用任何外部图片；脚本用普通 `<script>` 而非 ES module，
-> 就是为了让 `file://` 协议下也能直接跑（`type="module"` 在 `file://` 下会被浏览器 CORS 策略拦掉）。
+```bash
+cd mall
+npm install
+npm run dev      # http://localhost:5175
+```
+
+| 脚本 | 作用 |
+|---|---|
+| `npm run dev` | 开发服务，端口 **5175** |
+| `npm run build` | **`vue-tsc --noEmit && vite build`** —— 类型检查不过即构建失败 |
+| `npm run type-check` | 只跑类型检查 |
+| `npm run preview` | 预览构建产物 |
 
 ## 文件结构
 
 ```
 mall/
-├── index.html            页面骨架：六个区块自上而下
-├── styles/
-│   ├── tokens.css        ★ 唯一换肤入口（品牌色 / 中性色 / 圆角 / 阴影 / 间距 / 字号）
-│   ├── base.css          reset + 排版基线 + 容器 + 通用工具类
-│   └── mall.css          六个区块的样式，顺序与 index.html 一致
-└── scripts/
-    ├── data.js           mock 数据（分类 / 轮播 / 热门商品 / 热搜词）
-    └── main.js           渲染 + 交互（轮播 / 搜索 / 登录态切换）
+├── index.html              Vite 入口（只有 #app，样式由 main.ts 引入）
+├── vite.config.ts          端口 5175 + /mall 代理（按契约预留，当前无调用方）
+├── tsconfig.json           strict: true
+└── src/
+    ├── main.ts             createApp + router + 载入三个 css（顺序：令牌 → 基线 → 区块）
+    ├── App.vue             <router-view />
+    ├── router/index.ts     hash 模式；/ → HomeView，兜底重定向 /
+    ├── styles/
+    │   ├── tokens.css      ★ 唯一换肤入口（只改这个文件即可整体换色）
+    │   ├── base.css        reset + 排版基线 + 容器 + 通用工具类
+    │   └── mall.css        六个区块的样式，顺序与 HomeView 一致
+    ├── types/mall.ts       Category / Banner / Goods / GoodsTag
+    ├── mock/               静态数据：categories / banners / goods / hotwords / session
+    ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标）
+    ├── composables/        useCarousel.ts（自动播放 / 箭头 / 圆点 / 悬停暂停）
+    ├── components/         六个区块 + 页脚（GoodsCard 为商品卡子组件）
+    └── views/HomeView.vue  按基准顺序组装六个区块
 ```
 
-## 页面结构（自上而下）
+## 页面结构（自上而下，顺序即基准）
 
-| # | 区块 | 说明 |
+| # | 区块 | 组件 |
 |---|---|---|
-| ① | 顶部用户条 | 左：登录信息（未登录为「请登录 / 免费注册」文字 link）；右：购物车、我的订单 |
-| ② | 万能搜索长框 | 圆角长胶囊 + 热搜词行 |
-| ③ | 全分类展示 | 10 个一级分类宫格 |
-| ④ | 大型滚动广告框 | 3 张 Banner，自动播放 / 箭头 / 圆点 / 悬停暂停 |
-| ⑤ | 用户信息展示框 | 头像 + 问候 + 权益小格 |
-| ⑥ | 热门商品列表 | 5 列 × 2 行 = 10 件 |
-| — | 极简页脚 | 仅一条说明，避免页面在商品列表后突然断掉 |
+| ① | 顶部用户条 | `TopBar.vue` |
+| ② | 万能搜索长框（含热搜词行） | `SearchBar.vue` |
+| ③ | 全分类展示（10 个一级分类宫格） | `CategoryGrid.vue` |
+| ④ | 大型滚动广告框（自动播放 / 箭头 / 圆点 / 悬停暂停） | `BannerCarousel.vue` |
+| ⑤ | 用户信息展示框 | `UserPanel.vue` |
+| ⑥ | 热门商品列表（5 列 × 2 行 = 10 件） | `GoodsGrid.vue` + `GoodsCard.vue` |
+| — | 极简页脚 | `SiteFooter.vue` |
 
-## 要看「已登录态」长什么样
+## 登录态
 
-页面右上角有一个虚线框的 **「切换登录态」** 按钮（属于演示外壳，真实页面不会有）。
-点它可实时切换顶栏与用户信息框的未登录 / 已登录两种形态。
-
-也可以直接改 `scripts/main.js` 顶部的 `DEMO_LOGGED_IN` 初值。
+尚未接入登录，`src/mock/session.ts` 里写死 `loggedIn = false`（未登录态）。
+顶栏与用户信息框**两套形态都已实现** —— 把该常量改成 `true` 即可查看已登录版式，不用改任何组件。
 
 ## 换风格改哪里
 
-改 **`styles/tokens.css`** 顶部那一小块「可调整」变量即可，其余文件不用动：
+只改 `src/styles/tokens.css` 顶部那一小块「可调整」变量，其余文件不用动：
 
 - `--brand` / `--brand-accent` / `--brand-soft` —— 主色、辅色、浅色底（换色板就改这几个）
 - `--n*` —— 中性色（页面底、边框、文字三级灰）
-- `--r-*` —— 圆角（卡片 / 按钮 / 胶囊）
-- `--sh-*` —— 阴影（暖调投影）
-- `--t-*` —— 字号
+- `--r-*` —— 圆角；`--sh-*` —— 阴影（暖调投影）；`--t-*` —— 字号
 
 ## 内容范围是刻意探过边界的
 
-`scripts/data.js` 里的数据不是随便凑的，每一项都在探一条边界，用来判断「装多少、装不下怎么办」：
+`src/mock/` 里的数据不是随便凑的，每一项都在探一条边界，用来判断「装多少、装不下怎么办」：
 
 | 数据 | 探什么 |
 |---|---|
@@ -70,18 +86,32 @@ mall/
 | 商品 g6 价格带两位小数 | 价格三层字号的宽度 |
 | 商品 g8 长名 + 双角标 + 大销量 | 最坏情况叠加 |
 
-## 这一版明确**不做**的事
+⚠ **这是基准，不要随手改小。** 各 `mock/*.ts` 文件顶部的 `[探]` 注释逐条记着该数据在探什么。
 
-- ❌ 不接任何接口（无 API、无 mock 服务），数据全在 `data.js`
+## 明确**不做**的事
+
+- ❌ 不接任何接口（无 API、无 mock 服务），数据全在 `src/mock/`
 - ❌ 不做手机 / 窄屏适配 —— **只做宽屏**，容器固定 1280px，没有任何媒体查询
-- ❌ 不做暗色模式（C 端商城通常不做）
-- ❌ 不做路由、不做页面跳转（所有链接均为 `href="#"`）
-- ❌ 不做登录逻辑、不做购物车 / 订单的真实功能
-- ❌ 不引外部图片、不引任何第三方库 / 字体 / CDN
+- ❌ 不做暗色模式（C 端商城不做，与 admin / store 的 `.dark` 是两回事）
+- ❌ 不引外部图片与字体 —— 图位一律用 **CSS 渐变占位**（`utils/gradient.ts`）
+- ❌ 页面里**不使用任何 Element Plus 组件**（见下）
 
-## 后续（风格定下来之后）
+## 关于 Element Plus
 
-正式实现按仓库的分层约定走：前端页面只经网关访问**端 BFF**，
-mall 前台的 BFF（`mall-bff`，用户身份 `type=user`）尚未创建，属 `todo.md` 中的待建项。
-届时本项目应从「零构建静态页」转为与 `frontend/admin`、`frontend/store` 同形态的
-Vue 3 + Vite 子项目（建议端口 5175），并复用本样张敲定的色板与区块结构。
+`element-plus` 在 `package.json` 依赖里，但**仅作后续页面（表单 / 弹窗 / 分页）的备用能力**：
+`main.ts` 不注册 EP、不引 EP 样式，首页零 EP 组件 —— **前台保持自己单独一套风格，不做样式变换**。
+
+将来某一页真要用 EP，在**那一页**按需引组件与样式，并把 EP 变量重映射到 `src/styles/tokens.css` 的橙红令牌，
+不要全局引 `element-plus/dist/index.css`（会把整站观感拉成后台风）。
+
+## 接口与分层
+
+mall 前台的 BFF **`mall-bff` 已就绪**（`backend/mall-bff`，端口 8085，身份 `type=user`）——
+**一期只做 C 端顾客账号**（取码 / 注册 / 登录 / 登出 / me，共 5 条），**不调任何业务域**；
+首页数据聚合是二期。契约登记在 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
+
+按仓库分层约定，页面只经网关访问端 BFF：`vite.config.ts` 里的 `/mall` 代理已按契约里的网关前缀配好，
+**接页面时无需改代理配置**。⚠ 但本工程**当前仍未接入任何接口**——首页六个区块的数据依然全部来自 `src/mock/`。
+
+> 接口形态提醒（接入时照契约表写，不照后端代码写）：账号即手机号、短信为**模拟通道**（固定码 `888888`，
+> 取码接口只打日志不发真实短信），登录成功返回 `{token, user}`，后续请求带 `Authorization: Bearer <token>`。

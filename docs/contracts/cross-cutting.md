@@ -24,7 +24,7 @@ layer: cross-cutting
 |---|---|
 | 契约 | 页面级接口一律返回 `RespData{code,msg,data}`；成功 `code=200`、业务失败 `code=400`（带中文提示）、系统异常 `code=500` |
 | 定义位置 | `common/src/main/java/com/panoramic/common/vo/RespData.java`；形状规则写在 `backend/README.md` |
-| 消费位置 | admin 9 个 Controller、store-bff 3 个 Controller；前端 axios 拦截器按此解包 |
+| 消费位置 | admin 9 个 Controller、store-bff 3 个 Controller、mall-bff 1 个 Controller；前端 axios 拦截器按此解包 |
 | 破坏后果 | 前端统一解包与统一异常提示全部失效 |
 | 核对方式 | 检查器第 6 项：页面级 Controller **必须**出现 `RespData` |
 
@@ -59,7 +59,8 @@ layer: cross-cutting
 |---|---|
 | 契约 | 登录令牌携带 `type` claim 区分身份空间（`admin` / `store` / `user`），全链路透传 |
 | 定义位置 | `common/src/main/java/com/panoramic/common/security/LoginUser.java:32` `CLAIM_USER_TYPE = "type"`；值常量 `USER_TYPE_ADMIN`/`USER_TYPE_STORE`/`USER_TYPE_USER`（:23/:26/:29） |
-| 签发位置 | admin `service/AuthService.java:74`（`type=admin`）、store-bff `service/AuthService.java:113`（`type=store`）、写入在 `common-auth/JwtService.java:58` |
+| 签发位置 | admin `service/AuthService.java:74`（`type=admin`）、store-bff `service/AuthService.java:113`（`type=store`）、mall-bff `service/AuthService.java:137,147`（`type=user`）、写入在 `common-auth/JwtService.java:58` |
+| ⚠ 签发处自查 | 每个端 BFF 都有**两处**必须成对一致：`loginUser.setUserType(...)` 与 `jwtService.generateToken(id, ...)`。mall-bff 的这两处都是 `USER_TYPE_USER`，**改一处漏一处 → 网关拼错 Redis 键 → 该端全部 401** |
 | 消费位置 | 网关 `gateway/filter/AuthGlobalFilter.java:73`；服务侧 `common-auth/AuthTokenFilter.java:71` |
 | ⚠ 已知风险 | 网关侧把 claim 名**字面量重写**为 `"type"`（`AuthGlobalFilter.java:38`），**未引用** `LoginUser.CLAIM_USER_TYPE`；网关不依赖 `common`，改常量网关不会跟随 |
 | 破坏后果 | claim 名改动 → 网关取不到身份类型 → Redis 键拼错 → **全端 401** |
@@ -120,18 +121,19 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 公网只路由到端 BFF；`panoramic.gateway.bff-services` 是**唯一放行名单**，名单外一律 403 |
-| 定义位置 | `gateway/src/main/resources/application.yml:31-43`（2 条路由）、`:52`（`bff-services = admin,store-bff`） |
+| 定义位置 | `gateway/src/main/resources/application.yml:31-50`（3 条路由）、`:59`（`bff-services = admin,store-bff,mall-bff`） |
 | 强制位置 | `gateway/filter/BffRouteGuardFilter.java`：`getOrder() = -200`，**先于鉴权** `AuthGlobalFilter`（-100）；**空配置 = 拒绝一切**（默认拒绝）；未命中路由直接放行；仅 `scheme=lb` 且在名单内放行 |
 | 消费位置 | 全部公网流量 |
 | 破坏后果 | 新端 BFF 上线忘了进白名单 → 该端**全部 403**（会炸得明显）；线序调整 → 未鉴权先过守卫 |
-| 核对方式 | 检查器 gateway 专项（路由 ↔ `application.yml`；白名单 ↔ 实际存在的 BFF 模块） |
+| 核对方式 | 检查器 gateway 专项（路由 ↔ `application.yml`；白名单 ↔ 实际存在的 BFF 模块）。⚠ 端 BFF 名单与路由前缀**由网关配置推导**（`bff-services` 的值 + `uri: lb://<svc>` ↔ `Path=/<前缀>/**`），推不出唯一前缀即**直接失败**——不降级为警告，否则新增端 BFF 时该项会静默跳过 |
 
 ### 10. 鉴权白名单**在网关与服务两处各写一份**
 
 | | |
 |---|---|
 | 契约 | 免鉴权路径需**同时**登记在网关侧与各服务本地侧；**网关侧带前缀、服务侧不带** |
-| 定义位置 | 网关 `gateway/application.yml:54`（`/admin/auth/login,/store/auth/login,/store/auth/register,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`） |
+| 定义位置 | 网关 `gateway/application.yml:61`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code`） |
+| ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401 |
 | 消费位置 | 网关 `AuthGlobalFilter` 与服务侧 `AuthTokenFilter` |
 | 破坏后果 | 只改一处 → 登录接口被拦（登不进去）或本应鉴权的接口裸露 |
 | 核对方式 | 检查器 gateway 专项：两侧白名单去前缀后应互为子集关系 |
@@ -148,14 +150,16 @@ layer: cross-cutting
 
 **加载矩阵**：
 
-| data-id | 网关 | admin | store-bff | goods-center | store |
-|---|:--:|:--:|:--:|:--:|:--:|
-| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ |
-| `datasource-redis.yml` | ✅ | ✅ | ✅ | — | — |
-| `auth.yml` | ✅ | ✅ | ✅ | — | — |
-| `feign-circuitbreaker.yml` | — | ✅ | ✅ | — | — |
+| data-id | 网关 | admin | store-bff | mall-bff | goods-center | store |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — |
+| `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — |
+| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — |
 
-> 规律：域服务（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
+> 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
+>
+> ⚠ mall-bff **一期没有任何 Feign 客户端**，`feign-circuitbreaker.yml` 属空转——仍按上面的规律加载：配置是惰性的、不产生副作用，且二期接首页聚合调 goods-center 时无需再改加载矩阵。
 
 ### 12. 熔断契约：4xx 不计失败率，5xx 计入
 
@@ -164,7 +168,7 @@ layer: cross-cutting
 | 契约 | 业务 4xx（`ServiceException`）**不计**熔断失败率、原样透传给页面；5xx / 连接 / 熔断**计入**并降级为各端「…暂不可用」 |
 | 定义位置 | Nacos `feign-circuitbreaker.yml:43-44` 的 `resilience4j.circuitbreaker.configs.default.ignore-exceptions` = `com.panoramic.common.exception.ServiceException` |
 | 实现位置 | `common/.../feign/InternalApiErrorDecoder.java` —— **按 HTTP 状态码分野**：4xx → `ServiceException`；5xx → 回落 `Default()` 产出 `FeignException` |
-| 消费位置 | admin、store-bff（唯一引 resilience4j 的两端）；降级包装走 `common/.../feign/BffFeignCall.java` |
+| 消费位置 | admin、store-bff（引 resilience4j 的两端）；降级包装走 `common/.../feign/BffFeignCall.java`。mall-bff 一期无 Feign 客户端、不触发本机制，但同样加载该配置 |
 | 破坏后果 | 5xx 也还原成 `ServiceException` → 熔断**永远打不开**，下游故障直接拖垮调用方；反之若 4xx 计入 → 店主连续几次操作失误就把熔断打开，后续**正常**请求被降级成 500 |
 | 核对方式 | 哨兵 `ignore-exceptions`、`ServiceException`、`InternalApiErrorDecoder` |
 
