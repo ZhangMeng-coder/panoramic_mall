@@ -25,8 +25,11 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
+import type { PropType } from 'vue'
+import type { FormInstance } from 'element-plus'
+import type { CategoryNode } from '../../types/goods'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
@@ -34,14 +37,14 @@ const props = defineProps({
   /** add | edit */
   type: { type: String, default: 'add' },
   /** 新增时作为上级的分类节点（null 表示顶级） */
-  parent: { type: Object, default: null },
+  parent: { type: Object as PropType<CategoryNode | null>, default: null },
   /** 编辑时的分类节点 */
-  category: { type: Object, default: null }
+  category: { type: Object as PropType<CategoryNode | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
+const formRef = ref<FormInstance | null>(null)
 const form = ref({ name: '', sort: 0 })
 
 const rules = {
@@ -61,7 +64,7 @@ const dialogTitleTip = computed(() => {
   return null
 })
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -75,6 +78,8 @@ function initForm() {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

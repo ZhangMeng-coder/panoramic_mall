@@ -80,13 +80,15 @@
   </el-container>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { permissionApi } from '../api/permission'
 import { authApi } from '../api/auth'
 import { getUser, clearAuth } from '../store/auth'
+import type { PermissionNode } from '../types/auth'
 import ChangePasswordDialog from '../components/ChangePasswordDialog.vue'
 import {
   Menu,
@@ -123,11 +125,11 @@ const displayName = computed(() => {
 // —— 侧边菜单：后台 /admin/permissions/menus 动态生成（目录→页面两层，后端已按当前用户收敛）——
 // 用 v-if="menuReady" 保证 el-menu 首帧渲染即拿到完整数据，default-openeds 生效
 const menuReady = ref(false)
-const menuTree = ref([])
+const menuTree = ref<PermissionNode[]>([])
 const openedKeys = computed(() => menuTree.value.map((dir) => `m-${dir.id}`))
 
 // 图标：数据库存小写标识 → EP 图标组件；兼容别名，未知统一兜底 Menu
-const ICON_MAP = {
+const ICON_MAP: Record<string, Component> = {
   menu: Menu,
   goods: Goods,
   box: Box,
@@ -142,7 +144,8 @@ const ICON_MAP = {
   folder: FolderOpened,
   'folder-opened': FolderOpened
 }
-function resolveIcon(name) {
+/** 按图标标识取组件（标识来自库里的 icon 列，可空） */
+function resolveIcon(name: string | null) {
   const key = (name || '').toLowerCase()
   return ICON_MAP[key] || Menu
 }
@@ -164,7 +167,7 @@ onMounted(loadMenu)
 // —— 用户区：修改密码 / 退出登录 ——
 const pwdVisible = ref(false)
 
-async function handleUserCommand(command) {
+async function handleUserCommand(command: string) {
   if (command === 'changePassword') {
     pwdVisible.value = true
     return
@@ -202,7 +205,7 @@ function resolveInitialTheme() {
   }
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
-function applyTheme(dark) {
+function applyTheme(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark)
   try {
     localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light')

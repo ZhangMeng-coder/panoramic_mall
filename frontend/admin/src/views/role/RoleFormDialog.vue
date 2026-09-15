@@ -35,8 +35,11 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
+import type { PropType } from 'vue'
+import type { FormInstance } from 'element-plus'
+import type { RoleItem } from '../../api/role'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
@@ -44,12 +47,12 @@ const props = defineProps({
   /** add | edit */
   type: { type: String, default: 'add' },
   /** 编辑时的角色数据 */
-  role: { type: Object, default: null }
+  role: { type: Object as PropType<RoleItem | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
+const formRef = ref<FormInstance | null>(null)
 const form = ref({ name: '', code: '', description: '', sort: 0 })
 
 const rules = {
@@ -57,7 +60,7 @@ const rules = {
   code: [{ required: true, message: '请输入角色标识', trigger: 'blur' }]
 }
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -76,6 +79,8 @@ function initForm() {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

@@ -72,7 +72,7 @@
   </el-container>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -95,7 +95,8 @@ const displayName = computed(() => {
   return u.nickname || u.username || '未登录'
 })
 
-async function handleUserCommand(command) {
+// 下拉菜单命令：本组件只派发字符串命令（command="logout"）
+async function handleUserCommand(command: string) {
   if (command === 'logout') {
     try {
       await ElMessageBox.confirm('确定退出登录吗？', '退出登录', {
@@ -120,8 +121,8 @@ async function handleUserCommand(command) {
 }
 
 // —— 主题：.dark 挂到 <html>，联动 EP dark css-vars + 令牌暗色层；默认跟随系统，可切换并持久化 ——
-const isDark = ref(false)
-function resolveInitialTheme() {
+const isDark = ref<boolean>(false)
+function resolveInitialTheme(): boolean {
   try {
     const saved = localStorage.getItem(THEME_KEY)
     if (saved) return saved === 'dark'
@@ -130,7 +131,8 @@ function resolveInitialTheme() {
   }
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
-function applyTheme(dark) {
+// 主题应用：dark 为布尔开关（.dark 挂 <html>），联动 EP dark css-vars + 令牌暗色层
+function applyTheme(dark: boolean) {
   document.documentElement.classList.toggle('dark', dark)
   try {
     localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light')

@@ -43,7 +43,7 @@
                 type="primary"
                 size="small"
                 :disabled="assignedIds.has(row.id)"
-                @click="addUser(row)"
+                @click="addUser(row as UserItem)"
               >
                 {{ assignedIds.has(row.id) ? '已添加' : '添加' }}
               </el-button>
@@ -86,31 +86,34 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
+import type { PropType } from 'vue'
 import { roleApi } from '../../api/role'
+import type { RoleItem } from '../../api/role'
 import { userApi } from '../../api/user'
+import type { UserItem } from '../../api/user'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
   modelValue: { type: Boolean, default: false },
   /** 待分配用户的角色 */
-  role: { type: Object, default: null }
+  role: { type: Object as PropType<RoleItem | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
 // —— 左：候选（未分配用户）分页 ——
 const loadingCandidates = ref(false)
-const candidates = ref([])
+const candidates = ref<UserItem[]>([])
 const candidateTotal = ref(0)
 const candidateQuery = ref({ pageNum: 1, pageSize: 8, keyword: '' })
 
 // —— 右：本会话已分配用户 ——
 const loadingAssigned = ref(false)
-const assignedUsers = ref([])
+const assignedUsers = ref<UserItem[]>([])
 /** 打开时角色原本已分配的用户ID（用于统计会话内新增的隐藏候选数） */
-const originalAssignedIds = ref(new Set())
+const originalAssignedIds = ref<Set<number>>(new Set())
 /** 会话内（含原始）已分配用户ID集合 */
 const assignedIds = computed(() => new Set(assignedUsers.value.map((u) => u.id)))
 
@@ -119,7 +122,7 @@ const visibleCandidates = computed(() =>
   candidates.value.filter((u) => !assignedIds.value.has(u.id))
 )
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -164,12 +167,14 @@ function searchCandidates() {
   loadCandidates()
 }
 
-function addUser(user) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（Record<PropertyKey, any>），模板里拿不到 :data 的行类型，
+// 故在模板调用处用 `row as UserItem` 断言一次（运行时值不变），此处按 UserItem 收参。
+function addUser(user: UserItem) {
   if (assignedIds.value.has(user.id)) return
   assignedUsers.value.push({ ...user })
 }
 
-function removeUser(id) {
+function removeUser(id: number) {
   assignedUsers.value = assignedUsers.value.filter((u) => u.id !== id)
 }
 

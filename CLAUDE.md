@@ -62,6 +62,18 @@
 
 **文件专项专用**：模块 README 只写服务说明（职责 / 架构位置 / 实体标记 / 边界），❌ 不列接口清单；契约文件只写接口与形状，❌ 不写业务规则散文；`db/*.sql` 只写表结构与种子。一个文件只有一个职责，同一内容不写两遍。
 
+## 前端三端统一技术形态（2026-09-14 拉平）
+
+`frontend/` 下三端（`admin` / `store` / `mall`）**技术形态一致**：**Vue 3 + Vite + TypeScript（`strict`）+ axios**。各自的 `package.json` / `node_modules` 独立，互不依赖，但写法与门禁统一：
+
+- **一律 TypeScript**：源码只写 `.ts`（含 `vite.config.ts`），SFC 只写 `<script setup lang="ts">`。新增前端文件不得落 `.js`；出现 `src/**/*.js` 即视为未完成拉平。
+- **`tsconfig.json` 三份内容一致**，唯一差异：**admin / store 的 `compilerOptions.types` 多一项 `element-plus/global`**（这两端在 `main.ts` 全局 `app.use(ElementPlus)`，模板里的 `<el-*>` 才拿得到类型；mall 不注册 EP，故只有 `vite/client`）。⚠ **不要**为了「和 mall 对齐」把 `element-plus/global` 删掉 —— 删了模板里所有 EP 组件全部报错。改 tsconfig 选项时**三端同改**，不许各端漂移。
+- **类型检查是构建门禁**：三端 `npm run build` = `vue-tsc --noEmit && vite build`，**类型不过即构建失败**；另有 `npm run type-check` 只查类型不出产物。⚠ **不许为了让错误消失而放松 tsconfig** —— 不关 `strict`、不把 `noUnusedLocals` / `noUnusedParameters` 打开变关闭、不把报错文件 `exclude` 掉、不写 `: any` / `as any` / `@ts-ignore` / `@ts-nocheck`。
+- **HTTP 客户端一律 axios**，每端只有 `src/api/request.ts` 一个入口（**不存在** `fetch` / `XMLHttpRequest` 直调）。拦截器只做校验与错误分流，**解包由其后带泛型的 `ApiClient`（`get<T>` / `post<T>` / `put<T>` / `delete<T>`）统一做**，故**调用方直接拿到 `data` 本身**（`Promise<T>`）。⚠ **admin / store 的 `request.ts` 代码逐字相同**（仅头部互相指认端名的两条注释不同），是刻意的重复（各自独立工程，去重要引入 workspace / 共享包，暂不在范围内）；改一处要**同步改另一处**，两端 `request.ts` 头注释互相标注了这个约束。
+- **类型放哪**：只在**跨文件复用**的形状（`RespData<T>` / `PageResult<T>` / 分页参数 / 登录用户 / 菜单权限树 / 各 api 模块的入出参）放 `src/types/` 与各 `src/api/*.ts`；**页面私有的表单对象、列表行**就近在各自 SFC 内声明小 interface，不外移。字段照后端 VO/DTO 写，**可空列一律 `| null`**（别用可选字段糊）。
+- **登录态 401 行为三端刻意不同**：admin / store 的拦截器 **401 清登录态并跳登录页**；mall **不跳**（首页公开，见下节）。别「照另一端修一遍」。
+- 契约仍以上面「对外契约清单」为准：**写 / 改前端只照 `docs/contracts/<端>.md` 写，不照后端代码写**。
+
 ## mall 前台（用户端）视觉与结构约定
 
 `frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175）：**账号功能已接入端 BFF `mall-bff`**（取码 / 注册 / 登录 / 退出 / 当前顾客，契约见 `docs/contracts/mall-bff.md`），**首页六区块的数据仍是静态写死的**（在 `src/mock/`），首页数据聚合属二期。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
@@ -79,7 +91,7 @@
 ⚠ 演示外壳（原样张的「风格样张」说明条与「切换登录态」按钮）**已删除**；登录态是**真实会话**——token 存 `localStorage['pm-mall-token']`，用户信息驻留内存、刷新后由路由守卫拉 `/auth/me` 重建（`src/store/auth.ts`）。**前台首页公开、不要求登录**，守卫不拦游客。
 ⚠ **401 拦截器不自动跳登录页**——这是与 store / admin 两端的**刻意差异**：前台首页公开，带过期 token 的游客不该被弹走，页面照常按未登录态渲染；跳不跳由守卫 / 调用方决定。别「照 store 修一遍」。
 ⚠ 短信是**模拟通道**（固定验证码 `888888`，后端取码只打日志、不发真实短信），登录 / 注册页上有一行说明——**这不是假功能，是契约本身**；去掉它页面上就没有任何途径得知验证码。
-⚠ 类型检查已挂进构建：`npm run build` = `vue-tsc --noEmit && vite build`，类型不过即构建失败。
+⚠ 类型检查已挂进构建（三端一致），见上面「前端三端统一技术形态」。
 
 ## 代码验证只到“编译通过”
 

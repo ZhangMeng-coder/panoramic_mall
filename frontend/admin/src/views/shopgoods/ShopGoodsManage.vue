@@ -71,7 +71,7 @@
       </el-table-column>
       <el-table-column prop="name" label="商品名称" min-width="180" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-link type="primary" @click="openDetail(row)">{{ row.name }}</el-link>
+          <el-link type="primary" @click="openDetail(row as ShopGoodsPageItem)">{{ row.name }}</el-link>
         </template>
       </el-table-column>
       <el-table-column prop="storeName" label="所属店铺" min-width="140" show-overflow-tooltip>
@@ -101,12 +101,12 @@
       <el-table-column prop="updateTime" label="更新时间" width="170" />
       <el-table-column label="操作" width="190" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.lockStatus !== 1" v-perm="'store:goods:lock'" link type="danger" @click="openLock(row)">
+          <el-button v-if="row.lockStatus !== 1" v-perm="'store:goods:lock'" link type="danger" @click="openLock(row as ShopGoodsPageItem)">
             锁定
           </el-button>
           <template v-else>
-            <el-button link type="warning" @click="openLockInfo(row)">锁定信息</el-button>
-            <el-button v-perm="'store:goods:lock'" link type="primary" @click="handleUnlock(row)">解锁</el-button>
+            <el-button link type="warning" @click="openLockInfo(row as ShopGoodsPageItem)">锁定信息</el-button>
+            <el-button v-perm="'store:goods:lock'" link type="primary" @click="handleUnlock(row as ShopGoodsPageItem)">解锁</el-button>
           </template>
         </template>
       </el-table-column>
@@ -166,36 +166,45 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { shopGoodsApi } from '../../api/shopGoods'
+import { shopGoodsApi, type ShopGoodsPageItem, type ShopGoodsPageQuery, type ShopOption } from '../../api/shopGoods'
+import type { BrandItem, CategoryNode } from '../../types/goods'
+
+/** 分类下拉树的节点：只保留树选择器需要的字段（parentId / level / sort 此处用不到） */
+interface CategoryOption {
+  id: number
+  name: string
+  children: CategoryOption[]
+}
 
 const router = useRouter()
 
 const loading = ref(false)
-const records = ref([])
+const records = ref<ShopGoodsPageItem[]>([])
 const total = ref(0)
-const brands = ref([])
-const shops = ref([])
-const categoryOptions = ref([])
+const brands = ref<BrandItem[]>([])
+const shops = ref<ShopOption[]>([])
+const categoryOptions = ref<CategoryOption[]>([])
 
-const query = reactive({
+// 筛选项未选时为 undefined（axios 对 undefined / null 一视同仁地跳过，请求参数不变）
+const query = reactive<ShopGoodsPageQuery>({
   pageNum: 1,
   pageSize: 10,
-  categoryId: null,
-  brandId: null,
-  storeId: null,
-  shelfStatus: null,
-  lockStatus: null,
+  categoryId: undefined,
+  brandId: undefined,
+  storeId: undefined,
+  shelfStatus: undefined,
+  lockStatus: undefined,
   keyword: ''
 })
 
 // 锁定弹窗 / 锁定信息弹窗（共用当前行）
 const lockVisible = ref(false)
 const lockInfoVisible = ref(false)
-const lockTarget = ref(null)
+const lockTarget = ref<ShopGoodsPageItem | null>(null)
 const lockReason = ref('')
 const locking = ref(false)
 
@@ -207,7 +216,7 @@ async function loadOptions() {
   ])
   brands.value = brandList
   shops.value = shopList
-  const walk = (nodes) =>
+  const walk = (nodes: CategoryNode[]): CategoryOption[] =>
     nodes.map((n) => ({
       id: n.id,
       name: n.name,
@@ -233,46 +242,52 @@ function handleSearch() {
 }
 
 function handleReset() {
-  query.categoryId = null
-  query.brandId = null
-  query.storeId = null
-  query.shelfStatus = null
-  query.lockStatus = null
+  query.categoryId = undefined
+  query.brandId = undefined
+  query.storeId = undefined
+  query.shelfStatus = undefined
+  query.lockStatus = undefined
   query.keyword = ''
   handleSearch()
 }
 
-function openDetail(row) {
+// ⚠ el-table 插槽把 row 声明成 EP 的 DefaultRow（表格组件非泛型，拿不到 :data 的行类型），
+//   故下列各表格行处理器在【模板调用处】断言一次（`row as ShopGoodsPageItem`），函数本身保持强类型 ——
+//   `DefaultRow` 未从 element-plus 根导出，模板插槽注解也会因逆变报错，断言是唯一可行解。
+function openDetail(row: ShopGoodsPageItem) {
   router.push(`/shop-goods/${row.id}`)
 }
 
 /** 锁定人展示：库里存 `UserType:UserId`（如 admin:1），此处只渲染为「平台管理员(1)」不做用户表联查 */
-function lockUserText(lockUser) {
+function lockUserText(lockUser: string | null): string {
   if (!lockUser) return '-'
   const [type, id] = String(lockUser).split(':')
   const label = type === 'admin' ? '平台管理员' : type
   return id ? `${label}(${id})` : label
 }
 
-function openLock(row) {
+function openLock(row: ShopGoodsPageItem) {
   lockTarget.value = row
   lockReason.value = ''
   lockVisible.value = true
 }
 
-function openLockInfo(row) {
+function openLockInfo(row: ShopGoodsPageItem) {
   lockTarget.value = row
   lockInfoVisible.value = true
 }
 
 async function submitLock() {
+  const target = lockTarget.value
+  // 锁定弹窗打开时必有目标行，此处只为收窄类型
+  if (!target) return
   if (!lockReason.value.trim()) {
     ElMessage.warning('请填写锁定原因')
     return
   }
   locking.value = true
   try {
-    await shopGoodsApi.lock(lockTarget.value.id, { reason: lockReason.value.trim() })
+    await shopGoodsApi.lock(target.id, { reason: lockReason.value.trim() })
     ElMessage.success('商品已锁定，其全部 SKU 已下架')
     lockVisible.value = false
     loadPage()
@@ -283,7 +298,7 @@ async function submitLock() {
   }
 }
 
-async function handleUnlock(row) {
+async function handleUnlock(row: ShopGoodsPageItem) {
   try {
     await ElMessageBox.confirm(
       `确定解锁商品「${row.name}」吗？解锁后商品保持下架，需店主手动重新上架`,

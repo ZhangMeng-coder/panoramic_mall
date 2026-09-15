@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+
+    // ⚠ 与 frontend/mall 的【唯一】差异就是这一行。
+    // 本端在 main.ts 里全局注册了 Element Plus（app.use(ElementPlus)），需要它提供的全局组件类型，
+    // 模板里的 <el-table> 之类才有类型。mall 不注册 EP，所以它只有 "vite/client"。
+    // 不要为了「和 mall 对齐」把 element-plus/global 删掉 —— 删了模板里所有 EP 组件都会报错。
+    "types": ["vite/client", "element-plus/global"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "jsx": "preserve",
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue", "vite.config.ts"]
+}

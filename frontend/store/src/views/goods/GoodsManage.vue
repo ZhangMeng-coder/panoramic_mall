@@ -91,14 +91,14 @@
       <el-table-column prop="updateTime" label="更新时间" width="170" />
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button v-if="row.lockStatus === 1" link type="warning" @click="openLockInfo(row)">锁定信息</el-button>
-          <el-button link type="primary" :disabled="row.lockStatus === 1" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="success" :disabled="row.lockStatus === 1" @click="openSku(row)">规格</el-button>
+          <el-button v-if="row.lockStatus === 1" link type="warning" @click="openLockInfo(row as StoreGoodsSpuPageItem)">锁定信息</el-button>
+          <el-button link type="primary" :disabled="row.lockStatus === 1" @click="openEdit(row as StoreGoodsSpuPageItem)">编辑</el-button>
+          <el-button link type="success" :disabled="row.lockStatus === 1" @click="openSku(row as StoreGoodsSpuPageItem)">规格</el-button>
           <el-button
             link
             type="danger"
             :disabled="row.lockStatus === 1 || row.shelfStatus === 1"
-            @click="handleDelete(row)"
+            @click="handleDelete(row as StoreGoodsSpuPageItem)"
           >删除</el-button>
         </template>
       </el-table-column>
@@ -143,35 +143,67 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { goodsApi, goodsMetaApi } from '../../api/goods'
+import type {
+  BrandItem,
+  CategoryNode,
+  StoreGoodsSpuDetail,
+  StoreGoodsSpuPageItem,
+  StoreGoodsSpuPageQuery,
+  StoreGoodsSpuSavePayload
+} from '../../api/goods'
 import GoodsFormDialog from './GoodsFormDialog.vue'
 import GoodsSkuManageDialog from './GoodsSkuManageDialog.vue'
 
-const loading = ref(false)
-const records = ref([])
-const total = ref(0)
-const brands = ref([])
-const categoryOptions = ref([])
+/** 分类下拉项：树选择只用到 id / name / children，故不复用 CategoryNode 的全字段 */
+interface CategoryOption {
+  id: number
+  name: string
+  children: CategoryOption[]
+}
 
-const query = reactive({ pageNum: 1, pageSize: 10, categoryId: null, brandId: null, shelfStatus: null, keyword: '' })
+/** 筛选条件：分类/品牌/状态「全部」为 null（与未传等效，仅用于拼查询参数） */
+interface GoodsQuery {
+  pageNum: number
+  pageSize: number
+  categoryId: number | null
+  brandId: number | null
+  shelfStatus: number | null
+  keyword: string
+}
+
+const loading = ref(false)
+const records = ref<StoreGoodsSpuPageItem[]>([])
+const total = ref(0)
+const brands = ref<BrandItem[]>([])
+const categoryOptions = ref<CategoryOption[]>([])
+
+const query = reactive<GoodsQuery>({
+  pageNum: 1,
+  pageSize: 10,
+  categoryId: null,
+  brandId: null,
+  shelfStatus: null,
+  keyword: ''
+})
 
 // 弹窗状态：编辑（基本信息+规格配置） / 规格（SKU 管理 + 上下架）
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogGoods = ref(null) // 共享的商品详情（含 SKU 与中台比对结果，打开前各自刷新拉取）
+const dialogGoods = ref<StoreGoodsSpuDetail | null>(null) // 共享的商品详情（含 SKU 与中台比对结果，打开前各自刷新拉取）
 const skuDialogVisible = ref(false)
 
 // 锁定信息弹窗（只读；数据直接取列表行，无需额外请求）
 const lockInfoVisible = ref(false)
-const lockInfo = ref(null)
+const lockInfo = ref<StoreGoodsSpuPageItem | null>(null)
 
 async function loadOptions() {
   const [brandList, tree] = await Promise.all([goodsMetaApi.brands(), goodsMetaApi.categories()])
   brands.value = brandList
-  const walk = (nodes) =>
+  const walk = (nodes: CategoryNode[]): CategoryOption[] =>
     nodes.map((n) => ({
       id: n.id,
       name: n.name,
@@ -183,7 +215,9 @@ async function loadOptions() {
 async function loadPage() {
   loading.value = true
   try {
-    const data = await goodsApi.page({ ...query })
+    // 树选择/下拉的「全部」是 null，而查询参数类型把这些字段标成可选（undefined 口径）；
+    // 两者在 axios 序列化时都会被丢弃，故这里断言抹平口径差，运行期传的值不变
+    const data = await goodsApi.page({ ...query } as StoreGoodsSpuPageQuery)
     records.value = data.records
     total.value = data.total
   } finally {
@@ -210,7 +244,10 @@ function openAdd() {
   dialogVisible.value = true
 }
 
-async function openEdit(row) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（索引签名行类型，未按 :data 的行类型泛化），
+// 模板里拿不到行类型，故在模板调用处用 `row as StoreGoodsSpuPageItem` 断言一次（运行时值不变），
+// 以下处理器一律按 StoreGoodsSpuPageItem 收参。
+async function openEdit(row: StoreGoodsSpuPageItem) {
   try {
     const detail = await goodsApi.detail(row.id)
     dialogType.value = 'edit'
@@ -222,7 +259,7 @@ async function openEdit(row) {
 }
 
 /** 打开「规格」弹窗（每次拉最新详情，避免 SKU 与上下架状态陈旧） */
-async function openSku(row) {
+async function openSku(row: StoreGoodsSpuPageItem) {
   try {
     dialogGoods.value = await goodsApi.detail(row.id)
     skuDialogVisible.value = true
@@ -243,18 +280,22 @@ function handleSkuChanged() {
 }
 
 /** 打开锁定信息弹窗（只读：原因 + 时间，不含锁定人——按 A2） */
-function openLockInfo(row) {
+function openLockInfo(row: StoreGoodsSpuPageItem) {
   lockInfo.value = row
   lockInfoVisible.value = true
 }
 
-async function handleSave(payload) {
+async function handleSave(payload: StoreGoodsSpuSavePayload) {
   try {
     if (dialogType.value === 'add') {
       await goodsApi.add(payload)
       ElMessage.success('商品创建成功')
     } else {
-      await goodsApi.update(dialogGoods.value.id, payload)
+      // 编辑态必非空：openEdit 先拉到详情才打开弹窗；取不到即中止
+      //（原写法读 null 抛错会落进下方 catch，结果同为「弹窗不关、无提示」）
+      const goods = dialogGoods.value
+      if (!goods) return
+      await goodsApi.update(goods.id, payload)
       ElMessage.success('商品更新成功')
     }
     dialogVisible.value = false
@@ -264,7 +305,7 @@ async function handleSave(payload) {
   }
 }
 
-async function handleDelete(row) {
+async function handleDelete(row: StoreGoodsSpuPageItem) {
   try {
     await ElMessageBox.confirm(
       `确定删除商品「${row.name}」吗？删除会一并移除其全部 SKU；上架中的商品需先下架全部 SKU`,

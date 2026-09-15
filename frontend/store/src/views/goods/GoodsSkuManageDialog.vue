@@ -40,11 +40,11 @@
         >
           <template #default="{ row }">
             <el-select
-              :model-value="cellValue(row, dim.spec)"
-              :disabled="isOnShelf(row)"
+              :model-value="cellValue(row as SkuRow, dim.spec)"
+              :disabled="isOnShelf(row as SkuRow)"
               :placeholder="`请选择${dim.spec}`"
               style="width: 100%"
-              @change="(v) => onValueChange(row, dim, v)"
+              @change="(v) => onValueChange(row as SkuRow, dim, v)"
             >
               <el-option v-for="ov in optionValues(dim)" :key="ov" :label="ov" :value="ov" />
             </el-select>
@@ -58,7 +58,7 @@
               :precision="2"
               :step="1"
               :controls="false"
-              :disabled="isOnShelf(row)"
+              :disabled="isOnShelf(row as SkuRow)"
               placeholder="必填"
               style="width: 100%"
             />
@@ -66,13 +66,13 @@
         </el-table-column>
         <el-table-column label="SKU 编码" min-width="130">
           <template #default="{ row }">
-            <el-input v-model="row.skuCode" maxlength="64" :disabled="isOnShelf(row)" placeholder="可选" />
+            <el-input v-model="row.skuCode" maxlength="64" :disabled="isOnShelf(row as SkuRow)" placeholder="可选" />
           </template>
         </el-table-column>
         <el-table-column label="SKU 图片 URL" min-width="200">
           <template #default="{ row }">
             <div class="sku-image-cell">
-              <el-input v-model="row.mainImage" :disabled="isOnShelf(row)" placeholder="可选" />
+              <el-input v-model="row.mainImage" :disabled="isOnShelf(row as SkuRow)" placeholder="可选" />
               <el-image
                 v-if="row.mainImage"
                 :src="row.mainImage"
@@ -92,16 +92,16 @@
               placement="top"
             >
               <el-switch
-                :model-value="isOnShelf(row)"
+                :model-value="isOnShelf(row as SkuRow)"
                 :disabled="row.id == null"
-                @change="(v) => onShelfChange(row, v)"
+                @change="(v) => onShelfChange(row as SkuRow, v as boolean)"
               />
             </el-tooltip>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="70" align="center">
           <template #default="{ $index, row }">
-            <el-button type="danger" link :disabled="isOnShelf(row)" @click="removeRow($index)">删除</el-button>
+            <el-button type="danger" link :disabled="isOnShelf(row as SkuRow)" @click="removeRow($index)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -116,22 +116,38 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { goodsApi } from '../../api/goods'
+import type { SpecAttr, SpecConfigItem, StoreGoodsSkuPayload, StoreGoodsSpuDetail } from '../../api/goods'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** 商品详情（含规格属性配置 specConfig、存量 skus、中台快照 centerSpu） */
-  goods: { type: Object, default: null }
-})
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** 商品详情（含规格属性配置 specConfig、存量 skus、中台快照 centerSpu） */
+    goods?: StoreGoodsSpuDetail | null
+  }>(),
+  { modelValue: false, goods: null }
+)
 
 const emit = defineEmits(['update:modelValue', 'saved', 'changed'])
 
-const configs = ref([]) // [{ spec, values }]
-const rows = ref([]) // [{ id, attrs:[{spec,value}], skuCode, mainImage, price, shelfStatus }]
+/** SKU 编辑行：id 为 null 表示新增行；price 未填为 null（保存前逐行校验必填） */
+interface SkuRow {
+  id: number | null
+  /** 规格取值，与规格维度一一对应 */
+  attrs: SpecAttr[]
+  skuCode: string
+  mainImage: string
+  price: number | null
+  /** 0 下架 / 1 上架（上架行整行锁定，改动即时生效） */
+  shelfStatus: number
+}
+
+const configs = ref<SpecConfigItem[]>([])
+const rows = ref<SkuRow[]>([])
 const loading = ref(false)
 
 const emptyText = computed(() =>
@@ -141,11 +157,14 @@ const emptyText = computed(() =>
 /** 中台模板可同步的 SKU（未关联/中台不可达时为空） */
 const centerSkus = computed(() => props.goods?.centerSpu?.skus || [])
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
-function isOnShelf(row) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（索引签名行类型，未按 :data 的行类型泛化），
+// 模板里拿不到行类型，故在模板调用处用 `row as SkuRow` 断言一次（运行时值不变），
+// 以下处理器一律按 SkuRow 收参。
+function isOnShelf(row: SkuRow) {
   return row.shelfStatus === 1
 }
 
@@ -179,28 +198,28 @@ function init() {
 }
 
 /** 组合唯一键（按规格名排序拼接，与后端 comboKey 一致） */
-function rowKey(attrs) {
+function rowKey(attrs: SpecAttr[]) {
   return [...attrs]
     .sort((a, b) => (a.spec < b.spec ? -1 : a.spec > b.spec ? 1 : 0))
     .map((a) => `${a.spec}=${a.value}`)
     .join('|')
 }
 
-function cellValue(row, spec) {
+function cellValue(row: SkuRow, spec: string) {
   const attr = row.attrs.find((a) => a.spec === spec)
   return attr ? attr.value : ''
 }
 
-function attrOf(row, spec) {
+function attrOf(row: SkuRow, spec: string): SpecAttr | undefined {
   return row.attrs.find((a) => a.spec === spec)
 }
 
-function hasDup(targetRow) {
+function hasDup(targetRow: SkuRow) {
   const key = rowKey(targetRow.attrs)
   return rows.value.some((r) => r !== targetRow && rowKey(r.attrs) === key)
 }
 
-function onValueChange(row, dim, val) {
+function onValueChange(row: SkuRow, dim: SpecConfigItem, val: string) {
   const attr = attrOf(row, dim.spec)
   if (!attr || attr.value === val) return
   const oldVal = attr.value
@@ -212,7 +231,7 @@ function onValueChange(row, dim, val) {
 }
 
 /** 该维度可选项 = 规格配置值 + 存量行已用值（兼容历史孤儿值显示） */
-function optionValues(dim) {
+function optionValues(dim: SpecConfigItem) {
   const set = new Set(dim.values || [])
   for (const row of rows.value) {
     const a = attrOf(row, dim.spec)
@@ -222,8 +241,8 @@ function optionValues(dim) {
 }
 
 /** 规格配置各维度的笛卡尔积 */
-function cartesian(dims) {
-  return dims.reduce(
+function cartesian(dims: SpecConfigItem[]) {
+  return dims.reduce<SpecAttr[][]>(
     (acc, dim) =>
       acc.flatMap((attrs) => (dim.values || []).map((v) => [...attrs, { spec: dim.spec, value: v }])),
     [[]]
@@ -312,16 +331,23 @@ function syncFromCenter() {
   )
 }
 
-function removeRow(index) {
+function removeRow(index: number) {
   rows.value.splice(index, 1)
 }
 
 /** SKU 上下架：即时生效（服务端联动商品上下架）；失败回滚开关 */
-async function onShelfChange(row, checked) {
+async function onShelfChange(row: SkuRow, checked: boolean) {
   const prev = row.shelfStatus
   row.shelfStatus = checked ? 1 : 0
+  const goods = props.goods
   try {
-    await goodsApi.updateSkuShelf(props.goods.id, row.id, row.shelfStatus)
+    // 上架开关在新增行（id 为 null）上禁用，能走到这里必为已存行；goods 由「规格」入口拉到详情后才打开，必非空。
+    // 守卫只为收窄类型，取不到时回滚开关——与原写法（读 null 抛错落进下方 catch）结果一致
+    if (!goods || row.id == null) {
+      row.shelfStatus = prev
+      return
+    }
+    await goodsApi.updateSkuShelf(goods.id, row.id, row.shelfStatus)
     ElMessage.success(row.shelfStatus === 1 ? 'SKU 已上架，商品已联动上架' : 'SKU 已下架')
     emit('changed')
   } catch {
@@ -342,16 +368,24 @@ async function handleSave() {
     ElMessage.warning('存在未选择规格值的 SKU，请补全后再保存')
     return
   }
-  const skus = rows.value.map((r) => ({
-    id: r.id,
+  // 提交口径：新增行 id 为空、空编码/图片为空 —— 一律「省略该键」。
+  // 后端 StoreGoodsSkuDTO 的 id/skuCode/mainImage 都是可空字段，Jackson 下「键缺失」与「显式 null」
+  // 等价（id 缺 = 新增行），故省略键与原先传 null 落库结果一致，且不必再用断言硬塞 null。
+  // 价格必填：上方已逐行校验（不低于 0.01），`?? undefined` 仅为收窄类型，该分支不可达。
+  const skus: StoreGoodsSkuPayload[] = rows.value.map((r) => ({
+    id: r.id ?? undefined,
     specAttrs: r.attrs.map((a) => ({ spec: a.spec, value: a.value })),
-    skuCode: r.skuCode || null,
-    mainImage: r.mainImage || null,
-    price: r.price
+    skuCode: r.skuCode || undefined,
+    mainImage: r.mainImage || undefined,
+    price: r.price ?? undefined
   }))
   loading.value = true
   try {
-    await goodsApi.replaceSkus(props.goods.id, skus)
+    // goods 由「规格」入口拉到详情后才打开本弹窗，此处必非空（守卫只为收窄类型；
+    // 原写法读 null 抛错会落进下方 catch，结果同为「不保存、无提示」，且在 finally 里复位 loading）
+    const goods = props.goods
+    if (!goods) return
+    await goodsApi.replaceSkus(goods.id, skus)
     ElMessage.success('SKU 已保存')
     emit('saved')
   } catch {

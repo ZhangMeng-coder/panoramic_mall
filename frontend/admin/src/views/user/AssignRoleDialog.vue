@@ -39,27 +39,37 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { roleApi } from '../../api/role'
+import type { RoleItem } from '../../api/role'
 import { userApi } from '../../api/user'
+import type { UserItem } from '../../api/user'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** 待分配角色的用户 */
-  user: { type: Object, default: null }
-})
+// 用类型式声明 + withDefaults，保留原运行时的两个 default（缺省即 false / null）
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** 待分配角色的用户 */
+    user?: UserItem | null
+  }>(),
+  { modelValue: false, user: null }
+)
 
-const emit = defineEmits(['update:modelValue', 'save'])
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean]
+  /** 保存勾选结果：整体替换，空数组表示清空该用户角色 */
+  save: [roleIds: number[]]
+}>()
 
 const loading = ref(false)
 const submitting = ref(false)
-const allRoles = ref([])
-const checkedRoleIds = ref([])
+const allRoles = ref<RoleItem[]>([])
+const checkedRoleIds = ref<number[]>([])
 const filter = ref('')
 
-const filteredRoles = computed(() => {
+const filteredRoles = computed<RoleItem[]>(() => {
   const kw = filter.value.trim().toLowerCase()
   if (!kw) return allRoles.value
   return allRoles.value.filter(
@@ -67,11 +77,11 @@ const filteredRoles = computed(() => {
   )
 })
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean): void {
   emit('update:modelValue', visible)
 }
 
-async function initData() {
+async function initData(): Promise<void> {
   filter.value = ''
   checkedRoleIds.value = []
   if (!props.user) return
@@ -85,7 +95,7 @@ async function initData() {
   }
 }
 
-async function handleSubmit() {
+async function handleSubmit(): Promise<void> {
   if (!props.user) return
   submitting.value = true
   try {

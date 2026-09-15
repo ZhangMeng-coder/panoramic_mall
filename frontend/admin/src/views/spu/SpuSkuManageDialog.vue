@@ -28,10 +28,10 @@
         >
           <template #default="{ row }">
             <el-select
-              :model-value="cellValue(row, dim.spec)"
+              :model-value="cellValue(row as SkuRow, dim.spec)"
               :placeholder="`请选择${dim.spec}`"
               style="width: 100%"
-              @change="(v) => onValueChange(row, dim, v)"
+              @change="(v) => onValueChange(row as SkuRow, dim, v)"
             >
               <el-option v-for="ov in optionValues(dim)" :key="ov" :label="ov" :value="ov" />
             </el-select>
@@ -74,29 +74,51 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { spuApi } from '../../api/spu'
+import type { SkuPayload, SpuDetail } from '../../api/spu'
+import type { SpecAttr } from '../../types/goods'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** 商品详情（SpuDetailVO，含规格属性配置 specConfig 与存量 skus） */
-  spu: { type: Object, default: null }
-})
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** 商品详情（SpuDetailVO，含规格属性配置 specConfig 与存量 skus） */
+    spu?: SpuDetail | null
+  }>(),
+  { modelValue: false, spu: null }
+)
 
-const emit = defineEmits(['update:modelValue', 'saved'])
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean]
+  saved: []
+}>()
 
-const configs = ref([]) // [{ spec, values }]
-const rows = ref([]) // [{ id, attrs:[{spec,value}], skuCode, mainImage }]
+/** 规格维度配置行（对应商品 specConfig 的一项） */
+interface SpecDimRow {
+  spec: string
+  values: string[]
+}
+
+/** SKU 表格行：id 为 null 表示新增；编码 / 图片用空串表示「未填」 */
+interface SkuRow {
+  id: number | null
+  attrs: SpecAttr[]
+  skuCode: string
+  mainImage: string
+}
+
+const configs = ref<SpecDimRow[]>([]) // [{ spec, values }]
+const rows = ref<SkuRow[]>([]) // [{ id, attrs:[{spec,value}], skuCode, mainImage }]
 const loading = ref(false)
 
 const emptyText = computed(() =>
   configs.value.length ? '暂无 SKU，点击「生成缺失组合」按规格配置创建' : ''
 )
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -128,28 +150,30 @@ function init() {
 }
 
 /** 组合唯一键（按规格名排序拼接，与后端 comboKey 一致） */
-function rowKey(attrs) {
+function rowKey(attrs: SpecAttr[]) {
   return [...attrs]
     .sort((a, b) => (a.spec < b.spec ? -1 : a.spec > b.spec ? 1 : 0))
     .map((a) => `${a.spec}=${a.value}`)
     .join('|')
 }
 
-function cellValue(row, spec) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（索引签名行类型，未按 :data 的行类型泛化），
+// 模板里拿不到行类型，故在模板调用处用 `row as SkuRow` 断言一次（运行时值不变）。
+function cellValue(row: SkuRow, spec: string) {
   const attr = row.attrs.find((a) => a.spec === spec)
   return attr ? attr.value : ''
 }
 
-function attrOf(row, spec) {
+function attrOf(row: SkuRow, spec: string) {
   return row.attrs.find((a) => a.spec === spec)
 }
 
-function hasDup(targetRow) {
+function hasDup(targetRow: SkuRow) {
   const key = rowKey(targetRow.attrs)
   return rows.value.some((r) => r !== targetRow && rowKey(r.attrs) === key)
 }
 
-function onValueChange(row, dim, val) {
+function onValueChange(row: SkuRow, dim: SpecDimRow, val: string) {
   const attr = attrOf(row, dim.spec)
   if (!attr || attr.value === val) return
   const oldVal = attr.value
@@ -161,7 +185,7 @@ function onValueChange(row, dim, val) {
 }
 
 /** 该维度可选项 = 规格配置值 + 存量行已用值（兼容历史孤儿值显示） */
-function optionValues(dim) {
+function optionValues(dim: SpecDimRow): string[] {
   const set = new Set(dim.values || [])
   for (const row of rows.value) {
     const a = attrOf(row, dim.spec)
@@ -171,8 +195,8 @@ function optionValues(dim) {
 }
 
 /** 规格配置各维度的笛卡尔积 */
-function cartesian(dims) {
-  return dims.reduce(
+function cartesian(dims: SpecDimRow[]): SpecAttr[][] {
+  return dims.reduce<SpecAttr[][]>(
     (acc, dim) =>
       acc.flatMap((attrs) => (dim.values || []).map((v) => [...attrs, { spec: dim.spec, value: v }])),
     [[]]
@@ -194,7 +218,7 @@ function generateMissing() {
   ElMessage.success(added ? `已生成 ${added} 个缺失组合，请补充编码/图片` : '组合已齐全，无新增')
 }
 
-function removeRow(index) {
+function removeRow(index: number) {
   rows.value.splice(index, 1)
 }
 
@@ -204,15 +228,19 @@ async function handleSave() {
     ElMessage.warning('该商品暂无规格属性配置，无法保存 SKU；请先在「编辑」中配置规格属性或清空 SKU')
     return
   }
-  const skus = rows.value.map((r) => ({
-    id: r.id,
+  // 弹窗只在有商品时打开；此判断仅用于类型收窄，取不到商品时静默返回（与原「读 null 抛错被吞」等价）
+  const spu = props.spu
+  if (!spu) return
+  // 空的 id / 编码 / 图片传 undefined（JSON 序列化时省掉该键），后端读到的仍是 null，与原先显式传 null 等价
+  const skus: SkuPayload[] = rows.value.map((r) => ({
+    id: r.id ?? undefined,
     specAttrs: r.attrs.map((a) => ({ spec: a.spec, value: a.value })),
-    skuCode: r.skuCode || null,
-    mainImage: r.mainImage || null
+    skuCode: r.skuCode || undefined,
+    mainImage: r.mainImage || undefined
   }))
   loading.value = true
   try {
-    await spuApi.updateSkus(props.spu.id, skus)
+    await spuApi.updateSkus(spu.id, skus)
     ElMessage.success('SKU 已保存')
     emit('saved')
   } catch {

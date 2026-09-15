@@ -47,11 +47,13 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" width="170" />
+      <!-- el-table 插槽行的类型由 EP 定成 DefaultRow（Record<PropertyKey, any>），与业务行类型不互认，
+           而运行时它就是列表行，故调用处理函数时显式断言成 UserItem -->
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="{ row }">
-          <el-button v-perm="'system:user:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-perm="'system:user:assignRole'" link type="warning" @click="openAssignRole(row)">分配角色</el-button>
-          <el-button v-perm="'system:user:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'system:user:edit'" link type="primary" @click="openEdit(row as UserItem)">编辑</el-button>
+          <el-button v-perm="'system:user:assignRole'" link type="warning" @click="openAssignRole(row as UserItem)">分配角色</el-button>
+          <el-button v-perm="'system:user:delete'" link type="danger" @click="handleDelete(row as UserItem)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -72,22 +74,24 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { userApi } from '../../api/user'
+import type { UserItem, UserPayload } from '../../api/user'
 import UserFormDialog from './UserFormDialog.vue'
 import AssignRoleDialog from './AssignRoleDialog.vue'
 
 const loading = ref(false)
-const records = ref([])
+const records = ref<UserItem[]>([])
 const total = ref(0)
 const query = reactive({ pageNum: 1, pageSize: 10, keyword: '', status: undefined })
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogUser = ref(null)
+/** 当前操作的用户（新增时为 null，编辑/分配角色时由列表行带入） */
+const dialogUser = ref<UserItem | null>(null)
 
 // 分配角色弹窗状态
 const assignVisible = ref(false)
@@ -114,24 +118,27 @@ function openAdd() {
   dialogVisible.value = true
 }
 
-function openEdit(user) {
+function openEdit(user: UserItem) {
   dialogType.value = 'edit'
   dialogUser.value = user
   dialogVisible.value = true
 }
 
-function openAssignRole(user) {
+function openAssignRole(user: UserItem) {
   dialogUser.value = user
   assignVisible.value = true
 }
 
-async function handleSave(form) {
+async function handleSave(form: UserPayload) {
   try {
     if (dialogType.value === 'add') {
       await userApi.add(form)
       ElMessage.success('用户创建成功')
     } else {
-      await userApi.update(dialogUser.value.id, form)
+      // 编辑态由 openEdit 赋值；提前取出仅为把 `UserItem | null` 收窄
+      const user = dialogUser.value
+      if (!user) return
+      await userApi.update(user.id, form)
       ElMessage.success('用户更新成功')
     }
     dialogVisible.value = false
@@ -141,9 +148,12 @@ async function handleSave(form) {
   }
 }
 
-async function handleAssignRole(roleIds) {
+async function handleAssignRole(roleIds: number[]) {
+  // 弹窗由 openAssignRole 打开，用户必定已赋值；提前取出仅为把 `UserItem | null` 收窄
+  const user = dialogUser.value
+  if (!user) return
   try {
-    await userApi.assignRoles(dialogUser.value.id, roleIds)
+    await userApi.assignRoles(user.id, roleIds)
     ElMessage.success('角色分配成功')
     assignVisible.value = false
   } catch {
@@ -151,7 +161,7 @@ async function handleAssignRole(roleIds) {
   }
 }
 
-async function handleDelete(user) {
+async function handleDelete(user: UserItem) {
   try {
     await ElMessageBox.confirm(
       `确定删除用户「${user.username}」吗？其角色分配记录将一并清除`,

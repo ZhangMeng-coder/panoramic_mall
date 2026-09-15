@@ -75,24 +75,24 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="330" fixed="right">
         <template #default="{ row }">
-          <el-button v-perm="'goods:spu:list'" link type="info" @click="openPreview(row)">预览</el-button>
-          <el-button v-perm="'goods:spu:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-perm="'goods:spu:edit'" link type="success" @click="openSku(row)">规格</el-button>
+          <el-button v-perm="'goods:spu:list'" link type="info" @click="openPreview(row as SpuPageItem)">预览</el-button>
+          <el-button v-perm="'goods:spu:edit'" link type="primary" @click="openEdit(row as SpuPageItem)">编辑</el-button>
+          <el-button v-perm="'goods:spu:edit'" link type="success" @click="openSku(row as SpuPageItem)">规格</el-button>
           <el-button
             v-if="row.status === 0"
             v-perm="'goods:spu:edit'"
             link
             type="success"
-            @click="handleToggleStatus(row)"
+            @click="handleToggleStatus(row as SpuPageItem)"
           >展示</el-button>
           <el-button
             v-else
             v-perm="'goods:spu:edit'"
             link
             type="warning"
-            @click="handleToggleStatus(row)"
+            @click="handleToggleStatus(row as SpuPageItem)"
           >隐藏</el-button>
-          <el-button v-perm="'goods:spu:delete'" link type="danger" :disabled="row.status === 1" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'goods:spu:delete'" link type="danger" :disabled="row.status === 1" @click="handleDelete(row as SpuPageItem)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -119,35 +119,46 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { spuApi } from '../../api/spu'
+import type { SpuDetail, SpuPageItem, SpuPageQuery, SpuPayload } from '../../api/spu'
 import { brandApi } from '../../api/brand'
 import { categoryApi } from '../../api/category'
+import type { BrandItem, CategoryNode } from '../../types/goods'
 import SpuFormDialog from './SpuFormDialog.vue'
 import SpuSkuManageDialog from './SpuSkuManageDialog.vue'
 import SpuPreviewDialog from './SpuPreviewDialog.vue'
 
-const loading = ref(false)
-const records = ref([])
-const total = ref(0)
-const brands = ref([])
-const categoryOptions = ref([])
+/** 分类下拉项：树选择只用到 id / name / children，故不复用 CategoryNode 的全字段 */
+interface CategoryOption {
+  id: number
+  name: string
+  children: CategoryOption[]
+}
 
-const query = reactive({ pageNum: 1, pageSize: 10, categoryId: null, brandId: null, status: null, keyword: '' })
+const loading = ref(false)
+const records = ref<SpuPageItem[]>([])
+const total = ref(0)
+const brands = ref<BrandItem[]>([])
+const categoryOptions = ref<CategoryOption[]>([])
+
+// 筛选条件：接口用「可选字段」表达「不限」，故空值一律用 undefined
+// （axios 对 null / undefined 一律不拼进 query 串，请求内容不变）
+const query = reactive<SpuPageQuery>({ pageNum: 1, pageSize: 10, keyword: '' })
 
 // 弹窗状态：编辑（基本信息+规格配置） / 规格（SKU 管理） / 预览
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogSpu = ref(null) // 共享的 SpuDetailVO（三个弹窗复用，打开前各自刷新拉取）
+const dialogSpu = ref<SpuDetail | null>(null) // 共享的 SpuDetailVO（三个弹窗复用，打开前各自刷新拉取）
 const skuDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
 
 async function loadOptions() {
   const [brandList, tree] = await Promise.all([brandApi.list(), categoryApi.tree()])
   brands.value = brandList
-  const walk = (nodes) =>
+  const walk = (nodes: CategoryNode[]): CategoryOption[] =>
     nodes.map((n) => ({
       id: n.id,
       name: n.name,
@@ -173,9 +184,9 @@ function handleSearch() {
 }
 
 function handleReset() {
-  query.categoryId = null
-  query.brandId = null
-  query.status = null
+  query.categoryId = undefined
+  query.brandId = undefined
+  query.status = undefined
   query.keyword = ''
   handleSearch()
 }
@@ -186,7 +197,10 @@ async function openAdd() {
   dialogVisible.value = true
 }
 
-async function openEdit(row) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（索引签名行类型，未按 :data 的行类型泛化），
+// 模板里拿不到行类型，故在模板调用处用 `row as SpuPageItem` 断言一次（运行时值不变），
+// 以下处理器一律按 SpuPageItem 收参。
+async function openEdit(row: SpuPageItem) {
   try {
     const detail = await spuApi.detail(row.id)
     dialogType.value = 'edit'
@@ -198,7 +212,7 @@ async function openEdit(row) {
 }
 
 /** 打开 SKU/规格管理弹窗（每次拉最新详情，避免 SKU 与规格配置陈旧） */
-async function openSku(row) {
+async function openSku(row: SpuPageItem) {
   try {
     dialogSpu.value = await spuApi.detail(row.id)
     skuDialogVisible.value = true
@@ -208,7 +222,7 @@ async function openSku(row) {
 }
 
 /** 打开只读预览弹窗 */
-async function openPreview(row) {
+async function openPreview(row: SpuPageItem) {
   try {
     dialogSpu.value = await spuApi.detail(row.id)
     previewDialogVisible.value = true
@@ -223,13 +237,17 @@ function handleSkuSaved() {
   loadPage()
 }
 
-async function handleSave(payload) {
+async function handleSave(payload: SpuPayload) {
   try {
     if (dialogType.value === 'add') {
       await spuApi.add(payload)
       ElMessage.success('商品创建成功')
     } else {
-      await spuApi.update(dialogSpu.value.id, payload)
+      // 编辑分支下 dialogSpu 必已由 openEdit 赋值；取不到就返回（原写法会抛错并落入下方 catch，
+      // 结果同为「弹窗不关、无提示」）
+      const spu = dialogSpu.value
+      if (!spu) return
+      await spuApi.update(spu.id, payload)
       ElMessage.success('商品更新成功')
     }
     dialogVisible.value = false
@@ -239,7 +257,7 @@ async function handleSave(payload) {
   }
 }
 
-async function handleToggleStatus(row) {
+async function handleToggleStatus(row: SpuPageItem) {
   const target = row.status === 1 ? 0 : 1
   try {
     await spuApi.updateStatus(row.id, target)
@@ -250,7 +268,7 @@ async function handleToggleStatus(row) {
   }
 }
 
-async function handleDelete(row) {
+async function handleDelete(row: SpuPageItem) {
   try {
     await ElMessageBox.confirm(
       `确定删除商品「${row.name}」吗？展示中的商品需先隐藏`,

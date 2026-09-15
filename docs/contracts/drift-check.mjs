@@ -729,8 +729,17 @@ function checkRoutes() {
   for (const f of walk(dbDir, ['.sql'])) {
     for (const m of read(f).matchAll(/'(\/[A-Za-z][\w/-]*)'/g)) seedRoutes.add(m[1]);
   }
-  const routerFile = path.join(ROOT, 'frontend', 'admin', 'src', 'router', 'index.js');
-  if (!fs.existsSync(routerFile)) { warn(scope, '未找到 frontend/admin/src/router/index.js'); return; }
+  // ⚠ 路由文件按扩展名探测（前端已于 2026-09-14 全线转 TS，此前后缀写死成 .js 时本项会静默退化成
+  // 「只告警不检查」——检查器跑了个空，等于失效）。探测不到一律 fail，不降级为警告：找不到输入
+  // 说明本项没查，不能算通过。
+  const routerDir = path.join(ROOT, 'frontend', 'admin', 'src', 'router');
+  const routerFile = ['index.ts', 'index.js']
+    .map((f) => path.join(routerDir, f))
+    .find((f) => fs.existsSync(f));
+  if (!routerFile) {
+    fail(scope, `未找到 frontend/admin/src/router/index.{ts,js} —— 本项检查无法执行（前端路由与权限种子的一致性未被核对）`);
+    return;
+  }
   const routerRoutes = new Set([...read(routerFile).matchAll(/path\s*:\s*'([^']+)'/g)].map((m) => m[1]));
   let skippedStatic = 0;
   let skippedStructural = 0;
@@ -745,7 +754,7 @@ function checkRoutes() {
     }
   }
   notes.push(
-    `${scope}：前端 ${routerRoutes.size} 条路由 ↔ 种子 ${seedRoutes.size} 条 route（启发式，仅告警；`
+    `${scope}：${rel(routerFile)} 的 ${routerRoutes.size} 条路由 ↔ 种子 ${seedRoutes.size} 条 route（启发式，仅告警；`
     + `跳过静态路由 ${skippedStatic} 条、结构性条目 ${skippedStructural} 条）`,
   );
 }

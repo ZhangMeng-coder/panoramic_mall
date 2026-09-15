@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import type { CurrentUser } from '../types/auth'
 
 /**
  * 登录态存储（轻量模块，未引入 pinia）：
@@ -7,14 +8,14 @@ import { ref } from 'vue'
  */
 const TOKEN_KEY = 'pm-admin-token'
 
-const token = ref(localStorage.getItem(TOKEN_KEY) || '')
-const user = ref(null)
+const token = ref<string>(localStorage.getItem(TOKEN_KEY) || '')
+const user = ref<CurrentUser | null>(null)
 
-export function getToken() {
+export function getToken(): string {
   return token.value
 }
 
-export function setToken(value) {
+export function setToken(value: string): void {
   token.value = value || ''
   if (value) {
     localStorage.setItem(TOKEN_KEY, value)
@@ -23,17 +24,18 @@ export function setToken(value) {
   }
 }
 
-export function getUser() {
+export function getUser(): CurrentUser | null {
   return user.value
 }
 
-export function setUser(value) {
+export function setUser(value: CurrentUser | null): void {
   user.value = value || null
 }
 
 /** 当前用户权限集合（数组，可能为空） */
-export function getUserPerms() {
+export function getUserPerms(): string[] {
   const u = user.value
+  // 类型上 perms 恒为数组；这里的 Array.isArray 是防后端返回意外形状（少字段/给成 null）
   if (!u || !Array.isArray(u.perms)) return []
   return u.perms
 }
@@ -43,8 +45,10 @@ export function getUserPerms() {
  * - 传单个字符串：perms 需包含它；
  * - 传数组：拥有其中任意一个即可（or 语义）。
  * 兼容 * 通配管理员（预留）。
+ *
+ * 入参允许为空（`v-perm` 未写值时视为不限制）。
  */
-export function hasPerm(perm) {
+export function hasPerm(perm?: string | string[] | null): boolean {
   if (perm === undefined || perm === null || perm === '') return true
   const perms = getUserPerms()
   if (perms.includes('*')) return true
@@ -55,12 +59,12 @@ export function hasPerm(perm) {
   return perms.includes(perm)
 }
 
-export function getDefaultPath() {
+export function getDefaultPath(): string {
   // “/”落地页：主页对任意登录用户恒可见且置顶，固定进 /home
   return '/home'
 }
 
-export function clearAuth() {
+export function clearAuth(): void {
   setToken('')
   user.value = null
 }

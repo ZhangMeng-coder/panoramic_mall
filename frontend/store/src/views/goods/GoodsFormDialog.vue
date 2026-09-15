@@ -108,7 +108,8 @@
 
       <el-form-item label="轮播图">
         <div class="image-list-block">
-          <div v-for="(img, idx) in form.imageList" :key="idx" class="image-url-row">
+          <!-- 轮播图逐行编辑：写回 form.imageList[idx]，故 v-for 的值位不使用（_img 占位） -->
+          <div v-for="(_img, idx) in form.imageList" :key="idx" class="image-url-row">
             <el-input v-model="form.imageList[idx]" placeholder="请输入轮播图地址" />
             <el-button type="danger" link @click="removeImage(idx)">删除</el-button>
           </div>
@@ -183,7 +184,7 @@
             min-width="110"
           >
             <template #default="{ row }">
-              <span>{{ cellValue(row, dim.spec) || '-' }}</span>
+              <span>{{ cellValue(row as SkuRow, dim.spec) || '-' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="价格（元）" width="150">
@@ -237,30 +238,107 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import { goodsMetaApi } from '../../api/goods'
+import type {
+  BrandItem,
+  CategoryNode,
+  CenterSpuDetail,
+  SpecAttr,
+  SpecConfigItem,
+  StoreGoodsSpuDetail
+} from '../../api/goods'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** add | edit */
-  type: { type: String, default: 'add' },
-  /** 编辑时的商品详情（含 SKU 列表与中台比对结果 centerOutdated/centerMissing/centerSpu） */
-  goods: { type: Object, default: null }
-})
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** add | edit */
+    type?: string
+    /** 编辑时的商品详情（含 SKU 列表与中台比对结果 centerOutdated/centerMissing/centerSpu） */
+    goods?: StoreGoodsSpuDetail | null
+  }>(),
+  { modelValue: false, type: 'add', goods: null }
+)
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
-const brands = ref([])
-const categoryOptions = ref([])
+/** 分类下拉项：树选择只用到 id / name / children / disabled，故不复用 CategoryNode 的全字段 */
+interface CategoryOption {
+  id: number
+  name: string
+  children: CategoryOption[]
+  /** 非叶子分类不可选（商品须挂叶子分类） */
+  disabled: boolean
+}
+
+/** 新增模式下的 SKU 编辑行（提交时转成 SkuSubmitPayload） */
+interface SkuRow {
+  /** 规格取值，与规格维度一一对应 */
+  attrs: SpecAttr[]
+  /** 价格：未填为 null，提交前逐行校验必填 */
+  price: number | null
+  skuCode: string
+  mainImage: string
+}
+
+/** 表单模型：categoryId / brandId 未选时为 null，goodsSpuId / centerVersion 仅关联中台时有值 */
+interface GoodsForm {
+  name: string
+  categoryId: number | null
+  brandId: number | null
+  mainImage: string
+  imageList: string[]
+  description: string
+  specConfig: SpecConfigItem[]
+  shelfStatus: number
+  goodsSpuId: number | null
+  centerVersion: number | null
+}
+
+/**
+ * 提交给后端的 SKU 行：空编码/图片显式传 null（口径见下）。
+ * `price` 标成 `| null` 是照实描述这个表达式（行内 `price` 本就可空）——提交前已逐行校验必填
+ * （不低于 0.01），故实际取不到 null；后端 DTO 对该列有 @NotNull，真为 null 也会被拒。
+ */
+interface SkuSubmitPayload {
+  specAttrs: SpecAttr[]
+  price: number | null
+  skuCode: string | null
+  mainImage: string | null
+}
+
+/**
+ * 提交给父组件的载荷：新增时另带 goodsSpuId / centerVersion / skus。
+ * 「清空的可空字段」显式传 null（后端以 null 表示未填，空串会当有效值入库），
+ * 与 StoreGoodsSpuSavePayload 把可空字段标成可选的口径不同，故用本页私有类型。
+ */
+interface GoodsSavePayload {
+  name: string
+  categoryId: number | null
+  categoryName: string | null
+  brandId: number | null
+  brandName: string | null
+  mainImage: string | null
+  imageList: string[]
+  description: string | null
+  specConfig: SpecConfigItem[]
+  goodsSpuId?: number | null
+  centerVersion?: number | null
+  skus?: SkuSubmitPayload[]
+}
+
+const formRef = ref<FormInstance | null>(null)
+const brands = ref<BrandItem[]>([])
+const categoryOptions = ref<CategoryOption[]>([])
 const skuCodeQuery = ref('')
 const querying = ref(false)
-const skuRows = ref([]) // 新增模式：[{ attrs:[{spec,value}], price, skuCode, mainImage }]
+const skuRows = ref<SkuRow[]>([])
 
-const form = ref({
+const form = ref<GoodsForm>({
   name: '',
   categoryId: null,
   brandId: null,
@@ -289,11 +367,11 @@ const specLocked = computed(
 /** 中台有更新时的同步按钮文案（说明会覆盖哪些内容） */
 const syncButtonText = computed(() => '同步中台（覆盖商品信息与规格）')
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
-function removeImage(idx) {
+function removeImage(idx: number) {
   form.value.imageList.splice(idx, 1)
 }
 
@@ -301,7 +379,7 @@ function addSpecDim() {
   form.value.specConfig.push({ spec: '', values: [] })
 }
 
-function removeSpecDim(idx) {
+function removeSpecDim(idx: number) {
   form.value.specConfig.splice(idx, 1)
 }
 
@@ -348,7 +426,7 @@ async function loadBrands() {
 async function loadCategories() {
   const tree = await goodsMetaApi.categories()
   // 商品需挂在叶子分类：非叶子节点禁用选择
-  const walk = (nodes) =>
+  const walk = (nodes: CategoryNode[]): CategoryOption[] =>
     nodes.map((n) => ({
       id: n.id,
       name: n.name,
@@ -390,7 +468,7 @@ async function handleQueryCenter() {
  * 商品基础信息 + 规格属性配置 + SKU 组合；同步后记录中台版本戳，随保存提交。
  * SKU 价格一律保留店主已填值（新增预填时为空），编码/图片取中台值。
  */
-function applyCenterSpu(spu) {
+function applyCenterSpu(spu: CenterSpuDetail) {
   form.value.name = spu.name || form.value.name
   form.value.categoryId = spu.categoryId
   form.value.brandId = spu.brandId
@@ -438,7 +516,7 @@ function generateMissing() {
     ElMessage.warning('请先配置规格属性（至少一个维度且包含可选项）')
     return
   }
-  const combos = dims.reduce(
+  const combos = dims.reduce<SpecAttr[][]>(
     (acc, dim) => acc.flatMap((attrs) => dim.values.map((v) => [...attrs, { spec: dim.spec, value: v }])),
     [[]]
   )
@@ -456,24 +534,24 @@ function generateMissing() {
 }
 
 /** 组合唯一键（按规格名排序拼接，与后端 comboKey 一致） */
-function rowKey(attrs) {
+function rowKey(attrs: SpecAttr[]) {
   return [...attrs]
     .sort((a, b) => (a.spec < b.spec ? -1 : a.spec > b.spec ? 1 : 0))
     .map((a) => `${a.spec}=${a.value}`)
     .join('|')
 }
 
-function cellValue(row, spec) {
+function cellValue(row: SkuRow, spec: string) {
   const attr = row.attrs.find((a) => a.spec === spec)
   return attr ? attr.value : ''
 }
 
-function cloneConfig(config) {
+function cloneConfig(config: SpecConfigItem[] | null | undefined): SpecConfigItem[] {
   return (config || []).map((d) => ({ spec: d.spec, values: [...(d.values || [])] }))
 }
 
 /** 清理空白规格维度/值（提交前归一） */
-function normalizeConfig(config) {
+function normalizeConfig(config: SpecConfigItem[] | null | undefined): SpecConfigItem[] {
   return (config || [])
     .filter((d) => d.spec && d.spec.trim() && d.values && d.values.some((v) => v && v.trim()))
     .map((d) => ({
@@ -483,8 +561,8 @@ function normalizeConfig(config) {
 }
 
 /** 规格配置是否等价（忽略书写顺序与空白） */
-function sameConfig(a, b) {
-  const key = (config) =>
+function sameConfig(a: SpecConfigItem[] | null | undefined, b: SpecConfigItem[] | null | undefined) {
+  const key = (config: SpecConfigItem[] | null | undefined) =>
     normalizeConfig(config)
       .map((d) => `${d.spec}=${d.values.join(',')}`)
       .sort()
@@ -493,22 +571,25 @@ function sameConfig(a, b) {
 }
 
 /** 分类/品牌名称快照（下拉项取名；取不到则不提交该字段，保持库中原值） */
-function categoryNameOf(id) {
+function categoryNameOf(id: number | null) {
   const stack = [...categoryOptions.value]
   while (stack.length) {
     const node = stack.pop()
+    if (!node) continue
     if (node.id === id) return node.name
     if (node.children) stack.push(...node.children)
   }
   return null
 }
 
-function brandNameOf(id) {
+function brandNameOf(id: number | null) {
   const brand = brands.value.find((b) => b.id === id)
   return brand ? brand.name : null
 }
 
 async function handleSubmit() {
+  // 弹窗打开时表单必已挂载；取不到表单实例时等同校验未通过，直接返回
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {
@@ -526,7 +607,7 @@ async function handleSubmit() {
     return
   }
 
-  const payload = {
+  const payload: GoodsSavePayload = {
     name: form.value.name,
     categoryId: form.value.categoryId,
     categoryName: categoryNameOf(form.value.categoryId),
@@ -543,13 +624,20 @@ async function handleSubmit() {
     payload.centerVersion = form.value.centerVersion
     payload.skus = skuRows.value.map((r) => ({
       specAttrs: r.attrs.map((a) => ({ spec: a.spec, value: a.value })),
+      // 价格必填：上方已逐行校验（不低于 0.01），此处不会是 null
       price: r.price,
       skuCode: r.skuCode || null,
       mainImage: r.mainImage || null
     }))
-  } else if (form.value.centerVersion !== props.goods.centerVersion) {
+  } else {
+    // 编辑态 props.goods 必非空：父组件先拉到详情才打开本弹窗；取不到即中止
+    // （原写法读 null 会抛错，结果同为「不 emit」，不会误提交）
+    const goods = props.goods
+    if (!goods) return
     // 仅在店主点过「同步中台」后提交版本戳，刷新落库的 center_version
-    payload.centerVersion = form.value.centerVersion
+    if (form.value.centerVersion !== goods.centerVersion) {
+      payload.centerVersion = form.value.centerVersion
+    }
   }
 
   emit('save', payload)

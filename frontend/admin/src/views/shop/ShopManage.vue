@@ -22,7 +22,7 @@
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="shopName" label="店铺名称" min-width="160">
         <template #default="{ row }">
-          <el-link type="primary" @click="openDetail(row)">{{ row.shopName }}</el-link>
+          <el-link type="primary" @click="openDetail(row as ShopItem)">{{ row.shopName }}</el-link>
         </template>
       </el-table-column>
       <el-table-column label="联系人 / 电话" min-width="170">
@@ -46,13 +46,13 @@
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+          <el-button link type="primary" @click="openDetail(row as ShopItem)">详情</el-button>
           <el-button
             v-if="row.status === 1"
             v-perm="'store:shop:audit'"
             link
             type="success"
-            @click="openAudit(row)"
+            @click="openAudit(row as ShopItem)"
           >
             审核
           </el-button>
@@ -138,29 +138,47 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { storeApi } from '../../api/store'
+import type { ShopItem, ShopPageQuery } from '../../api/store'
+
+/** 查询条件：status 用 undefined 表示「全部状态」（配合 el-select 的 clearable） */
+interface ShopQuery extends ShopPageQuery {
+  keyword: string
+  status: number | undefined
+}
+
+/** el-tag 的语义色（与审核状态映射的取值一一对应） */
+type StatusTagType = 'info' | 'warning' | 'success' | 'danger'
+
+/** 审核状态的展示元信息 */
+interface StatusMeta {
+  label: string
+  type: StatusTagType
+}
 
 const loading = ref(false)
-const records = ref([])
+const records = ref<ShopItem[]>([])
 const total = ref(0)
-const query = reactive({ pageNum: 1, pageSize: 10, keyword: '', status: undefined })
+const query = reactive<ShopQuery>({ pageNum: 1, pageSize: 10, keyword: '', status: undefined })
 
 // —— 店铺详情抽屉 ——
 const detailVisible = ref(false)
-const detail = ref(null)
+/** 抽屉里的店铺详情（详情未加载出来时为 null） */
+const detail = ref<ShopItem | null>(null)
 
 // —— 审核弹窗 ——
 const auditVisible = ref(false)
-const auditShop = ref(null)
+/** 待审核的店铺（由列表行带入，openAudit 时必定赋值） */
+const auditShop = ref<ShopItem | null>(null)
 const auditForm = reactive({ approved: true, auditRemark: '' })
 const auditing = ref(false)
 
 /** 审核状态展示映射 */
-function statusMeta(status) {
-  const map = {
+function statusMeta(status: number): StatusMeta {
+  const map: Record<number, StatusMeta> = {
     0: { label: '草稿', type: 'info' },
     1: { label: '待审核', type: 'warning' },
     2: { label: '已通过', type: 'success' },
@@ -185,7 +203,9 @@ function handleSearch() {
   loadPage()
 }
 
-async function openDetail(row) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（Record<PropertyKey, any>），模板里拿不到 :data 的行类型，
+// 故在模板调用处用 `row as ShopItem` 断言一次（运行时值不变），以下处理器一律按 ShopItem 收参。
+async function openDetail(row: ShopItem) {
   detail.value = null
   detailVisible.value = true
   try {
@@ -195,7 +215,7 @@ async function openDetail(row) {
   }
 }
 
-function openAudit(row) {
+function openAudit(row: ShopItem) {
   auditShop.value = row
   auditForm.approved = true
   auditForm.auditRemark = ''
@@ -203,13 +223,16 @@ function openAudit(row) {
 }
 
 async function submitAudit() {
+  // 弹窗由 openAudit 打开，此处审计对象必定已赋值；提前取出仅为把 `ShopItem | null` 收窄
+  const shop = auditShop.value
+  if (!shop) return
   if (!auditForm.approved && !auditForm.auditRemark.trim()) {
     ElMessage.warning('请填写驳回原因')
     return
   }
   auditing.value = true
   try {
-    await storeApi.audit(auditShop.value.id, {
+    await storeApi.audit(shop.id, {
       approved: auditForm.approved,
       auditRemark: auditForm.approved ? undefined : auditForm.auditRemark.trim()
     })

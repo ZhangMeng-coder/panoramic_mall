@@ -4,9 +4,13 @@
 
 | 目录 | 说明 | 技术栈 |
 |---|---|---|
-| [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + Element Plus |
-| [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + Element Plus |
+| [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + **TypeScript** + Element Plus |
+| [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + **TypeScript** + Element Plus |
 | [mall/](./mall/) | 商城前台（用户购物端）——**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容仍**静态写死** | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
+
+> **三端技术形态已统一为 Vue 3 + Vite + TypeScript + axios**（2026-09-14 拉平）：均开启 `strict`，`npm run build` = `vue-tsc --noEmit && vite build`，**类型不过即构建失败**；另有 `npm run type-check` 只跑类型检查。HTTP 客户端一律 axios，各自只有 `src/api/request.ts` 一个入口（不存在 `fetch` / `XMLHttpRequest` 直调）。
+>
+> 三份 `tsconfig.json` 内容一致，**唯一差异**是 admin / store 的 `compilerOptions.types` 多一项 `element-plus/global`（这两端在 `main.ts` 里全局注册了 Element Plus，模板里的 `<el-*>` 才有类型；mall 不注册 EP 故只需要 `vite/client`）。新增 tsconfig 选项时**两端同改**，不要各自漂移。
 
 ## 本地开发
 

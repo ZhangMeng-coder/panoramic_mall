@@ -40,16 +40,18 @@
 | ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
 | ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）；一期不调业务域 | [README](backend/mall-bff/README.md) |
 | ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 | [README](backend/admin/README.md) |
-| [frontend/](frontend/) | 前端（按项目拆分） | [README](frontend/README.md) |
+| [frontend/](frontend/) | 前端（按项目拆分；三端统一 Vue 3 + Vite + TypeScript + axios） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
 | ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（5175）：Vue 3 + Vite + TS；**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容静态写死 | [README](frontend/mall/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容静态写死 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
 
 - **后端**：Java 21 · Spring Boot 4.0.7 · Spring Cloud 2025.1.2 · Spring Cloud Alibaba 2025.1.0.0 · Nacos · MyBatis-Plus 3.5.16 · MySQL 8 · Lombok
-- **前端**：Vue 3 · Vite 7 · Vue Router 4 · TypeScript（商城前台）· Element Plus · Axios（管理后台 / 店铺端共用一套设计令牌）
+- **前端**：Vue 3 · Vite 7 · Vue Router 4 · **TypeScript（三端统一，`strict`）** · Element Plus（管理后台 / 店铺端）· **Axios**（三端统一 HTTP 客户端，各自 `src/api/request.ts` 单入口）
+  - 三端 `npm run build` = `vue-tsc --noEmit && vite build`，**类型不过即构建失败**（另有 `npm run type-check` 只查类型）；三份 `tsconfig.json` 一致，唯一差异是 admin / store 的 `types` 多一项 `element-plus/global`
+  - 管理后台 / 店铺端共用一套设计令牌；商城前台是**另一套**（C 端促销风橙红），见 `frontend/mall/src/styles/tokens.css`
 - 页面接口统一返回 `RespData{code,msg,data}`（成功 `code=200`）；内部域接口不包 RespData、直接返回业务类型，错误转真实 HTTP 状态 + `{code,msg}` 由 Feign ErrorDecoder 还原
 
 ## 已实现功能
@@ -134,6 +136,7 @@ cd frontend/mall  && npm install && npm run dev   # → http://localhost:5175
 - [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据
 - [x] 商城前台 BFF 一期（mall-bff）：C 端顾客账号（手机号 + 模拟短信验证码，签发 `type=user`）+ 网关 `/mall/**` 路由
 - [x] mall 前台接入账号接口：登录 / 注册两页 + 顶栏登录态 + 刷新重建（首页数据仍静态）
+- [x] 前端三端技术形态拉平：admin / store 由 Vue 3 + JS 转为 **Vue 3 + TypeScript（`strict`）**，与 mall 统一为 Vue 3 + Vite + TS + axios，`vue-tsc` 挂进三端构建
 - [ ] mall-bff 二期：首页数据聚合（经 Feign 调 goods-center 的商品/分类）、`frontend/mall` 首页接入接口
 - [ ] trade-center 下沉（购物车 / 订单 / 评价）
 - [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）

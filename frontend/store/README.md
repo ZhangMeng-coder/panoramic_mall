@@ -1,6 +1,8 @@
 # store — 全景商城店铺端（店主侧）
 
-商城店铺端独立前端项目（Vue 3 + Vite + Element Plus），端口 **5174**，经网关（8080）调 `store-bff`（店铺端 BFF，:8084）接口（店铺/商品数据再经其编排落 store 域，分类/品牌与中台模板比对经其调 goods-center），前端根前缀 `/store`。
+商城店铺端独立前端项目（Vue 3 + Vite + **TypeScript** + Element Plus），端口 **5174**，经网关（8080）调 `store-bff`（店铺端 BFF，:8084）接口（店铺/商品数据再经其编排落 store 域，分类/品牌与中台模板比对经其调 goods-center），前端根前缀 `/store`。
+
+> 2026-09-14 由 Vue 3 + JS 拉平为 **Vue 3 + TS（`strict`）**：源码一律 `.ts` / `<script setup lang="ts">`，新增文件也照此写。`tsconfig.json` 与 `frontend/mall` 一致，**唯一差异**是 `compilerOptions.types` 多一项 `element-plus/global`（本端全局注册 EP，模板里的 `<el-*>` 才拿得到类型）。
 
 > 当前为 **Phase 1 店铺管理 + Phase 2 在售商品管理**：店主注册登录 → 维护店铺信息并提交审核 → 平台审核通过后开放商品管理（订单/库存仍为占位假页面）。
 
@@ -41,27 +43,29 @@
 
 ## 鉴权与登录态
 
-- token 存 `localStorage['pm-store-token']`；用户信息 + `userType=store` 快照存 `src/store/auth.js`
+- token 存 `localStorage['pm-store-token']`；用户信息 + `userType=store` 快照存 `src/store/auth.ts`
 - 未登录访问受限页 → 跳登录（带 `redirect`）；已登录访问 `/login` `/register` → 跳默认页
 - `/goods|/orders|/stock` 守卫：进入前拉取「我的店铺」，未审核通过（`isApproved`）则跳回 `/shop-info`
-- `src/api/request.js` 统一带 `Authorization: Bearer`，响应拦截校验 `code===200` 直返 `data`，`401` 清登录态跳登录
+- `src/api/request.ts` 统一带 `Authorization: Bearer`，响应拦截校验 `code===200` 即放行、非 200 按码分流（`401` 清登录态跳登录、`403` warning、其余报错），解包由其后带泛型的 `ApiClient` 统一做，**调用方直接拿到 `data` 本身**
 - 主题明暗切换持久化到 `localStorage['pm-store-theme']`（`index.html` 首帧先应用防闪烁）
 
 ## 本地开发
 
 ```bash
 npm install
-npm run dev       # → http://localhost:5174（需后端网关 8080 / store 域 8083 / store-bff 8084 已启动，且库已建表）
-npm run build     # 产物输出 dist/
+npm run dev        # → http://localhost:5174（需后端网关 8080 / store 域 8083 / store-bff 8084 已启动，且库已建表）
+npm run type-check # vue-tsc --noEmit（只查类型，不出产物）
+npm run build      # vue-tsc --noEmit && vite build，产物输出 dist/
 ```
 
 ## 目录结构
 
 ```
 src/
-├── api/                  # axios 封装 + auth(/store/auth/**)、shop(/store/shops/**)、goods(/store/goods/**)
+├── api/                  # axios 封装（request.ts）+ auth(/store/auth/**)、shop(/store/shops/**)、goods(/store/goods/**)
+├── types/                # 跨文件复用的类型：api.ts(RespData/PageResult) + auth.ts + shop.ts + router.d.ts(RouteMeta 增强)
 ├── router/               # 路由 + 登录/开店(approved)守卫（hash 模式）
-├── store/                # 轻量登录态（auth.js）+ 我的店铺状态（shop.js）
+├── store/                # 轻量登录态（auth.ts）+ 我的店铺状态（shop.ts）
 ├── styles/               # 沿用 admin 的 Design Token 基础层（tokens/base/components.css）
 ├── layout/Layout.vue     # 顶栏（主题切换/用户下拉登出）+ 侧栏（店铺信息常驻；商品/订单/库存 isApproved 才显）
 └── views/

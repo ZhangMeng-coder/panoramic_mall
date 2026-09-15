@@ -41,25 +41,30 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
+import type { PropType } from 'vue'
+import type { ElTree } from 'element-plus'
+import type { PermissionNode } from '../../types/auth'
 import { permissionApi } from '../../api/permission'
 import { roleApi } from '../../api/role'
+import type { RoleItem } from '../../api/role'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
   modelValue: { type: Boolean, default: false },
   /** 待分配权限的角色 */
-  role: { type: Object, default: null }
+  role: { type: Object as PropType<RoleItem | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
 const loading = ref(false)
-const treeData = ref([])
-const treeRef = ref(null)
+const treeData = ref<PermissionNode[]>([])
+/** el-tree 实例（setCheckedKeys / getCheckedKeys 由组件实例暴露） */
+const treeRef = ref<InstanceType<typeof ElTree> | null>(null)
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 

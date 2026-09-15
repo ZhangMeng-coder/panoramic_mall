@@ -43,8 +43,11 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
+import type { PropType } from 'vue'
+import type { FormInstance, FormRules } from 'element-plus'
+import type { UserItem } from '../../api/user'
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
@@ -52,13 +55,25 @@ const props = defineProps({
   /** add | edit */
   type: { type: String, default: 'add' },
   /** 编辑时的用户数据 */
-  user: { type: Object, default: null }
+  user: { type: Object as PropType<UserItem | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
-const form = ref({
+/**
+ * 弹窗表单形状：编辑时可选地不提交 password（留空表示不修改），故 password 声明为可选。
+ */
+interface UserForm {
+  username: string
+  password?: string
+  nickname: string
+  phone: string
+  email: string
+  status: number
+}
+
+const formRef = ref<FormInstance | null>(null)
+const form = ref<UserForm>({
   username: '',
   password: '',
   nickname: '',
@@ -67,14 +82,16 @@ const form = ref({
   status: 1
 })
 
-const rules = {
+const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [
     {
-      validator: (rule, value, callback) => {
-        if (props.type === 'add' && !value) {
+      validator: (_rule, value, callback) => {
+        // EP 校验器形参 value 由库定成宽松类型，这里按字符串收窄后再判断
+        const pwd = typeof value === 'string' ? value : ''
+        if (props.type === 'add' && !pwd) {
           callback(new Error('请输入密码'))
-        } else if (value && value.length < 6) {
+        } else if (pwd && pwd.length < 6) {
           callback(new Error('密码长度不能少于6位'))
         } else {
           callback()
@@ -85,7 +102,7 @@ const rules = {
   ]
 }
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -107,6 +124,8 @@ function initForm() {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

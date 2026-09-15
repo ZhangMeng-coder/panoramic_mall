@@ -190,18 +190,19 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
-import { shopGoodsApi } from '../../api/shopGoods'
+import { shopGoodsApi, type ShopGoodsDetail } from '../../api/shopGoods'
 
 const route = useRoute()
 const router = useRouter()
 
 const loading = ref(false)
-const goods = ref(null)
+// 详情未加载完成前为 null（模板里用 v-if="goods" 收窄）
+const goods = ref<ShopGoodsDetail | null>(null)
 
 const lockVisible = ref(false)
 const lockReason = ref('')
@@ -210,7 +211,8 @@ const locking = ref(false)
 async function loadDetail() {
   loading.value = true
   try {
-    goods.value = await shopGoodsApi.detail(route.params.id)
+    // 路由参数恒为字符串，接口入参是 number，显式转一次（拼进 URL 后形状不变）
+    goods.value = await shopGoodsApi.detail(Number(route.params.id))
   } catch {
     // 拦截器已提示（如商品不存在）
   } finally {
@@ -223,7 +225,7 @@ function goBack() {
 }
 
 /** 锁定人展示：库里存 `UserType:UserId`（如 admin:1），此处只渲染为「平台管理员(1)」不做用户表联查 */
-function lockUserText(lockUser) {
+function lockUserText(lockUser: string | null): string {
   if (!lockUser) return '-'
   const [type, id] = String(lockUser).split(':')
   const label = type === 'admin' ? '平台管理员' : type
@@ -231,13 +233,16 @@ function lockUserText(lockUser) {
 }
 
 async function submitLock() {
+  const target = goods.value
+  // 详情未加载时锁定按钮不可达，此处只为收窄类型
+  if (!target) return
   if (!lockReason.value.trim()) {
     ElMessage.warning('请填写锁定原因')
     return
   }
   locking.value = true
   try {
-    await shopGoodsApi.lock(goods.value.id, { reason: lockReason.value.trim() })
+    await shopGoodsApi.lock(target.id, { reason: lockReason.value.trim() })
     ElMessage.success('商品已锁定，其全部 SKU 已下架')
     lockVisible.value = false
     lockReason.value = ''
@@ -250,9 +255,12 @@ async function submitLock() {
 }
 
 async function handleUnlock() {
+  const target = goods.value
+  // 详情未加载时解锁按钮不可达，此处只为收窄类型
+  if (!target) return
   try {
     await ElMessageBox.confirm(
-      `确定解锁商品「${goods.value.name}」吗？解锁后商品保持下架，需店主手动重新上架`,
+      `确定解锁商品「${target.name}」吗？解锁后商品保持下架，需店主手动重新上架`,
       '解锁确认',
       { type: 'warning', confirmButtonText: '解锁', cancelButtonText: '取消' }
     )
@@ -260,7 +268,7 @@ async function handleUnlock() {
     return // 用户取消
   }
   try {
-    await shopGoodsApi.unlock(goods.value.id)
+    await shopGoodsApi.unlock(target.id)
     ElMessage.success('已解锁，商品保持下架')
     loadDetail()
   } catch {

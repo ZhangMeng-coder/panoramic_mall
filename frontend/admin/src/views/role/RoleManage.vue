@@ -28,10 +28,10 @@
       <el-table-column prop="createTime" label="创建时间" width="170" />
       <el-table-column label="操作" width="280" fixed="right">
         <template #default="{ row }">
-          <el-button v-perm="'system:role:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-perm="'system:role:assignPermission'" link type="warning" @click="openAssignPermission(row)">分配权限</el-button>
-          <el-button v-perm="'system:role:assignUser'" link type="success" @click="openAssignUser(row)">分配用户</el-button>
-          <el-button v-perm="'system:role:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'system:role:edit'" link type="primary" @click="openEdit(row as RoleItem)">编辑</el-button>
+          <el-button v-perm="'system:role:assignPermission'" link type="warning" @click="openAssignPermission(row as RoleItem)">分配权限</el-button>
+          <el-button v-perm="'system:role:assignUser'" link type="success" @click="openAssignUser(row as RoleItem)">分配用户</el-button>
+          <el-button v-perm="'system:role:delete'" link type="danger" @click="handleDelete(row as RoleItem)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -53,23 +53,25 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { roleApi } from '../../api/role'
+import type { RoleItem, RolePayload } from '../../api/role'
 import RoleFormDialog from './RoleFormDialog.vue'
 import AssignPermissionDialog from './AssignPermissionDialog.vue'
 import AssignUserDialog from './AssignUserDialog.vue'
 
 const loading = ref(false)
-const records = ref([])
+const records = ref<RoleItem[]>([])
 const total = ref(0)
 const query = reactive({ pageNum: 1, pageSize: 10, keyword: '' })
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogRole = ref(null)
+/** 当前操作的角色（新增时为 null，编辑/分配时由列表行带入） */
+const dialogRole = ref<RoleItem | null>(null)
 
 // 分配弹窗状态
 const permVisible = ref(false)
@@ -97,29 +99,34 @@ function openAdd() {
   dialogVisible.value = true
 }
 
-function openEdit(role) {
+// 注：el-table 的插槽把 row 声明为 EP 的 DefaultRow（Record<PropertyKey, any>），模板里拿不到 :data 的行类型，
+// 故在模板调用处用 `row as RoleItem` 断言一次（运行时值不变），以下处理器一律按 RoleItem 收参。
+function openEdit(role: RoleItem) {
   dialogType.value = 'edit'
   dialogRole.value = role
   dialogVisible.value = true
 }
 
-function openAssignPermission(role) {
+function openAssignPermission(role: RoleItem) {
   dialogRole.value = role
   permVisible.value = true
 }
 
-function openAssignUser(role) {
+function openAssignUser(role: RoleItem) {
   dialogRole.value = role
   userVisible.value = true
 }
 
-async function handleSave(form) {
+async function handleSave(form: RolePayload) {
   try {
     if (dialogType.value === 'add') {
       await roleApi.add(form)
       ElMessage.success('角色创建成功')
     } else {
-      await roleApi.update(dialogRole.value.id, form)
+      // 编辑态由 openEdit 赋值；提前取出仅为把 `RoleItem | null` 收窄
+      const role = dialogRole.value
+      if (!role) return
+      await roleApi.update(role.id, form)
       ElMessage.success('角色更新成功')
     }
     dialogVisible.value = false
@@ -129,9 +136,12 @@ async function handleSave(form) {
   }
 }
 
-async function handleAssignPermission(permissionIds) {
+async function handleAssignPermission(permissionIds: number[]) {
+  // 弹窗由 openAssignPermission 打开，角色必定已赋值；提前取出仅为把 `RoleItem | null` 收窄
+  const role = dialogRole.value
+  if (!role) return
   try {
-    await roleApi.assignPermissions(dialogRole.value.id, permissionIds)
+    await roleApi.assignPermissions(role.id, permissionIds)
     ElMessage.success('权限分配成功')
     permVisible.value = false
   } catch {
@@ -139,9 +149,12 @@ async function handleAssignPermission(permissionIds) {
   }
 }
 
-async function handleAssignUser(userIds) {
+async function handleAssignUser(userIds: number[]) {
+  // 弹窗由 openAssignUser 打开，角色必定已赋值；提前取出仅为把 `RoleItem | null` 收窄
+  const role = dialogRole.value
+  if (!role) return
   try {
-    await roleApi.assignUsers(dialogRole.value.id, userIds)
+    await roleApi.assignUsers(role.id, userIds)
     ElMessage.success('用户分配成功')
     userVisible.value = false
   } catch {
@@ -149,7 +162,7 @@ async function handleAssignUser(userIds) {
   }
 }
 
-async function handleDelete(role) {
+async function handleDelete(role: RoleItem) {
   try {
     await ElMessageBox.confirm(
       `确定删除角色「${role.name}」吗？已分配给用户的角色将无法删除`,

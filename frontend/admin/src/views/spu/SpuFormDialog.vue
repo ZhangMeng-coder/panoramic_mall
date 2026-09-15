@@ -66,7 +66,8 @@
 
       <el-form-item label="轮播图">
         <div class="image-list-block">
-          <div v-for="(img, idx) in form.imageList" :key="idx" class="image-url-row">
+          <!-- 轮播图逐行编辑：写回 form.imageList[idx]，故 v-for 的值位不使用（_img 占位） -->
+          <div v-for="(_img, idx) in form.imageList" :key="idx" class="image-url-row">
             <el-input v-model="form.imageList[idx]" placeholder="请输入轮播图地址" />
             <el-button type="danger" link @click="removeImage(idx)">删除</el-button>
           </div>
@@ -114,27 +115,55 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import type { FormInstance } from 'element-plus'
 import { brandApi } from '../../api/brand'
 import { categoryApi } from '../../api/category'
+import type { SpuDetail } from '../../api/spu'
+import type { BrandItem, CategoryNode, SpecConfigItem } from '../../types/goods'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** add | edit */
-  type: { type: String, default: 'add' },
-  /** 编辑时的商品数据（SpuDetailVO，含规格属性配置 specConfig） */
-  spu: { type: Object, default: null }
-})
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** add | edit */
+    type?: string
+    /** 编辑时的商品数据（SpuDetailVO，含规格属性配置 specConfig） */
+    spu?: SpuDetail | null
+  }>(),
+  { modelValue: false, type: 'add', spu: null }
+)
 
+// save 的载荷里「清空的可空字段」显式传 null（与 SpuPayload 可选字段的口径不同），故沿用运行期声明
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
-const brands = ref([])
-const categoryOptions = ref([])
+/** 分类下拉项：树选择只用到 id / name / children / disabled，故不复用 CategoryNode 的全字段 */
+interface CategoryOption {
+  id: number
+  name: string
+  children: CategoryOption[]
+  /** 非叶子分类不可选（商品须挂叶子分类） */
+  disabled: boolean
+}
 
-const form = ref({
+/** 表单模型：categoryId / brandId 未选时为 null（树选择、下拉清空后即 null） */
+interface SpuForm {
+  name: string
+  categoryId: number | null
+  brandId: number | null
+  mainImage: string
+  imageList: string[]
+  description: string
+  status: number
+  specConfig: SpecConfigItem[]
+}
+
+const formRef = ref<FormInstance | null>(null)
+const brands = ref<BrandItem[]>([])
+const categoryOptions = ref<CategoryOption[]>([])
+
+const form = ref<SpuForm>({
   name: '',
   categoryId: null,
   brandId: null,
@@ -151,11 +180,11 @@ const rules = {
   brandId: [{ required: true, message: '请选择品牌', trigger: 'change' }]
 }
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
-function removeImage(idx) {
+function removeImage(idx: number) {
   form.value.imageList.splice(idx, 1)
 }
 
@@ -163,16 +192,15 @@ function addSpecDim() {
   form.value.specConfig.push({ spec: '', values: [] })
 }
 
-function removeSpecDim(idx) {
+function removeSpecDim(idx: number) {
   form.value.specConfig.splice(idx, 1)
 }
 
 async function initForm() {
   await Promise.all([loadBrands(), loadCategories()])
 
-  const isEdit = props.type === 'edit' && props.spu
-  if (isEdit) {
-    const spu = props.spu
+  const spu = props.type === 'edit' ? props.spu : null
+  if (spu) {
     form.value = {
       name: spu.name,
       categoryId: spu.categoryId,
@@ -205,7 +233,7 @@ async function loadBrands() {
 async function loadCategories() {
   const tree = await categoryApi.tree()
   // 商品需挂在叶子分类：非叶子节点禁用选择
-  const walk = (nodes) =>
+  const walk = (nodes: CategoryNode[]): CategoryOption[] =>
     nodes.map((n) => ({
       id: n.id,
       name: n.name,
@@ -216,6 +244,8 @@ async function loadCategories() {
 }
 
 async function handleSubmit() {
+  // 弹窗打开时表单必已挂载；取不到表单实例时等同校验未通过，直接返回
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

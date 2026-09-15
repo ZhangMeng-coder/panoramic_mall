@@ -196,8 +196,8 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | ① **权限串三方一致**：`@PreAuthorize` 字面量 ↔ `sys_permission.perms` 种子 ↔ 前端 `v-perm`；② **路由逐字一致**：前端 `router/index.js` 的 `path` ↔ `sys_permission.route`（页面型，`type=2`） |
-| 定义位置 | 后端注解在 `admin/**/controller/**`；种子在 `admin/src/main/resources/db/*.sql`；前端在 `frontend/admin/src/{router/index.js,views/**}` |
+| 契约 | ① **权限串三方一致**：`@PreAuthorize` 字面量 ↔ `sys_permission.perms` 种子 ↔ 前端 `v-perm`；② **路由逐字一致**：前端 `router/index.ts` 的 `path` ↔ `sys_permission.route`（页面型，`type=2`） |
+| 定义位置 | 后端注解在 `admin/**/controller/**`；种子在 `admin/src/main/resources/db/*.sql`；前端在 `frontend/admin/src/{router/index.ts,views/**}` |
 | 消费位置 | RBAC 菜单渲染、按钮显隐、后端授权判定 |
 | 破坏后果 | 权限串对不上 → 菜单点不开 / 按钮不显示 / 403；路由差一字 → 侧栏菜单点不开 |
 | 核对方式 | 检查器第 2、3、4 项 |

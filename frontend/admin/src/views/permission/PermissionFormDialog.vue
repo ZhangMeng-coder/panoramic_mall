@@ -41,11 +41,16 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
+import type { PropType } from 'vue'
+import type { FormInstance } from 'element-plus'
+import type { PermissionNode } from '../../types/auth'
 
-const TYPE_LABELS = { 1: '目录', 2: '页面', 3: '按钮' }
-const TYPE_TAGS = { 1: 'warning', 2: 'success', 3: 'info' }
+/** 权限类型（1 目录 / 2 页面 / 3 按钮，见 types/auth.ts）→ 展示文案 */
+const TYPE_LABELS: Record<number, string> = { 1: '目录', 2: '页面', 3: '按钮' }
+/** 权限类型 → el-tag 的 type 取值 */
+const TYPE_TAGS: Record<number, 'warning' | 'success' | 'info'> = { 1: 'warning', 2: 'success', 3: 'info' }
 
 const props = defineProps({
   /** 弹窗显隐（v-model） */
@@ -53,15 +58,28 @@ const props = defineProps({
   /** add | edit */
   type: { type: String, default: 'add' },
   /** 新增时的上级节点（null 表示顶级目录） */
-  parent: { type: Object, default: null },
+  parent: { type: Object as PropType<PermissionNode | null>, default: null },
   /** 编辑时的权限节点 */
-  permission: { type: Object, default: null }
+  permission: { type: Object as PropType<PermissionNode | null>, default: null }
 })
 
 const emit = defineEmits(['update:modelValue', 'save'])
 
-const formRef = ref(null)
-const form = ref({ parentId: 0, name: '', type: 1, perms: '', route: '', icon: '', sort: 0 })
+/**
+ * 弹窗表单形状：编辑分支不改父级与类型（由创建时决定），故 parentId/type 声明为可选。
+ */
+interface PermissionForm {
+  parentId?: number
+  name: string
+  type?: number
+  perms: string
+  route: string
+  icon: string
+  sort: number
+}
+
+const formRef = ref<FormInstance | null>(null)
+const form = ref<PermissionForm>({ parentId: 0, name: '', type: 1, perms: '', route: '', icon: '', sort: 0 })
 
 // 页面级权限必须填写路由地址（前端菜单据此导航），目录/按钮不要求
 const rules = computed(() => ({
@@ -87,7 +105,7 @@ const parentLabel = computed(() => {
   return props.parent ? `${props.parent.name}（${TYPE_LABELS[props.parent.type]}）` : '顶级（无上级）'
 })
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 
@@ -115,6 +133,8 @@ function initForm() {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

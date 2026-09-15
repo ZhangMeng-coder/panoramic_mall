@@ -1,6 +1,8 @@
 # admin — 全景商城后台管理
 
-后端管理端（Vue 3 + Vite + Element Plus），端口 **5173**，经网关（8080）调用平台管理（admin，端 BFF）接口；admin 再经内部 Feign 编排商品域（goods-center）、店铺域（store）。
+后端管理端（Vue 3 + Vite + **TypeScript** + Element Plus），端口 **5173**，经网关（8080）调用平台管理（admin，端 BFF）接口；admin 再经内部 Feign 编排商品域（goods-center）、店铺域（store）。
+
+> 2026-09-14 由 Vue 3 + JS 拉平为 **Vue 3 + TS（`strict`）**：源码一律 `.ts` / `<script setup lang="ts">`，新增文件也照此写。`tsconfig.json` 与 `frontend/mall` 一致，**唯一差异**是 `compilerOptions.types` 多一项 `element-plus/global`（本端全局注册 EP，模板里的 `<el-*>` 才拿得到类型）。
 
 ## 主题与设计令牌（Design Tokens）
 
@@ -40,23 +42,25 @@
 
 ## 技术要点
 
-- **响应拦截**：`axios` 拦截器校验 `RespData.code === 200` → 直接返回 `data`；否则 `ElMessage.error(msg)` 并 reject（业务提示统一来自后端）
-- **代理**：`vite.config.js` 将 `/admin`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到端 BFF admin）
-- 分页参数为 `pageNum/pageSize`，与后端 `BasePageVO` 对应
+- **响应拦截**：`src/api/request.ts` 里 `axios` 拦截器校验 `RespData.code === 200` 即放行，非 200 按码分流（`401` 清登录态并跳登录页、`403` warning、其余 `ElMessage.error(msg)`）后 reject；解包由其后带泛型的 `ApiClient`（`get<T>` / `post<T>` …）统一做，**调用方直接拿到 `data` 本身**（业务提示统一来自后端）
+- **代理**：`vite.config.ts` 将 `/admin`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到端 BFF admin）
+- 分页参数为 `pageNum/pageSize`，与后端 `BasePageVO` 对应；分页响应为 `PageResult<T>` = `{ total, records }`，跨文件复用的形状集中在 `src/types/`（`api.ts` / `auth.ts` / `goods.ts`），页面私有的表单对象就近在各自 SFC 内声明
 
 ## 本地开发
 
 ```bash
 npm install
-npm run dev       # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store 8083 已启动）
-npm run build     # 产物输出 dist/
+npm run dev        # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store 8083 已启动）
+npm run type-check # vue-tsc --noEmit（只查类型，不出产物）
+npm run build      # vue-tsc --noEmit && vite build，产物输出 dist/
 ```
 
 ## 目录结构
 
 ```
 src/
-├── api/                 # axios 封装 + 分类/品牌/商品/用户/角色/权限/店铺/店铺商品接口模块
+├── api/                 # axios 封装（request.ts）+ 分类/品牌/商品/用户/角色/权限/店铺/店铺商品接口模块
+├── types/               # 跨文件复用的类型：api.ts(RespData/PageResult) + auth.ts + goods.ts + router.d.ts(RouteMeta 增强)
 ├── router/              # 路由（默认跳转分类管理；店铺管理 /shop、店铺商品 /shop-goods[/:id]）
 ├── styles/              # Design Token 基础层（换肤/EP主题映射/组件预设）
 │   ├── tokens.css       #   可调变量色板 + 浅/暗令牌 + EP --el-* 主题映射
@@ -72,5 +76,5 @@ src/
 │   ├── shop/            # ShopManage（店铺列表 + 详情抽屉 + 审核弹窗）
 │   └── shopgoods/       # ShopGoodsManage（店铺商品列表 + 锁定/解锁）+ ShopGoodsDetail（只读详情）
 ├── App.vue              # 布局壳：侧边导航（商品/系统管理）+ 顶栏（页名/明暗切换）
-└── main.js              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
+└── main.ts              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
 ```

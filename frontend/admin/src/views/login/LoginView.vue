@@ -42,10 +42,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { authApi } from '../../api/auth'
 import { setToken, setUser, getDefaultPath } from '../../store/auth'
@@ -53,7 +54,7 @@ import { setToken, setUser, getDefaultPath } from '../../store/auth'
 const route = useRoute()
 const router = useRouter()
 
-const formRef = ref(null)
+const formRef = ref<FormInstance | null>(null)
 const submitting = ref(false)
 const form = reactive({ username: '', password: '' })
 
@@ -66,6 +67,8 @@ const rules = {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

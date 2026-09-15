@@ -32,10 +32,12 @@
       <el-table-column prop="description" label="简介" min-width="200" show-overflow-tooltip />
       <el-table-column prop="sort" label="排序" width="80" />
       <el-table-column prop="createTime" label="创建时间" width="170" />
+      <!-- el-table 插槽行的类型由 EP 定成 DefaultRow（Record<PropertyKey, any>），与业务行类型不互认，
+           而运行时它就是列表行，故调用处理函数时显式断言成 BrandItem -->
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button v-perm="'goods:brand:edit'" link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button v-perm="'goods:brand:delete'" link type="danger" @click="handleDelete(row)">删除</el-button>
+          <el-button v-perm="'goods:brand:edit'" link type="primary" @click="openEdit(row as BrandItem)">编辑</el-button>
+          <el-button v-perm="'goods:brand:delete'" link type="danger" @click="handleDelete(row as BrandItem)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -55,21 +57,24 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { brandApi } from '../../api/brand'
+import type { BrandPayload } from '../../api/brand'
+import type { BrandItem } from '../../types/goods'
 import BrandFormDialog from './BrandFormDialog.vue'
 
 const loading = ref(false)
-const records = ref([])
+const records = ref<BrandItem[]>([])
 const total = ref(0)
 const query = reactive({ pageNum: 1, pageSize: 10, keyword: '' })
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogBrand = ref(null)
+/** 当前操作的品牌（新增时为 null，编辑时由列表行带入） */
+const dialogBrand = ref<BrandItem | null>(null)
 
 async function loadPage() {
   loading.value = true
@@ -93,19 +98,22 @@ function openAdd() {
   dialogVisible.value = true
 }
 
-function openEdit(brand) {
+function openEdit(brand: BrandItem) {
   dialogType.value = 'edit'
   dialogBrand.value = brand
   dialogVisible.value = true
 }
 
-async function handleSave(form) {
+async function handleSave(form: BrandPayload) {
   try {
     if (dialogType.value === 'add') {
       await brandApi.add(form)
       ElMessage.success('品牌创建成功')
     } else {
-      await brandApi.update(dialogBrand.value.id, form)
+      // 编辑态由 openEdit 赋值；提前取出仅为把 `BrandItem | null` 收窄
+      const brand = dialogBrand.value
+      if (!brand) return
+      await brandApi.update(brand.id, form)
       ElMessage.success('品牌更新成功')
     }
     dialogVisible.value = false
@@ -115,7 +123,7 @@ async function handleSave(form) {
   }
 }
 
-async function handleDelete(brand) {
+async function handleDelete(brand: BrandItem) {
   try {
     await ElMessageBox.confirm(
       `确定删除品牌「${brand.name}」吗？该品牌下存在商品时将无法删除`,

@@ -5,7 +5,7 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 // 主页占位页：对任意已登录店主可见，前端写死置顶菜单进入
 </script>
 

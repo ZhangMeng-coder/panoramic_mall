@@ -16,7 +16,7 @@
         show-icon
         class="status-alert"
         title="店铺资料审核中"
-        :description="`提交时间：${shop.submitTime || '-'}。审核期间不可修改，请耐心等待平台审核结果。`"
+        :description="`提交时间：${shop?.submitTime || '-'}。审核期间不可修改，请耐心等待平台审核结果。`"
       />
       <el-alert
         v-else-if="status === 3"
@@ -25,7 +25,7 @@
         show-icon
         class="status-alert"
         title="店铺审核未通过"
-        :description="`驳回原因：${shop.auditRemark || '-'}。请修改资料后重新提交审核。`"
+        :description="`驳回原因：${shop?.auditRemark || '-'}。请修改资料后重新提交审核。`"
       />
       <el-alert
         v-else-if="status === 2"
@@ -84,9 +84,9 @@
 
         <el-form-item v-if="status === 1 || status === 3" label="审核信息">
           <div class="audit-info">
-            <div>提交时间：{{ shop.submitTime || '-' }}</div>
+            <div>提交时间：{{ shop?.submitTime || '-' }}</div>
             <div v-if="status === 3">
-              审核时间：{{ shop.auditTime || '-' }}　驳回原因：{{ shop.auditRemark || '-' }}
+              审核时间：{{ shop?.auditTime || '-' }}　驳回原因：{{ shop?.auditRemark || '-' }}
             </div>
           </div>
         </el-form-item>
@@ -100,18 +100,38 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import { shopApi } from '../../api/shop'
 import { shop, shopStatus, fetchMyShop } from '../../store/shop'
+import type { ShopPayload } from '../../types/shop'
+
+/** 表单对象形状：`ShopPayload` 的必需化版本 —— 表单字段恒为字符串，可空列的空值用 '' 占位 */
+type ShopForm = Required<ShopPayload>
+
+/** 表单字段名（= `ShopForm` 的全部字段），用于按「我的店铺」当前值逐字段回填 */
+const FORM_KEYS: readonly (keyof ShopForm)[] = [
+  'shopName',
+  'logo',
+  'intro',
+  'contactName',
+  'contactPhone',
+  'region',
+  'address',
+  'licenseName',
+  'licenseNo',
+  'licenseImg'
+]
 
 const loading = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
-const formRef = ref(null)
+// el-form 实例引用：仅挂载后（点击按钮时）非空，取用一律可选链
+const formRef = ref<FormInstance | null>(null)
 
-const form = reactive(emptyForm())
+const form = reactive<ShopForm>(emptyForm())
 
 const status = computed(() => shopStatus.value)
 // 待审核(1)/已通过(2)：表单只读；草稿(0)/已驳回(3)（含未创建视为草稿）可编辑
@@ -122,7 +142,7 @@ const rules = {
 }
 
 /** 表单字段初始值（与后端 ShopSaveDTO 字段对应） */
-function emptyForm() {
+function emptyForm(): ShopForm {
   return {
     shopName: '',
     logo: '',
@@ -140,14 +160,16 @@ function emptyForm() {
 /** 用「我的店铺」当前值回填表单（只读态/刷新后展示已存内容） */
 function syncFromShop() {
   const s = shop.value
-  Object.keys(form).forEach((key) => {
-    form[key] = (s && s[key]) != null ? s[key] : ''
+  // 逐字段回填：店铺存在则取同名字段的值，可空列 / 未创建店铺（s 为 null）一律回落空串
+  FORM_KEYS.forEach((key) => {
+    const value = s ? s[key] : null
+    form[key] = value != null ? value : ''
   })
 }
 
 /** 提交审核前的前端完整性校验（与后端 assertSubmitComplete 一致） */
 function checkSubmitComplete() {
-  const required = [
+  const required: [keyof ShopForm, string][] = [
     ['shopName', '店铺名称'],
     ['contactName', '联系人'],
     ['contactPhone', '联系电话'],
@@ -176,6 +198,9 @@ async function reload() {
 }
 
 async function handleSave() {
+  // 表单实例仅在挂载后才非空；取不到即中止（原来靠 validate() 抛错被下面 catch 吞掉，
+  // 这里显式守卫，保持「没校验就不提交」的原语义）
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {
@@ -195,6 +220,8 @@ async function handleSave() {
 }
 
 async function handleSubmit() {
+  // 同 handleSave：表单实例取不到即中止，保持「没校验就不提交」的原语义
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

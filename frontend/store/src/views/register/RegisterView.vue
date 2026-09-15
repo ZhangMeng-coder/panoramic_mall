@@ -71,24 +71,26 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { User, Lock, Avatar, Iphone } from '@element-plus/icons-vue'
 import { authApi } from '../../api/auth'
 import { setToken, setUser, getDefaultPath } from '../../store/auth'
 
 const router = useRouter()
 
-const formRef = ref(null)
+// el-form 实例引用：仅挂载后（点击按钮时）非空，取用一律可选链
+const formRef = ref<FormInstance | null>(null)
 const submitting = ref(false)
 const form = reactive({ username: '', nickname: '', phone: '', password: '', confirmPassword: '' })
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,50}$/
 const PHONE_RE = /^1[3-9]\d{9}$/
 
-const rules = {
+const rules: FormRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
     { pattern: USERNAME_RE, message: '用户名需为3-50位字母/数字/下划线', trigger: 'blur' }
@@ -96,7 +98,8 @@ const rules = {
   nickname: [{ max: 50, message: '昵称不能超过50个字符', trigger: 'blur' }],
   phone: [
     {
-      validator: (rule, value, callback) => {
+      // 手机号选填：空值放行，有值才校验格式；_rule 用不到（async-validator 第一个参数）
+      validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
         if (value && !PHONE_RE.test(value)) {
           callback(new Error('手机号格式不正确'))
         } else {
@@ -113,7 +116,8 @@ const rules = {
   confirmPassword: [
     { required: true, message: '请再次输入密码', trigger: 'blur' },
     {
-      validator: (rule, value, callback) => {
+      // 两次密码一致性校验；_rule 用不到（async-validator 第一个参数）
+      validator: (_rule: unknown, value: string, callback: (error?: Error) => void) => {
         if (value !== form.password) {
           callback(new Error('两次输入的密码不一致'))
         } else {
@@ -126,6 +130,9 @@ const rules = {
 }
 
 async function handleSubmit() {
+  // 表单实例仅在挂载后才非空；取不到即中止（原来靠 validate() 抛错被下面 catch 吞掉，
+  // 这里显式守卫，保持「没校验就不提交」的原语义）
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

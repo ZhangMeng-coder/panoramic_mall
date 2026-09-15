@@ -1,4 +1,4 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { getToken, getUser, setUser, getDefaultPath } from '../store/auth'
 import { isApproved, fetchMyShop } from '../store/shop'
 import { authApi } from '../api/auth'
@@ -8,7 +8,7 @@ import { authApi } from '../api/auth'
  */
 const AFTER_APPROVED_PATHS = ['/goods', '/orders', '/stock']
 
-const routes = [
+const routes: RouteRecordRaw[] = [
   {
     path: '/register',
     name: 'register',

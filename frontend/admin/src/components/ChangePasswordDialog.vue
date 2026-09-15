@@ -43,9 +43,10 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import { authApi } from '../api/auth'
 
 defineProps({
@@ -53,11 +54,11 @@ defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'success'])
 
-const formRef = ref(null)
+const formRef = ref<FormInstance | null>(null)
 const submitting = ref(false)
 const form = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 
-const rules = {
+const rules: FormRules = {
   oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
@@ -86,6 +87,8 @@ function handleOpen() {
 }
 
 async function handleSubmit() {
+  // 表单实例由模板 ref 挂载时赋值；空值原本走 catch 分支返回，效果一致，此处只为收窄类型
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

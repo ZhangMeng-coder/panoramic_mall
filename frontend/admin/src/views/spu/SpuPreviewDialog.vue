@@ -118,23 +118,29 @@
   </el-dialog>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
+import type { SpuDetail } from '../../api/spu'
 
-const props = defineProps({
-  /** 弹窗显隐（v-model） */
-  modelValue: { type: Boolean, default: false },
-  /** 商品详情（SpuDetailVO，含 categoryPath / specConfig / skus） */
-  spu: { type: Object, default: null }
-})
+const props = withDefaults(
+  defineProps<{
+    /** 弹窗显隐（v-model） */
+    modelValue?: boolean
+    /** 商品详情（SpuDetailVO，含 categoryPath / specConfig / skus） */
+    spu?: SpuDetail | null
+  }>(),
+  { modelValue: false, spu: null }
+)
 
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits<{
+  'update:modelValue': [visible: boolean]
+}>()
 
 const crumbItems = computed(() =>
   (props.spu?.categoryPath || '').split(' / ').filter((s) => s && s.trim())
 )
 
-function onUpdateVisible(visible) {
+function onUpdateVisible(visible: boolean) {
   emit('update:modelValue', visible)
 }
 </script>

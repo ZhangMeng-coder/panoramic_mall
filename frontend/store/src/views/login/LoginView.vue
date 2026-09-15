@@ -46,10 +46,11 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import type { FormInstance } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { authApi } from '../../api/auth'
 import { setToken, setUser, getDefaultPath } from '../../store/auth'
@@ -57,7 +58,8 @@ import { setToken, setUser, getDefaultPath } from '../../store/auth'
 const route = useRoute()
 const router = useRouter()
 
-const formRef = ref(null)
+// el-form 实例引用：仅挂载后（点击按钮时）非空，取用一律可选链
+const formRef = ref<FormInstance | null>(null)
 const submitting = ref(false)
 const form = reactive({ username: '', password: '' })
 
@@ -70,6 +72,9 @@ const rules = {
 }
 
 async function handleSubmit() {
+  // 表单实例仅在挂载后才非空；取不到即中止（原来靠 validate() 抛错被下面 catch 吞掉，
+  // 这里显式守卫，保持「没校验就不提交」的原语义）
+  if (!formRef.value) return
   try {
     await formRef.value.validate()
   } catch {

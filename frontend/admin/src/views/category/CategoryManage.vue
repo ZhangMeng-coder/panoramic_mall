@@ -19,6 +19,8 @@
         </template>
       </el-table-column>
       <el-table-column prop="sort" label="排序" width="120" align="center" />
+      <!-- el-table 插槽行的类型由 EP 定成 DefaultRow（Record<PropertyKey, any>），与业务行类型不互认，
+           而运行时它就是分类树节点行，故调用处理函数时显式断言成 CategoryNode -->
       <el-table-column label="操作" width="250" align="center">
         <template #default="{ row }">
           <span class="row-actions">
@@ -28,10 +30,10 @@
               link
               type="primary"
               size="small"
-              @click="openAdd(row)"
+              @click="openAdd(row as CategoryNode)"
             >新增子分类</el-button>
-            <el-button v-perm="'goods:category:edit'" link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button v-perm="'goods:category:delete'" link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button v-perm="'goods:category:edit'" link type="primary" size="small" @click="openEdit(row as CategoryNode)">编辑</el-button>
+            <el-button v-perm="'goods:category:delete'" link type="danger" size="small" @click="handleDelete(row as CategoryNode)">删除</el-button>
           </span>
         </template>
       </el-table-column>
@@ -48,20 +50,29 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { categoryApi } from '../../api/category'
+import type { CategoryNode } from '../../types/goods'
 import CategoryFormDialog from './CategoryFormDialog.vue'
 
+/** 表单弹窗的保存载荷：名称 + 排序（新增时的父级由列表行单独带入，不由弹窗回传） */
+interface CategorySaveForm {
+  name: string
+  sort: number
+}
+
 const loading = ref(false)
-const tableData = ref([])
+const tableData = ref<CategoryNode[]>([])
 
 // 表单弹窗状态
 const dialogVisible = ref(false)
 const dialogType = ref('add') // add | edit
-const dialogParent = ref(null)
-const dialogCategory = ref(null)
+/** 新增时的上级分类（null 表示顶级） */
+const dialogParent = ref<CategoryNode | null>(null)
+/** 编辑时的分类节点 */
+const dialogCategory = ref<CategoryNode | null>(null)
 
 async function loadTree() {
   loading.value = true
@@ -72,21 +83,21 @@ async function loadTree() {
   }
 }
 
-function openAdd(parent) {
+function openAdd(parent: CategoryNode | null) {
   dialogType.value = 'add'
   dialogParent.value = parent
   dialogCategory.value = null
   dialogVisible.value = true
 }
 
-function openEdit(category) {
+function openEdit(category: CategoryNode) {
   dialogType.value = 'edit'
   dialogParent.value = null
   dialogCategory.value = category
   dialogVisible.value = true
 }
 
-async function handleSave(form) {
+async function handleSave(form: CategorySaveForm) {
   try {
     if (dialogType.value === 'add') {
       const payload = {
@@ -98,7 +109,10 @@ async function handleSave(form) {
       ElMessage.success('分类创建成功')
     } else {
       const payload = { name: form.name, sort: form.sort }
-      await categoryApi.update(dialogCategory.value.id, payload)
+      // 编辑态由 openEdit 赋值；提前取出仅为把 `CategoryNode | null` 收窄
+      const category = dialogCategory.value
+      if (!category) return
+      await categoryApi.update(category.id, payload)
       ElMessage.success('分类更新成功')
     }
     dialogVisible.value = false
@@ -108,7 +122,7 @@ async function handleSave(form) {
   }
 }
 
-async function handleDelete(category) {
+async function handleDelete(category: CategoryNode) {
   try {
     await ElMessageBox.confirm(
       `确定删除分类「${category.name}」吗？存在子分类或商品时将无法删除`,

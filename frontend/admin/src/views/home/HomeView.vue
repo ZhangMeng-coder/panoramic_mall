@@ -5,7 +5,7 @@
   </el-card>
 </template>
 
-<script setup>
+<script setup lang="ts">
 // 主页占位页：对任意已登录用户可见，无按钮级权限门槛
 </script>
 
