@@ -88,7 +88,10 @@ public class CatalogBffService {
      * @return 分页结果（C 端字段，见 {@link MallGoodsItemVO}）
      */
     public PageResult<MallGoodsItemVO> goods(MallGoodsPageQueryDTO dto) {
-        List<CategoryTreeVO> tree = categoryTreeOrEmpty();
+        // 无锚点也无已选分类时树用不上（resolveCategoryIds 会直接返回 null），省掉一次跨服务调用
+        boolean needTree = dto.getCategoryId() != null
+                || (dto.getCategoryIds() != null && !dto.getCategoryIds().isEmpty());
+        List<CategoryTreeVO> tree = needTree ? categoryTreeOrEmpty() : Collections.emptyList();
         StoreGoodsSpuCrossShopPageQueryDTO query = new StoreGoodsSpuCrossShopPageQueryDTO();
         query.setPageNum(dto.getPageNum());
         query.setPageSize(dto.getPageSize());

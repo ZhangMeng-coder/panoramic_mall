@@ -8,6 +8,7 @@ import com.panoramic.mallbff.dto.MallGoodsPageQueryDTO;
 import com.panoramic.mallbff.service.CatalogBffService;
 import com.panoramic.mallbff.vo.MallFacetVO;
 import com.panoramic.mallbff.vo.MallGoodsItemVO;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -45,9 +46,16 @@ public class CatalogController {
 
     /**
      * 商品分页（C 端展示口径由 BFF 固定）
+     * <p>⚠ 本接口<b>公开匿名</b>，分页参数是攻击者可控输入，故必须在 BFF 侧先过
+     * {@code BasePageVO} 的默认组约束：repo 的分页插件未设 {@code maxLimit}，
+     * 无上限的 {@code pageSize} 会原样直达域侧；缺 {@code pageSize} 还会在域侧拆箱成 NPE，
+     * 被降级文案报成「下游故障」——两个方向都得在入口拦掉。</p>
+     * <p>⚠ 这里必须是<b>裸 {@code @Valid}</b>：{@code BasePageVO} 的约束不带 groups、落在默认组，
+     * 而 {@code ValidationGroups} 的组接口是裸接口、不继承 {@code Default}，
+     * 换 {@code @Validated(组.class)} 会永远不触发，等于没加。</p>
      */
     @PostMapping("/goods")
-    public RespData<PageResult<MallGoodsItemVO>> goods(@RequestBody MallGoodsPageQueryDTO dto) {
+    public RespData<PageResult<MallGoodsItemVO>> goods(@Valid @RequestBody MallGoodsPageQueryDTO dto) {
         return RespData.success(catalogBffService.goods(dto));
     }
 
