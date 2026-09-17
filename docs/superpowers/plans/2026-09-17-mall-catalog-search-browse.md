@@ -1663,8 +1663,22 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 现状（已核实）：`SearchBar.vue` 有 `const hint = ref('')`、`doSearch()` 只写 `hint.value = '（演示：搜索未接入…）'`、模板里有一段 `<p class="search__hint" role="status">{{ hint }}</p>`，`pickHot` 只是回填 + 调 `doSearch`。本步：
 
 - **删干净 `hint`**：`hint` ref、`doSearch` 里给它赋值的分支、模板里的 `<p class="search__hint">` 整段一并删除。⚠ **不要**「改为无关键词时的轻提示」——搜索现在真跳转，这条提示条没有任何时候该出现，留着就是个永远空着的 `<p>`（且是演示外壳的最后残留）。
-- `import { useRouter } from 'vue-router'` + `const router = useRouter()`（现有文件**没有** router import，要新加）
+- `import { useRoute, useRouter } from 'vue-router'` + `const route = useRoute()` / `const router = useRouter()`（现有文件**没有** router import，要新加）
 - `doSearch()` 改为 `router.push({ path: '/search', query: kw ? { keyword: kw } : {} })`
+- ⚠ **输入框必须回显地址栏里的关键词**（本步新增要求，2026-09-18 定）：`SearchBar` 同时被首页与搜索结果页使用（`HomeView.vue:14`、`GoodsListView.vue:273`），而搜索页的标题行里**不含**关键词（只有分类页标题），所以没有回显时，用户在结果页看不出自己搜的是什么、也无法在框里改词重搜。做法：
+
+  ```ts
+  const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+
+  // 搜索页的关键词只在地址栏里（T9 的 GoodsListView 不渲染它），输入框跟着地址栏走，
+  // 否则「搜了 A、框里却空着」；前进/后退也能跟上。
+  watch(
+    () => route.query.keyword,
+    (v) => { keyword.value = typeof v === 'string' ? v : '' },
+  )
+  ```
+
+  ⚠ 同步方向**只有路由 → 输入框**，**不要**把 `keyword` 反向写回 URL（会和用户输入打架）；`pickHot` 先回填再跳转，watch 随后写入同一个值，**不会**循环。首页无 `keyword` 查询参数时落到空串，行为不变。
 - 点热搜词：回填输入框后同样跳转（`pickHot` 调 `doSearch`）；热搜词数组**保持现有静态 mock**（本次忽略该需求），删掉「只出提示、不跳转」的注释
 - ⚠ 改完确认没有残留的 `search__hint` 样式引用问题：`.search__hint` 定义在 `styles/mall.css`，删模板后该规则成为死样式，**可以留着**（本次不动 mall.css），不要为它去改样式文件
 
