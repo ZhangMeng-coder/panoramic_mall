@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS goods_category (
   name        VARCHAR(64)     NOT NULL              COMMENT '分类名称',
   level       TINYINT         NOT NULL DEFAULT 1    COMMENT '层级：1=顶级',
   sort        INT             NOT NULL DEFAULT 0    COMMENT '排序值，越小越靠前',
+  icon        VARCHAR(255)    DEFAULT NULL          COMMENT '分类图标图片URL',
   create_user VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',

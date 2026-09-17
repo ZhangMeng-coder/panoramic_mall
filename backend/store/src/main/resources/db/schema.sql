@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   lock_reason    VARCHAR(255)    DEFAULT NULL            COMMENT '锁定原因（锁定时必填）',
   lock_user      VARCHAR(32)     DEFAULT NULL            COMMENT '锁定人（UserType:UserId，如 admin:1）',
   lock_time      DATETIME        DEFAULT NULL            COMMENT '锁定时间',
+  min_price      DECIMAL(10,2)   DEFAULT NULL            COMMENT '在售SKU最低价（推导量，由SKU联动维护）',
   create_user    VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user    VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
