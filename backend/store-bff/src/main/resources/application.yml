@@ -19,6 +19,7 @@ spring:
       username: @nacos.username@
       password: @nacos.password@
       discovery:
+        ip: 127.0.0.1
         server-addr: @nacos.server-addr@
       config:
         # 配置中心与注册中心同址

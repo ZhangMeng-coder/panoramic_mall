@@ -60,3 +60,8 @@ panoramic:
     bff-services: admin,store-bff,mall-bff
   auth:
     whitelist-paths: /admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/discovery/**
+
+# —— 日志级别 ——
+logging:
+  level:
+    com.panoramic.gateway.filter.RequestLoggingFilter: info

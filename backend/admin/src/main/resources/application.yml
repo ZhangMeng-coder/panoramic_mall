@@ -13,12 +13,14 @@ spring:
       - nacos:datasource-redis.yml
       - nacos:auth.yml
       - nacos:feign-circuitbreaker.yml
+
   cloud:
     nacos:
       # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
       username: @nacos.username@
       password: @nacos.password@
       discovery:
+        ip: 127.0.0.1
         server-addr: @nacos.server-addr@
       config:
         # 配置中心与注册中心同址
