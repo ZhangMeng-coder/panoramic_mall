@@ -715,7 +715,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Modify: `common/.../store/api/StoreClient.java`
 - Modify: `backend/store/.../service/StoreGoodsSpuService.java` + `impl/StoreGoodsSpuServiceImpl.java`
 - Modify: `backend/store/.../controller/GoodsController.java`
-- Modify: `docs/contracts/store.md`（登记新端点 `mallFacets`，见 Step 6）
+- Modify: `docs/contracts/store.md`（登记新端点 `crossShopFacets`，见 Step 6）
 
 **Interfaces:**
 - Consumes: Task 4 的 `StoreShopService.idListByStatus`。
@@ -723,7 +723,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
   - `StoreGoodsSpuFacetQueryDTO`：`keyword:String` / `scopeCategoryIds:List<Long>` / `filterCategoryIds:List<Long>` / `filterBrandIds:List<Long>` / `shopStatus:Integer` / `shelfStatus:Integer` / `lockStatus:Integer`
   - `StoreGoodsSpuFacetVO`：`categories:List<StoreGoodsFacetItemVO>` / `brands:List<StoreGoodsFacetItemVO>`
   - `StoreGoodsFacetItemVO`：`id:Long` / `name:String` / `count:Integer`
-  - `StoreClient.mallFacets(StoreGoodsSpuFacetQueryDTO) : StoreGoodsSpuFacetVO`，路径 `POST /goods/facets`
+  - `StoreClient.crossShopFacets(StoreGoodsSpuFacetQueryDTO) : StoreGoodsSpuFacetVO`，路径 `POST /goods/facets`
 
 - [ ] **Step 1: 建三个类型**
 
@@ -923,10 +923,10 @@ public class StoreGoodsSpuFacetQueryDTO {
      * <p>⚠ 口径见 {@link StoreGoodsSpuFacetVO}：两维度互斥排除自身。</p>
      */
     @PostMapping("/goods/facets")
-    StoreGoodsSpuFacetVO mallFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
+    StoreGoodsSpuFacetVO crossShopFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
 ```
 
-- [ ] **Step 6: 同步 `docs/contracts/store.md`：新增 `mallFacets` 行**
+- [ ] **Step 6: 同步 `docs/contracts/store.md`：新增 `crossShopFacets` 行**
 
 > ⚠ 项目硬规则：**改任何对外接口，同一改动内更新对应 `<服务>.md`**，且**提交前检查器差集非空不得提交**。本任务往 `StoreClient` + `GoodsController` 加了新端点 `/goods/facets`，检查器比对 `verb + path` 双向集合与类型存在性，不登记契约表 T5 就无法提交。**不要**标「待实现」——本任务里它就实现了，标了会触发反向哨兵（「标记为待实现，但代码里已有该接口」）。
 
@@ -934,7 +934,7 @@ public class StoreGoodsSpuFacetQueryDTO {
 
 | 方法 | 路径 | 入参 | 出参 | 声明位置 | 实现位置 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|
-| `mallFacets` | `POST` | `/goods/facets` | `StoreGoodsSpuFacetQueryDTO` | `StoreGoodsSpuFacetVO` | `StoreClient.java:NNN`（填实际行号） | `GoodsController.java:NNN`（填实际行号） | `CatalogBffService(mall-bff)` | 留空 |
+| `crossShopFacets` | `POST` | `/goods/facets` | `StoreGoodsSpuFacetQueryDTO` | `StoreGoodsSpuFacetVO` | `StoreClient.java:NNN`（填实际行号） | `GoodsController.java:NNN`（填实际行号） | `CatalogBffService(mall-bff)` | 留空 |
 
 同时在「共 18 个接口（owner 10 + platform 8）」处把总数与 platform 侧计数各 +1（**只改数字，不动分节结构**——措辞与分节重构留给 Task 11 Step 3）。第五节类型表的 `dto` / `vo` 两列各补 `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO`（`StoreGoodsFacetItemVO` 也一并补入 `vo` 列）。
 
@@ -1106,7 +1106,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Create: `vo/MallGoodsItemVO.java`、`vo/MallFacetVO.java`、`vo/MallFacetItemVO.java`
 
 **Interfaces:**
-- Consumes: `StoreClient.pageStoreGoodsCrossShop` / `StoreClient.mallFacets` / `GoodsCenterClient.categoryTree`；`StoreGoodsSpuCrossShopPageQueryDTO` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `PageResult` / `CategoryTreeVO`。
+- Consumes: `StoreClient.pageStoreGoodsCrossShop` / `StoreClient.crossShopFacets` / `GoodsCenterClient.categoryTree`；`StoreGoodsSpuCrossShopPageQueryDTO` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `PageResult` / `CategoryTreeVO`。
 - Produces（页面契约）：
   - `GET /catalog/categories` → `List<CategoryTreeVO>`
   - `POST /catalog/goods`（body `MallGoodsPageQueryDTO`）→ `PageResult<MallGoodsItemVO>`
@@ -1237,7 +1237,7 @@ public class CatalogBffService {
 - `facets(...)`：
   - `scopeCategoryIds` = `anchorId` 的子树（无锚点则空）
   - `filterCategoryIds` = 已选分类各自子树并集
-  - 调 `storeClient.mallFacets(...)`
+  - 调 `storeClient.crossShopFacets(...)`
   - `brands` 原样映射
   - `categories`：**有锚点（分类页）→ 原样映射；无锚点（搜索页）→ 用树把每个 id 上溯到顶级祖先，同祖先的 count 累加**，名称取树里的权威名
 - ⚠ **`BffFeignCall` 的语义是「抛 `ServiceException`」，不是「返回降级值」**（`call` 无任何 fallback 返回值，4xx 原样透传、其余一律抛 `ServiceException(500, 降级文案)`）。所以「树拿不到就退化」**不会自动发生**，必须自己兜：
@@ -1649,11 +1649,12 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - [ ] **Step 3: `store.md` 更新**
 
 - ⚠ **改名行已在 Task 4 Step 12 完成**（`platformPageStoreGoods` 行已改为 `pageStoreGoodsCrossShop` / `POST` / `/goods/cross-shop/spu/page` 及新类型名与调用方）——本步**不要再改它**，只做下面的增量
-- ⚠ **`mallFacets` 行也已在 Task 5 Step 6 登记**（含总数计数与类型表），本步**不要再加一行**——重复登记会被检查器判为幽灵行或类型重复。只复核它还在、内容对
+- ⚠ **`crossShopFacets` 行也已在 Task 5 Step 6 登记**（含总数计数与类型表），本步**不要再加一行**——重复登记会被检查器判为幽灵行或类型重复。只复核它还在、内容对
 - 「共 N 个接口（owner 10 + platform M）」的**条数已在 Task 5 Step 6 改过**，本步只**重述「跨店通用」侧的文字表述**，数字以文件现状为准、不要照抄本计划里的数字
 - 第三节 owner/platform 表：把该分页从 platform 行移出，单列一节说明「跨店通用（无锚点）——调用方自设限定条件；C 端固定传 shopStatus=2 + shelfStatus=1 + lockStatus=0」
 - 第五节类型表补新类型
 - 补一条形状说明：facets 的两维度互斥口径
+- ⚠ **把第四节那条「分页走 `POST + @RequestBody`」的形状说明扩到覆盖 `crossShopFacets`**——Task 5 只登记了接口行，没动第四节，而 spec §7 明确「分页与 facets 用 `POST + @RequestBody`：入参含集合」。理由同源：`categoryIds`/`brandIds` 这类集合走 query 会在客户端被序列化成 `xxx[]=1` 形状（spec 第 153 行已写明这是破例用 POST 做查询的原因），POST + body 规避
 - ⚠ **刷新第二节接口表的「声明位置」列行号**（`StoreClient.java:NNN` / `GoodsController.java:NNN`）。Task 4 改名后该列已过期（行内写着 `:155`/`:120`，实际是 `:158`/`:124`），且 `platformStoreGoodsDetail` / `lockStoreGoods` / `unlockStoreGoods` 三行同样整体漂了 +4/+5。检查器解析这两列但**只校验 verb+path/类型/权限串**，所以门禁是绿的、行号错了不会报——正因如此才要人工刷一次。Task 5 会再往这两个文件加方法，故**在本步（所有后端改动做完后）一次刷到位**，别在 T4/T5 里零散改。
 
 - [ ] **Step 4: `mall-bff.md` 更新**
@@ -1931,4 +1932,4 @@ Expected: 日志含本计划的各次提交。工作区**不要求全空**——
 
 **占位符扫描**：无 TBD / TODO / 「类似 Task N」；每个代码步骤均给出可落地的内容。少数「按既有写法照做」的指引（`RespData` 构造、`request` 导入形态、`account.css` 引入方式）是**刻意的**——这些点的准确写法依赖仓库现状，写死反而会错，由执行者读一眼源码确认。
 
-**类型一致性**：`StoreGoodsSpuCrossShopPageQueryDTO` / `StoreGoodsSpuCrossShopPageItemVO` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `StoreGoodsFacetItemVO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` 在 Task 4/5/7 中的命名与字段前后一致；`refreshDerived` / `refreshShelfStatus` / `refreshMinPrice` / `idListByStatus` / `minPriceBySpuId` / `pageStoreGoodsCrossShop` / `mallFacets` / `crossShopPage` 在定义任务与调用任务中同名同参。
+**类型一致性**：`StoreGoodsSpuCrossShopPageQueryDTO` / `StoreGoodsSpuCrossShopPageItemVO` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `StoreGoodsFacetItemVO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` 在 Task 4/5/7 中的命名与字段前后一致；`refreshDerived` / `refreshShelfStatus` / `refreshMinPrice` / `idListByStatus` / `minPriceBySpuId` / `pageStoreGoodsCrossShop` / `crossShopFacets` / `crossShopPage` 在定义任务与调用任务中同名同参。
