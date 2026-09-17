@@ -653,7 +653,33 @@ Expected: **只剩 `shopGoods.ts:17` 与 `:56` 两行**（出参类型，有意�
 
 > ⚠ **不要**对整个 `frontend/admin/src` 跑 `grep brandId` 然后要求空输出——`api/spu.ts`、`views/spu/SpuManage.vue`、`views/spu/SpuFormDialog.vue` 里的 `brandId` 属于 goods-center「标准商品」模块（SPU 的品牌属性），与本次「店铺商品跨店筛选」是两回事，改它们会破坏无关功能。
 
-- [ ] **Step 12: 编译三端后端**
+- [ ] **Step 12: 同步 `docs/contracts/store.md` 的**改名行**（本任务只动被改名的那些行，新增接口归 Task 11）**
+
+> ⚠ 项目硬规则：**改任何对外接口，同一改动内更新对应 `<服务>.md`**，且**提交前检查器差集非空不得提交**。本任务改了内部 Feign 的**路径**与**方法名**，检查器比对的是 `verb + path` 双向集合，所以不同步契约表 T4 就无法提交。
+
+`docs/contracts/store.md` 按下列逐条改（行号是改前的）：
+
+| 位置 | 现在 | 改成 |
+|---|---|---|
+| 第二节接口表 | `platformPageStoreGoods` / `POST` / `/goods/platform/spu/page` / `StoreGoodsSpuPlatformPageQueryDTO` / `PageResult<StoreGoodsSpuPlatformPageItemVO>` | `pageStoreGoodsCrossShop` / `POST` / `/goods/cross-shop/spu/page` / `StoreGoodsSpuCrossShopPageQueryDTO` / `PageResult<StoreGoodsSpuCrossShopPageItemVO>` |
+| 同行的「调用方」列 | `ShopGoodsBffService(admin)` | `ShopGoodsBffService(admin), CatalogBffService(mall-bff)` |
+| 第三节 platform 行的方法罗列 | 含 `platformPageStoreGoods` | 改为 `pageStoreGoodsCrossShop`，并在该行加一句：分页已**跨店通用**（无锚点，调用方自设限定条件） |
+| 「⚠ 平台分页走 `POST + @RequestBody`」段 | `platformPageStoreGoods` | `pageStoreGoodsCrossShop`（并保留该段；改名后仍成立） |
+| 第五节类型表 `dto` 列 | `StoreGoodsSpuPlatformPageQueryDTO` | `StoreGoodsSpuCrossShopPageQueryDTO` |
+| 第五节类型表 `vo` 列 | `StoreGoodsSpuPlatformPageItemVO` | `StoreGoodsSpuCrossShopPageItemVO` |
+| 第二节开头那句 | 「只被 store-bff（owner 侧）与 admin BFF（platform 侧）经内部 Feign 调用」 | 调用方补上 `mall-bff` |
+
+**不要动**：`platformStoreGoodsDetail` / `lockStoreGoods` / `unlockStoreGoods` 三行、`StoreGoodsSpuPlatformDetailVO`（详情仍只服务管理端）；「共 18 个接口（owner 10 + platform 8）」的**条数不变**（只改名不增删），措辞与分节重构留给 Task 11 Step 3。
+
+- [ ] **Step 13: 跑契约检查器（提交前的硬门禁）**
+
+```bash
+cd /e/workspace/panoramic_mall && node docs/contracts/drift-check.mjs; echo "exit=$?"
+```
+
+Expected: `exit=0`。非 0 按输出逐条修正后再跑。⚠ 若报「代码有、契约表没有」或「幽灵行」，就是 Step 12 漏改或改错。
+
+- [ ] **Step 14: 编译三端后端**
 
 ```bash
 cd /e/workspace/panoramic_mall
@@ -662,7 +688,7 @@ cd /e/workspace/panoramic_mall
 
 Expected: BUILD SUCCESS。
 
-- [ ] **Step 13: admin 前端类型检查**
+- [ ] **Step 15: admin 前端类型检查**
 
 ```bash
 cd /e/workspace/panoramic_mall/frontend/admin && npm run type-check
@@ -670,11 +696,11 @@ cd /e/workspace/panoramic_mall/frontend/admin && npm run type-check
 
 Expected: 无错误输出。
 
-- [ ] **Step 14: 提交**
+- [ ] **Step 16: 提交**
 
 ```bash
-git add -A backend/common backend/store backend/admin frontend/admin
-git commit -m "store：跨店分页通用化（去 Platform 命名、品牌多值、加店铺状态与价格排序）；admin 同步
+git add -A backend/common backend/store backend/admin frontend/admin docs/contracts/store.md
+git commit -m "store：跨店分页通用化（去 Platform 命名、品牌多值、加店铺状态与价格排序）；admin 与契约表同步
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1566,9 +1592,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 - [ ] **Step 3: `store.md` 更新**
 
-- 第二节接口表：`platformPageStoreGoods` 行改为 `pageStoreGoodsCrossShop` / `POST` / `/goods/cross-shop/spu/page` / `StoreGoodsSpuCrossShopPageQueryDTO` / `StoreGoodsSpuCrossShopPageItemVO`，调用方列改为 `ShopGoodsBffService(admin), CatalogBffService(mall-bff)`
+- ⚠ **改名行已在 Task 4 Step 12 完成**（`platformPageStoreGoods` 行已改为 `pageStoreGoodsCrossShop` / `POST` / `/goods/cross-shop/spu/page` 及新类型名与调用方）——本步**不要再改它**，只做下面的增量
 - 新增 `mallFacets` 行：`POST` / `/goods/facets` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `CatalogBffService(mall-bff)`
-- 「共 18 个接口（owner 10 + platform 8）」改为实际条数并重述「跨店通用」侧
+- 「共 18 个接口（owner 10 + platform 8）」改为**实际条数**（Task 5 新增 facets 后应为 19）并重述「跨店通用」侧
 - 第三节 owner/platform 表：把该分页从 platform 行移出，单列一节说明「跨店通用（无锚点）——调用方自设限定条件；C 端固定传 shopStatus=2 + shelfStatus=1 + lockStatus=0」
 - 第五节类型表补新类型
 - 补一条形状说明：facets 的两维度互斥口径
