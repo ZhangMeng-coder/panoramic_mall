@@ -59,6 +59,7 @@ config: backend/gateway/src/main/resources/application.yml
 | `/mall/auth/login` | 顾客登录（手机号 + 验证码） |
 | `/mall/auth/register` | 顾客注册（注册即登录） |
 | `/mall/auth/sms-code` | 顾客取短信验证码（**在登录之前被调用**，漏登记则取码按钮直接 401） |
+| `/mall/catalog/**` | C 端商品浏览（分类树 / 商品分页 / 筛选聚合）——**前台首页公开、不要求登录**，故免鉴权 |
 | `/discovery/**` | 服务发现探活 |
 
 ### 服务本地侧
@@ -67,7 +68,7 @@ config: backend/gateway/src/main/resources/application.yml
 |---|---|---|
 | admin | `/auth/login` | `admin/src/main/resources/application.yml` |
 | store-bff | `/auth/login`, `/auth/register` | `store-bff/src/main/resources/application.yml` |
-| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code` | `mall-bff/src/main/resources/application.yml` |
+| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code`, `/catalog/**` | `mall-bff/src/main/resources/application.yml` |
 
 ⚠ 只改一处 → 要么登录接口被拦（登不进去），要么本应鉴权的接口裸露到公网。
 
