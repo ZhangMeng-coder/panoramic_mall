@@ -1,19 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { hotwords } from '../mock/hotwords'
 
-const keyword = ref('')
-const hint = ref('')
+const route = useRoute()
+const router = useRouter()
 
-/** 未接入搜索：只出提示，不跳转 */
+/** 输入框内容。搜索页的关键词只在地址栏里（搜索页不渲染关键词标题），故初值取自 query */
+const keyword = ref(typeof route.query.keyword === 'string' ? route.query.keyword : '')
+
+// 搜索页的关键词只在地址栏里（T9 的 GoodsListView 不渲染它），输入框跟着地址栏走，
+// 否则「搜了 A、框里却空着」；前进/后退也能跟上。
+// ⚠ 同步方向只有路由 → 输入框，不把 keyword 反向写回 URL（会和用户输入打架）。
+watch(
+  () => route.query.keyword,
+  (v) => {
+    keyword.value = typeof v === 'string' ? v : ''
+  }
+)
+
+/** 跳搜索结果页；空关键词也照跳（等价于「全部商品」） */
 function doSearch() {
   const kw = keyword.value.trim()
-  hint.value = kw
-    ? `（演示：搜索未接入，关键词「${kw}」）`
-    : '（演示：输入关键词后回车，这里只是提示，不会跳转）'
+  void router.push({ path: '/search', query: kw ? { keyword: kw } : {} })
 }
 
-/** 点热搜词：回填输入框并出提示 */
+/** 点热搜词：回填输入框后同样跳转 */
 function pickHot(w: string) {
   keyword.value = w
   doSearch()
@@ -45,8 +57,6 @@ function pickHot(w: string) {
         />
         <button class="search__btn" type="submit">搜索</button>
       </form>
-
-      <p class="search__hint" role="status">{{ hint }}</p>
 
       <div class="search__hot">
         <span class="search__hot-label">热搜</span>
