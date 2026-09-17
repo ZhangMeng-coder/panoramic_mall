@@ -8,11 +8,11 @@ import com.panoramic.common.goods.vo.BrandVO;
 import com.panoramic.common.goods.vo.CategoryTreeVO;
 import com.panoramic.common.store.api.StoreClient;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopOptionVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -55,7 +55,7 @@ public class ShopGoodsBffService {
     private final StoreClient storeClient;
     private final GoodsCenterClient goodsCenterClient;
 
-    // ---- 店铺商品（数据在 store 域 platform 侧，跨店全量）----
+    // ---- 店铺商品（数据在 store 域跨店通用的分页接口，本端不设限定条件走全量）----
 
     /**
      * 店铺商品分页（跨店全量）：分类单选入参展开为子树多值 → 域分页 → 分类全路径读时回填
@@ -63,19 +63,19 @@ public class ShopGoodsBffService {
      * @param dto 页面查询参数
      * @return 分页结果（含 storeName / skuCount / 锁定信息 / categoryPath）
      */
-    public PageResult<StoreGoodsSpuPlatformPageItemVO> pageGoods(ShopGoodsPageQueryDTO dto) {
-        StoreGoodsSpuPlatformPageQueryDTO query = new StoreGoodsSpuPlatformPageQueryDTO();
+    public PageResult<StoreGoodsSpuCrossShopPageItemVO> pageGoods(ShopGoodsPageQueryDTO dto) {
+        StoreGoodsSpuCrossShopPageQueryDTO query = new StoreGoodsSpuCrossShopPageQueryDTO();
         query.setPageNum(dto.getPageNum());
         query.setPageSize(dto.getPageSize());
         query.setKeyword(dto.getKeyword());
-        query.setBrandId(dto.getBrandId());
+        query.setBrandIds(dto.getBrandIds());
         query.setStoreId(dto.getStoreId());
         query.setShelfStatus(dto.getShelfStatus());
         query.setLockStatus(dto.getLockStatus());
         query.setCategoryIds(expandCategoryIds(dto.getCategoryId()));
 
-        PageResult<StoreGoodsSpuPlatformPageItemVO> result =
-                callStore(() -> storeClient.platformPageStoreGoods(query));
+        PageResult<StoreGoodsSpuCrossShopPageItemVO> result =
+                callStore(() -> storeClient.pageStoreGoodsCrossShop(query));
         fillCategoryPaths(result.getRecords());
         return result;
     }
@@ -218,12 +218,12 @@ public class ShopGoodsBffService {
      *
      * @param items 本页列表项（就地回填）
      */
-    private void fillCategoryPaths(List<StoreGoodsSpuPlatformPageItemVO> items) {
+    private void fillCategoryPaths(List<StoreGoodsSpuCrossShopPageItemVO> items) {
         if (items == null || items.isEmpty()) {
             return;
         }
         List<Long> categoryIds = items.stream()
-                .map(StoreGoodsSpuPlatformPageItemVO::getCategoryId)
+                .map(StoreGoodsSpuCrossShopPageItemVO::getCategoryId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .collect(Collectors.toList());
@@ -231,7 +231,7 @@ public class ShopGoodsBffService {
         if (paths.isEmpty()) {
             return;
         }
-        for (StoreGoodsSpuPlatformPageItemVO item : items) {
+        for (StoreGoodsSpuCrossShopPageItemVO item : items) {
             item.setCategoryPath(paths.get(item.getCategoryId()));
         }
     }

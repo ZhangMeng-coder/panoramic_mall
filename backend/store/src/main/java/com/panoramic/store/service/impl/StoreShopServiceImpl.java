@@ -176,6 +176,14 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
     }
 
     @Override
+    public List<Long> idListByStatus(Integer status) {
+        return list(Wrappers.<StoreShop>lambdaQuery()
+                .select(StoreShop::getId)
+                .eq(StoreShop::getStatus, status))
+                .stream().map(StoreShop::getId).collect(Collectors.toList());
+    }
+
+    @Override
     public List<ShopOptionVO> options() {
         return list(Wrappers.<StoreShop>lambdaQuery().orderByAsc(StoreShop::getId)).stream()
                 .map(shop -> {

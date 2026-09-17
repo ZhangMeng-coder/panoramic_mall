@@ -7,16 +7,16 @@ import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -141,18 +141,23 @@ public interface StoreClient {
                                   @RequestParam("storeId") Long storeId,
                                   @RequestBody StoreGoodsSkuShelfDTO dto);
 
-    // ---- platform：店铺在售商品（admin BFF 调用，不传 store_id，全量；X-User-Type=admin）----
-    // 管理后台「店铺商品管理」：跨店查看 / 只读详情 / 平台锁定解锁。
+    // ---- platform：店铺在售商品（跨店通用 + 管理端专有的详情/锁定；admin BFF 与 mall-bff 调用）----
+    // 分页（/goods/cross-shop/spu/page）**跨店通用**：不传 store_id 锚点，调用方自设限定条件
+    //   —— admin BFF「店铺商品管理」走全量，mall-bff C 端浏览固定传 shopStatus/shelfStatus/lockStatus。
+    // 详情与锁定解锁（/goods/platform/spu/**）仍只服务管理端。
     // 锁定语义：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；
     // 仅平台可解锁，解锁不自动恢复上架（由店主手动重新上架）。
 
     /**
-     * 店铺商品分页（跨店全量；分类为多值子树匹配，可再按品牌/店铺/上下架/锁定状态筛选）。
-     * <p>⚠ 用 {@code POST + @RequestBody} 而非 query 参数：{@code categoryIds} 是集合，
+     * 店铺商品分页（<b>跨店通用</b>：不传 store_id 锚点，调用方自设限定条件）。
+     * <p>admin BFF 用于「店铺商品管理」（不限条件，全量）；
+     * mall-bff 用于 C 端商品浏览（固定传 shopStatus=2 + shelfStatus=1 + lockStatus=0）。</p>
+     * <p>⚠ 用 {@code POST + @RequestBody} 而非 query 参数：{@code categoryIds}/{@code brandIds} 是集合，
      * {@code @SpringQueryMap} 对集合字段的序列化口径不确定，走 body 规避。</p>
      */
-    @PostMapping("/goods/platform/spu/page")
-    PageResult<StoreGoodsSpuPlatformPageItemVO> platformPageStoreGoods(@RequestBody StoreGoodsSpuPlatformPageQueryDTO dto);
+    @PostMapping("/goods/cross-shop/spu/page")
+    PageResult<StoreGoodsSpuCrossShopPageItemVO> pageStoreGoodsCrossShop(
+            @RequestBody StoreGoodsSpuCrossShopPageQueryDTO dto);
 
     /**
      * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）

@@ -16,7 +16,15 @@
         />
       </el-form-item>
       <el-form-item label="品牌">
-        <el-select v-model="query.brandId" clearable filterable placeholder="全部品牌" style="width: 150px">
+        <el-select
+          v-model="query.brandIds"
+          multiple
+          collapse-tags
+          clearable
+          filterable
+          placeholder="全部品牌"
+          style="width: 200px"
+        >
           <el-option v-for="b in brands" :key="b.id" :label="b.name" :value="b.id" />
         </el-select>
       </el-form-item>
@@ -194,7 +202,7 @@ const query = reactive<ShopGoodsPageQuery>({
   pageNum: 1,
   pageSize: 10,
   categoryId: undefined,
-  brandId: undefined,
+  brandIds: undefined,
   storeId: undefined,
   shelfStatus: undefined,
   lockStatus: undefined,
@@ -243,7 +251,7 @@ function handleSearch() {
 
 function handleReset() {
   query.categoryId = undefined
-  query.brandId = undefined
+  query.brandIds = undefined
   query.storeId = undefined
   query.shelfStatus = undefined
   query.lockStatus = undefined

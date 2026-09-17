@@ -10,7 +10,7 @@ typeDirs: backend/common/src/main/java
 # 店铺域（store）内部契约 · 第 ② 层
 
 > 店铺域：店铺 `store_shop` + 审核状态机 + 店主在售商品 `store_goods_spu` / `store_goods_sku`。
-> **不暴露公网路由**，只被 store-bff（owner 侧）与 admin BFF（platform 侧）经内部 Feign 调用。
+> **不暴露公网路由**，只被 store-bff（owner 侧）与 admin BFF / mall-bff（platform 侧）经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
 **共 18 个接口**（owner 10 + platform 8）。
@@ -44,7 +44,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | StoreClient.java:127 | GoodsController.java:87 | StoreGoodsBffService(store-bff) |  |
 | replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, Long, StoreGoodsSkuReplaceDTO | void | StoreClient.java:133 | GoodsController.java:96 | StoreGoodsBffService(store-bff) |  |
 | updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, Long, StoreGoodsSkuShelfDTO | void | StoreClient.java:140 | GoodsController.java:106 | StoreGoodsBffService(store-bff) |  |
-| platformPageStoreGoods | POST | /goods/platform/spu/page | StoreGoodsSpuPlatformPageQueryDTO | PageResult<StoreGoodsSpuPlatformPageItemVO> | StoreClient.java:155 | GoodsController.java:120 | ShopGoodsBffService(admin) |  |
+| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:155 | GoodsController.java:120 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
 | platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:161 | GoodsController.java:129 | ShopGoodsBffService(admin) |  |
 | lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:167 | GoodsController.java:138 | ShopGoodsBffService(admin) |  |
 | unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:173 | GoodsController.java:146 | ShopGoodsBffService(admin) |  |
@@ -58,7 +58,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | 侧 | 条数 | 方法 | 特征 |
 |---|:--:|---|---|
 | **owner** | 10 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
-| **platform** | 8 | pageShops, shopDetail, auditShop, platformPageStoreGoods, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
+| **platform** | 8 | pageShops, shopDetail, auditShop, pageStoreGoodsCrossShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | 分页 `pageStoreGoodsCrossShop` 已**跨店通用**（无锚点，调用方自设限定条件）：admin BFF 与 mall-bff 共用，差别只在传入条件（C 端固定 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）；其余**不带 `storeId`**，全量，调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
 
 > 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
 > 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
@@ -66,8 +66,8 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 ## 四、形状规则
 
 - ✅ **不包 `RespData`**；✅ **无 `@PreAuthorize`**；错误走 `{code,msg}` + 真实 HTTP 状态。
-- ⚠ **平台分页走 `POST + @RequestBody`**（`platformPageStoreGoods`），而非 owner 侧的 `GET + @SpringQueryMap` ——
-  因为要传 `List<Long> categoryIds`，规避 Feign `@SpringQueryMap` 对集合字段序列化口径不确定的风险。
+- ⚠ **分页走 `POST + @RequestBody`**（`pageStoreGoodsCrossShop`），而非 owner 侧的 `GET + @SpringQueryMap` ——
+  因为要传 `List<Long> categoryIds` / `brandIds`，规避 Feign `@SpringQueryMap` 对集合字段序列化口径不确定的风险。
 - ⚠ 缺失行**不抛异常**：`mine` / 详情类接口查不到时的行为见模块 README 的边界说明。
 
 ## 五、类型所在包（全部在 `common`，两端引用同一份）
@@ -76,8 +76,8 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPlatformPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO |
-| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsSkuVO, StoreGoodsSpuDetailVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsSpuPlatformPageItemVO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO |
+| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO |
 
 > 「子类扩字段」先例：`StoreGoodsSpuPlatformDetailVO extends StoreGoodsSpuDetailVO`（platform 侧追加 `storeName` / `categoryPath`），
 > 避免为平台侧污染 owner 侧 VO。

@@ -7,8 +7,8 @@ import com.panoramic.common.goods.vo.CategoryTreeVO;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopOptionVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -27,7 +27,7 @@ import java.util.List;
 /**
  * admin 端 BFF · 店铺商品管理编排接口（面向 admin 前端，2026-09-12 新增）。
  * <p>页面请求经网关 {@code /admin/shop/goods/**} → 本控制器 → 内部 Feign 调 store 域
- * platform 侧（跨店全量）。平台可查看<b>任意店铺</b>的商品、按 类型（分类，含子树）/
+ * 跨店通用分页（不设限定条件，走全量）。平台可查看<b>任意店铺</b>的商品、按 类型（分类，含子树）/
  * 品牌 / 店铺 筛选，并锁定 / 解锁商品。只做聚合与包装（RespData），不持有 store 域实体与表。</p>
  * <p>权限：查询类（列表/详情/三个下拉）走 {@code store:goods:list}，锁定与解锁走
  * {@code store:goods:lock}——三个下拉由本控制器代理（A4），复用查询权限，不再单独开权限串。
@@ -43,11 +43,11 @@ public class ShopGoodsController {
     private final ShopGoodsBffService shopGoodsBffService;
 
     /**
-     * 店铺商品分页列表（跨店全量；keyword/categoryId（含子树）/brandId/storeId/shelfStatus/lockStatus）
+     * 店铺商品分页列表（跨店全量；keyword/categoryId（含子树）/brandIds/storeId/shelfStatus/lockStatus）
      */
     @GetMapping("/page")
     @PreAuthorize("hasAuthority('store:goods:list')")
-    public RespData<PageResult<StoreGoodsSpuPlatformPageItemVO>> page(@Validated ShopGoodsPageQueryDTO dto) {
+    public RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>> page(@Validated ShopGoodsPageQueryDTO dto) {
         return RespData.success(shopGoodsBffService.pageGoods(dto));
     }
 

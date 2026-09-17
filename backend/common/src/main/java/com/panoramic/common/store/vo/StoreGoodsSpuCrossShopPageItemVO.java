@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * 店铺在售商品分页列表项 · platform 侧（管理后台「店铺商品管理」）
+ * 店铺在售商品分页列表项 · <b>跨店通用</b>（admin BFF 管理视角 / mall-bff C 端视角共用；C 端输出前由 BFF 裁剪字段）
  * <p>比 owner 侧 {@link StoreGoodsSpuPageItemVO} 多出「所属店铺」与锁定明细，供平台查看与锁定操作。</p>
  * <p>字段来源：
  * <ul>
@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
  * </ul></p>
  */
 @Data
-public class StoreGoodsSpuPlatformPageItemVO {
+public class StoreGoodsSpuCrossShopPageItemVO {
 
     /**
      * 主键

@@ -85,6 +85,14 @@ public interface StoreShopService extends IService<StoreShop> {
     Map<Long, String> nameMap(Collection<Long> ids);
 
     /**
+     * 按审核状态取店铺 id 集合（跨店商品查询按店铺状态过滤用，避免 join）
+     *
+     * @param status 审核状态（0 草稿 / 1 待审核 / 2 已通过 / 3 已驳回）
+     * @return 店铺 id 列表；无则空列表
+     */
+    List<Long> idListByStatus(Integer status);
+
+    /**
      * 店铺下拉选项（管理后台「店铺商品管理」按店铺筛选用），按 id 升序。
      * <p>不按审核状态过滤：未审核通过的店铺本就没有商品，过滤无收益。</p>
      *

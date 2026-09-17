@@ -2,7 +2,7 @@ import request from './request'
 import type { PageQuery, PageResult } from '../types/api'
 import type { BrandItem, CategoryNode, SpecAttr, SpecConfigItem } from '../types/goods'
 
-/** 店铺商品列表行，与 `StoreGoodsSpuPlatformPageItemVO` 同构（可空列照 `store_goods_spu`） */
+/** 店铺商品列表行，与 `StoreGoodsSpuCrossShopPageItemVO` 同构（可空列照 `store_goods_spu`） */
 export interface ShopGoodsPageItem {
   id: number
   storeId: number
@@ -75,7 +75,8 @@ export interface ShopGoodsDetail {
 export interface ShopGoodsPageQuery extends PageQuery {
   keyword?: string
   categoryId?: number
-  brandId?: number
+  /** 品牌筛选（多值，空为全部） */
+  brandIds?: number[]
   storeId?: number
   shelfStatus?: number
   lockStatus?: number
@@ -101,7 +102,7 @@ export interface ShopGoodsLockPayload {
  * - 每行/详情的 `categoryPath`（分类全路径）由 BFF 读时解析，解析失败时为空，前端回退 `categoryName`。
  */
 export const shopGoodsApi = {
-  /** 店铺商品分页查询（pageNum/pageSize/keyword/categoryId/brandId/storeId/shelfStatus/lockStatus） */
+  /** 店铺商品分页查询（pageNum/pageSize/keyword/categoryId/brandIds/storeId/shelfStatus/lockStatus） */
   page(params: ShopGoodsPageQuery) {
     return request.get<PageResult<ShopGoodsPageItem>>('/admin/shop/goods/page', { params })
   },

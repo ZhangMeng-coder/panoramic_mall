@@ -3,15 +3,15 @@ package com.panoramic.store.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
 
 /**
@@ -20,7 +20,8 @@ import com.panoramic.store.entity.StoreGoodsSpu;
  * 上下架联动、SKU 锁定规则与平台锁定能力（见下）。</p>
  * <p><b>owner 侧</b>（store-bff 调用）：方法必带 {@code storeId}，只作用于 {@code store_id == storeId}
  * 的行（R11）；SKU 侧操作先校验其 SPU 归属。<b>platform 侧</b>（admin BFF 调用）：方法不带 storeId、
- * 跨店全量（{@link #platformPage} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）。
+ * 跨店全量（{@link #crossShopPage} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）；
+ * 其中 {@link #crossShopPage} 已通用化为跨店通用（调用方自设限定条件），mall-bff 亦调用。
  * 两侧的分流由端 BFF 选择调哪一侧方法决定，域内不做身份判断。</p>
  * <p>规则口径：
  * <ul>
@@ -106,17 +107,22 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      */
     void updateSkuShelf(Long storeId, Long spuId, Long skuId, Integer shelfStatus);
 
-    // ---- platform 侧（admin BFF 调用，不带 storeId，跨店全量）----
+    // ---- platform 侧（不带 storeId，跨店通用：分页为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
 
     /**
-     * 店铺商品分页（跨店全量）：分类为多值子树匹配（{@code categoryIds} 由端 BFF 用分类树展开后传入），
-     * 可再按品牌 / 店铺 / 上下架 / 锁定状态 / 名称关键字筛选；回填店铺名与 SKU 数量。
+     * 店铺商品分页（<b>跨店通用</b>：不传 storeId 锚点，调用方自设限定条件）。
+     * <p>分类与品牌均为多值匹配（{@code categoryIds} 由端 BFF 用分类树展开后传入），
+     * 可再按店铺 / 店铺审核状态 / 上下架 / 锁定状态 / 名称关键字筛选，并可按 id 或最低价排序；
+     * 回填店铺名与 SKU 数量。</p>
+     * <p>admin BFF 用于「店铺商品管理」（不设限定条件，全量）；mall-bff 用于 C 端商品浏览
+     * （固定传 {@code shopStatus=2} + {@code shelfStatus=1} + {@code lockStatus=0}）。
+     * 端别差别只体现在传入条件上，域内不判身份、不做分流。</p>
      * <p>出参的 {@code categoryPath} 不在此填充（域不持分类表），由端 BFF 读时解析。</p>
      *
-     * @param dto 分页/筛选参数
+     * @param dto 分页/筛选/排序参数
      * @return 分页结果
      */
-    PageResult<StoreGoodsSpuPlatformPageItemVO> platformPage(StoreGoodsSpuPlatformPageQueryDTO dto);
+    PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(StoreGoodsSpuCrossShopPageQueryDTO dto);
 
     /**
      * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息），额外回填所属店铺名。

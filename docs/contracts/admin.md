@@ -76,7 +76,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /shop/goods/page | store:goods:list | ShopGoodsPageQueryDTO | RespData<PageResult<StoreGoodsSpuPlatformPageItemVO>> | ShopGoodsController.java:48 |  |
+| GET | /shop/goods/page | store:goods:list | ShopGoodsPageQueryDTO | RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>> | ShopGoodsController.java:48 |  |
 | GET | /shop/goods/{id} | store:goods:list | Long | RespData<StoreGoodsSpuPlatformDetailVO> | ShopGoodsController.java:57 |  |
 | POST | /shop/goods/{id}/lock | store:goods:lock | Long, StoreGoodsLockDTO | RespData<Void> | ShopGoodsController.java:66 |  |
 | POST | /shop/goods/{id}/unlock | store:goods:lock | Long | RespData<Void> | ShopGoodsController.java:77 |  |
@@ -159,7 +159,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 | 来源 | 类型 |
 |---|---|
 | **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO |
-| `common`（`com.panoramic.common.goods.*` / `.store.*`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺：ShopPageQueryDTO, ShopAuditDTO, ShopVO, ShopOptionVO, StoreGoodsLockDTO, StoreGoodsSpuPlatformPageItemVO, StoreGoodsSpuPlatformDetailVO |
+| `common`（`com.panoramic.common.goods.*` / `.store.*`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺：ShopPageQueryDTO, ShopAuditDTO, ShopVO, ShopOptionVO, StoreGoodsLockDTO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuPlatformDetailVO |
 
 > admin 与 store-bff **各持一份自己的** `LoginResultVO` / `CurrentUserVO`（不共享）—— 两端身份空间不同，属预期。
 > ⚠ `ShopPageQueryDTO` / `ShopAuditDTO` / `ShopVO` 在 `common.store`（域与 admin 共用同一份），

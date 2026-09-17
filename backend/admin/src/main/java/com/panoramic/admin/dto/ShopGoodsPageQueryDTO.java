@@ -4,9 +4,11 @@ import com.panoramic.common.vo.BasePageVO;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.List;
+
 /**
  * 管理后台「店铺商品管理」分页查询参数（页面入参，admin BFF 自有）。
- * <p>与 store 域入参 {@code StoreGoodsSpuPlatformPageQueryDTO} 的差别：本 DTO 面向页面，
+ * <p>与 store 域入参 {@code StoreGoodsSpuCrossShopPageQueryDTO} 的差别：本 DTO 面向页面，
  * 分类筛选是**单选** {@code categoryId}（前端级联选择器只回一个 id）；BFF 编排时取分类树
  * 递归展开成「该节点 + 全部后代」的 {@code categoryIds} 再传给域（A1：子树匹配）。
  * 域侧不持分类表，无法自行展开，故展开只能在 BFF 做。</p>
@@ -26,9 +28,9 @@ public class ShopGoodsPageQueryDTO extends BasePageVO {
     private Long categoryId;
 
     /**
-     * 品牌筛选（引用中台品牌 id），空为全部
+     * 品牌筛选（引用中台品牌 id，多值），空为全部
      */
-    private Long brandId;
+    private List<Long> brandIds;
 
     /**
      * 店铺筛选（store_shop.id == 店主账号 id），空为全部店铺

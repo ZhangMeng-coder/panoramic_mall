@@ -3,15 +3,15 @@ package com.panoramic.store.controller;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import com.panoramic.store.service.StoreGoodsSpuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -34,7 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <p><b>owner 侧</b>（{@code /spu/**}，store-bff 调用）：{@code storeId}（= 店主账号 id，账号店同 ID）
  * 由 store-bff 从登录态带入，域内以「id + store_id」双条件限定作用域（R11）；
  * <b>platform 侧</b>（{@code /platform/spu/**}，admin BFF 调用）：不带 storeId、跨店全量，
- * 供管理后台「店铺商品管理」查看 / 锁定解锁。两侧分流由端 BFF 调哪一侧决定，域内不做身份判断。</p>
+ * 供管理后台「店铺商品管理」查看 / 锁定解锁。两侧分流由端 BFF 调哪一侧决定，域内不做身份判断。
+ * 分页已通用化为 {@code /cross-shop/spu/page}（跨店通用，admin BFF 与 mall-bff 共用、差别只在传入条件），
+ * {@code /platform/spu/**} 仅剩详情与锁定解锁。</p>
  */
 @RestController
 @RequestMapping("/internal/store/goods")
@@ -110,16 +112,19 @@ public class GoodsController {
         storeGoodsSpuService.updateSkuShelf(storeId, spuId, skuId, dto.getShelfStatus());
     }
 
-    // ---- platform（admin BFF 调用，不带 storeId，跨店全量）----
+    // ---- platform（不带 storeId，跨店通用；分页为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
 
     /**
-     * 店铺商品分页（跨店全量；分类为多值子树匹配，categoryIds 由端 BFF 用分类树展开后传入）。
-     * <p>用 POST + body 而非 query 参数：categoryIds 是集合，走 body 规避 @SpringQueryMap 的集合序列化问题。</p>
+     * 店铺商品分页（<b>跨店通用</b>：不带 storeId 锚点，调用方自设限定条件；
+     * 分类与品牌为多值，categoryIds 由端 BFF 用分类树展开后传入）。
+     * <p>admin BFF「店铺商品管理」不设限定条件（全量）；mall-bff C 端浏览固定传
+     * shopStatus=2 + shelfStatus=1 + lockStatus=0。域侧不含 C 端隐含约束。</p>
+     * <p>用 POST + body 而非 query 参数：categoryIds/brandIds 是集合，走 body 规避 @SpringQueryMap 的集合序列化问题。</p>
      */
-    @PostMapping("/platform/spu/page")
-    public PageResult<StoreGoodsSpuPlatformPageItemVO> platformPage(
-            @Validated @RequestBody StoreGoodsSpuPlatformPageQueryDTO dto) {
-        return storeGoodsSpuService.platformPage(dto);
+    @PostMapping("/cross-shop/spu/page")
+    public PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(
+            @Validated @RequestBody StoreGoodsSpuCrossShopPageQueryDTO dto) {
+        return storeGoodsSpuService.crossShopPage(dto);
     }
 
     /**

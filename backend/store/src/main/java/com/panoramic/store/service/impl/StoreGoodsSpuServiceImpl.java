@@ -1,5 +1,6 @@
 package com.panoramic.store.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -13,16 +14,16 @@ import com.panoramic.common.goods.dto.SpecConfigItem;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPlatformPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSkuVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformPageItemVO;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.store.entity.StoreGoodsSku;
 import com.panoramic.store.entity.StoreGoodsSpu;
@@ -57,8 +58,9 @@ import java.util.stream.Collectors;
  * 不泄露存在性；SKU 侧操作先经 {@link #getOwnedSkuOrThrow} 校验 SPU 归属。
  * <b>owner 侧锁定只读守卫（R12）</b>：改 / 删 / 改 SKU / 上下架 在取行后立即
  * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
- * <p><b>platform 侧（跨店全量）</b>：{@link #platformPage} / {@link #platformDetail} 不带 store_id 过滤，
- * 供 admin BFF 编排「店铺商品管理」；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
+ * <p><b>platform 侧（跨店通用，调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #platformDetail}
+ * 不带 store_id 过滤——前者供 admin BFF「店铺商品管理」与 mall-bff C 端浏览共用（差别只在传入条件），
+ * 后者供 admin BFF；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
  * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
@@ -74,7 +76,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
 
     /** 跨实体：SKU 服务（列表/计数/级联删除/级联下架；不直接持有 SKU Mapper） */
     private final StoreGoodsSkuService skuService;
-    /** 跨实体：店铺服务（平台列表/详情回填 storeName） */
+    /** 跨实体：店铺服务（跨店列表/详情回填 storeName，以及按审核状态取店铺 id 做过滤） */
     private final StoreShopService shopService;
     private final ObjectMapper objectMapper;
 
@@ -247,22 +249,36 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         refreshDerived(spu);
     }
 
-    // ---- platform 侧（admin BFF 调用，跨店全量）----
+    // ---- platform 侧（跨店通用：调用方自设限定条件；详情/锁定仍只服务 admin BFF）----
 
     @Override
-    public PageResult<StoreGoodsSpuPlatformPageItemVO> platformPage(StoreGoodsSpuPlatformPageQueryDTO dto) {
+    public PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(StoreGoodsSpuCrossShopPageQueryDTO dto) {
         Page<StoreGoodsSpu> spuPage = dto.toPage(StoreGoodsSpu.class);
         boolean hasCategoryFilter = dto.getCategoryIds() != null && !dto.getCategoryIds().isEmpty();
-        IPage<StoreGoodsSpu> result = page(spuPage,
-                Wrappers.<StoreGoodsSpu>lambdaQuery()
-                        // 分类为多值子树匹配：categoryIds 已由端 BFF 用分类树展开（含全部后代）
-                        .in(hasCategoryFilter, StoreGoodsSpu::getCategoryId, dto.getCategoryIds())
-                        .eq(dto.getBrandId() != null, StoreGoodsSpu::getBrandId, dto.getBrandId())
-                        .eq(dto.getStoreId() != null, StoreGoodsSpu::getStoreId, dto.getStoreId())
-                        .eq(dto.getShelfStatus() != null, StoreGoodsSpu::getShelfStatus, dto.getShelfStatus())
-                        .eq(dto.getLockStatus() != null, StoreGoodsSpu::getLockStatus, dto.getLockStatus())
-                        .like(StringUtils.hasText(dto.getKeyword()), StoreGoodsSpu::getName, dto.getKeyword())
-                        .orderByDesc(StoreGoodsSpu::getId));
+        boolean hasBrandFilter = dto.getBrandIds() != null && !dto.getBrandIds().isEmpty();
+        // ⚠ DTO 的 brandIds 是复数（新），但**实体** StoreGoodsSpu 的字段仍是单数 brandId —— 这里是列引用，用 getBrandId
+        // 店铺状态过滤：经店铺 service 取 id 集合后 IN（跨实体只走 owner service，不 join）
+        List<Long> shopIds = dto.getShopStatus() == null
+                ? Collections.emptyList() : shopService.idListByStatus(dto.getShopStatus());
+        LambdaQueryWrapper<StoreGoodsSpu> wrapper = Wrappers.<StoreGoodsSpu>lambdaQuery()
+                // 分类为多值子树匹配：categoryIds 已由端 BFF 用分类树展开（含全部后代）
+                .in(hasCategoryFilter, StoreGoodsSpu::getCategoryId, dto.getCategoryIds())
+                .in(hasBrandFilter, StoreGoodsSpu::getBrandId, dto.getBrandIds())
+                .eq(dto.getStoreId() != null, StoreGoodsSpu::getStoreId, dto.getStoreId())
+                .eq(dto.getShelfStatus() != null, StoreGoodsSpu::getShelfStatus, dto.getShelfStatus())
+                .eq(dto.getLockStatus() != null, StoreGoodsSpu::getLockStatus, dto.getLockStatus())
+                .like(StringUtils.hasText(dto.getKeyword()), StoreGoodsSpu::getName, dto.getKeyword());
+        if (dto.getShopStatus() != null) {
+            if (shopIds.isEmpty()) {
+                // 永假哨兵：store_shop.id 自增必为正，-1 永不命中；用一个不可能匹配的 IN
+                // （而非「跳过该条件」）保证「筛选无结果」不会退化成「不加筛选返回全量」
+                wrapper.in(StoreGoodsSpu::getStoreId, List.of(-1L));
+            } else {
+                wrapper.in(StoreGoodsSpu::getStoreId, shopIds);
+            }
+        }
+        applySort(wrapper, dto.getSort());
+        IPage<StoreGoodsSpu> result = page(spuPage, wrapper);
 
         List<StoreGoodsSpu> records = result.getRecords();
         // 店铺名与 SKU 数量批量回填，避免 N+1
@@ -270,14 +286,33 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
                 records.stream().map(StoreGoodsSpu::getStoreId).collect(Collectors.toList()));
         Map<Long, Integer> skuCounts = skuService.countMapBySpuIds(
                 records.stream().map(StoreGoodsSpu::getId).collect(Collectors.toList()));
-        List<StoreGoodsSpuPlatformPageItemVO> items = records.stream().map(spu -> {
-            StoreGoodsSpuPlatformPageItemVO vo = new StoreGoodsSpuPlatformPageItemVO();
+        List<StoreGoodsSpuCrossShopPageItemVO> items = records.stream().map(spu -> {
+            StoreGoodsSpuCrossShopPageItemVO vo = new StoreGoodsSpuCrossShopPageItemVO();
+            // minPrice 同名同类型，随 copyProperties 一并带出（VO 已声明该字段）
             BeanUtils.copyProperties(spu, vo);
             vo.setStoreName(shopNames.getOrDefault(spu.getStoreId(), ""));
             vo.setSkuCount(skuCounts.getOrDefault(spu.getId(), 0));
             return vo;
         }).collect(Collectors.toList());
         return new PageResult<>(result.getTotal(), items);
+    }
+
+    /**
+     * 施加排序：默认按 id 倒序；价格排序走 min_price。
+     * <p>不处理 min_price 的 NULL 位置：C 端固定 shelf_status=1，而上架 SPU 必有上架 SKU（不变量），
+     * 故 C 端 min_price 必非 null；管理端出现下架商品时排序位置不作保证。</p>
+     *
+     * @param wrapper 待施排序的查询条件
+     * @param sort    排序标识（{@code priceAsc} / {@code priceDesc}；其它值按默认 id 倒序）
+     */
+    private void applySort(LambdaQueryWrapper<StoreGoodsSpu> wrapper, String sort) {
+        if ("priceAsc".equals(sort)) {
+            wrapper.orderByAsc(StoreGoodsSpu::getMinPrice);
+        } else if ("priceDesc".equals(sort)) {
+            wrapper.orderByDesc(StoreGoodsSpu::getMinPrice);
+        } else {
+            wrapper.orderByDesc(StoreGoodsSpu::getId);
+        }
     }
 
     @Override
