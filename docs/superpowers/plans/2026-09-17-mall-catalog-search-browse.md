@@ -1652,6 +1652,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Files:**
 - Modify: `frontend/mall/src/components/SearchBar.vue`
 - Modify: `frontend/mall/src/components/CategoryGrid.vue`
+- Modify: `frontend/mall/src/styles/mall.css`（**仅 `.cats__*` 块**，见 Step 2 的 ⚠）
 - Delete: `frontend/mall/src/mock/categories.ts`
 
 **Interfaces:**
@@ -1689,6 +1690,8 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - 图标：有 `icon` 渲染 `<img>`（加载失败或为空 → 回退现有渐变圆 + 名称首字，色相按 `id % 360` 派生）
 - 点击 → `router.push(`/category/${c.id}`)`
 - 列数动态：容器加 `:style="{ '--cols': Math.min(list.length, 10) }"`，CSS 用 `grid-template-columns: repeat(var(--cols), 1fr)`，保住「一行铺满」的基准又不写死 10
+
+  ⚠ **这条 CSS 规则改在 `styles/mall.css` 里**（`mall.css:230` 的 `.cats__grid` 现为 `repeat(10, 1fr)`，改成 `repeat(var(--cols), 1fr)`），**不要**在组件里写 `<style scoped>`：mall 的唯一风格源头是 `styles/*.css`（见根 `CLAUDE.md`「基准先行……不各页各写一套」），且 SFC 里出现第一个组件级样式块会让 `.cats__*` 的规则从此分裂在两处。本任务对 `mall.css` 的许可**只限 `.cats__*` 块内的这两条规则**（`.cats__grid` 改列数、新增 `.cats__img` 的 `object-fit: contain`）——⚠ **`.goods__*` 那 18 条一行都不许碰**（⑥ 热门商品区受保护基线）。原「不许动 mall.css」的禁令本意是保护 ⑥，与本步自己要加的 CSS 规则相冲突，属计划自相矛盾，**以本步为准**。
 - 加载失败（BFF 降级）时整块不渲染，不留空白骨架
 
 - [ ] **Step 3: 删除 mock 分类**
@@ -1777,18 +1780,19 @@ Task 7 已落地（检查器强制）：接口清单 `5 条 → 8 条`、三行�
 - 补一条形状口径：**C 端展示口径由 BFF 固定**（`shopStatus=2` + `shelfStatus=1` + `lockStatus=0`），域侧不含 C 端隐含约束
 - §三 末段「首页六个区块的数据仍是静态的 `src/mock/`，首页数据聚合属二期」→ 改写为「搜索区与分类展示区已接本表 catalog 三接口；**热门商品列表仍为静态 mock**」
 
-- [ ] **Step 5: `cross-cutting.md` 新增条目 + **修正三处已过期的既有条文**
+- [ ] **Step 5: `cross-cutting.md` 新增条目 + **修正四处已过期的既有条文**
 
 新增三条（编号顺延）：
 1. **C 端商品展示口径在端 BFF，不在域**：mall-bff 调 store 域商品查询时固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`；域侧不含 C 端隐含约束。新增 C 端查询时必须保持这三个条件。
 2. **筛选维度聚合「排除自身维度」**：分类维度不受已选分类影响、品牌维度不受已选品牌影响；否则选中后同维度选项消失。
 3. **跨店分页通用化**：store 域 `/goods/cross-shop/spu/page` 由 admin BFF 与 mall-bff 共用，调用方自设限定条件；域返回的 VO 含管理端字段（`lockUser` 等），**C 端输出前必须由 BFF 裁剪**。
 
-⚠ **另有三处既有条文已被本计划改成假话，本步必须一并改**（Task 7 按简报只动了门禁强制要求的部分，这几处检查器不查、故留到这里；根 `CLAUDE.md` 硬规则 3 要求「改跨服务隐式契约必须同步更新 `cross-cutting.md`」）：
+⚠ **另有四处既有条文已被本计划改成假话/引错行号，本步必须一并改**（Task 7 按简报只动了门禁强制要求的部分，这几处检查器不查、故留到这里；根 `CLAUDE.md` 硬规则 3 要求「改跨服务隐式契约必须同步更新 `cross-cutting.md`」）：
 
 | 行 | 现在写的 | 改成 |
 |---|---|---|
-| §12 白名单的「定义位置」行（约 `:148`） | 网关 `application.yml:61` 的值里**没有** `/mall/catalog/**`；服务侧 mall-bff 的枚举只有 `/auth/login,/auth/register,/auth/sms-code` | 网关侧补 `/mall/catalog/**`（顺带把行号 `:61` 核成现值）、mall-bff 侧补 `/catalog/**`；「⚠ 易漏项」那句可补一句「**公开浏览类前缀**（C 端 `/catalog/**`）同样两处都要登记」 |
+| §10 网关路由与 BFF 白名单的「定义位置」行（**`:137`**） | `gateway/src/main/resources/application.yml:31-50`（3 条路由）、**`:59`**（`bff-services = admin,store-bff,mall-bff`） | 值不变；**行号 `:59` → `:61`**。⚠ 路由区间 `31-50` **仍准确**（已实测：`admin-route` 起 `:31`，`mall-bff` 的 `Path=/mall/**` 在 `:50`），**不要动它** |
+| §11 鉴权白名单**在网关与服务两处各写一份**的「定义位置」行（约 `:148`） | 网关 `application.yml:61` 的值里**没有** `/mall/catalog/**`；服务侧 mall-bff 的枚举只有 `/auth/login,/auth/register,/auth/sms-code` | 网关侧补 `/mall/catalog/**`（顺带把行号 `:61` 核成现值）、mall-bff 侧补 `/catalog/**`；「⚠ 易漏项」那句可补一句「**公开浏览类前缀**（C 端 `/catalog/**`）同样两处都要登记」 |
 | §12 规律后的 ⚠ 段（约 `:175`） | 「mall-bff **一期没有任何 Feign 客户端**，`feign-circuitbreaker.yml` 属空转……二期接首页聚合调 goods-center 时无需再改加载矩阵」 | mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），熔断配置**不再是空转**；「端 BFF 一律加载四个」的规律不变 |
 | §13 熔断契约的「消费位置」行（约 `:184`） | 「admin、store-bff（引 resilience4j 的两端）……mall-bff 一期无 Feign 客户端、不触发本机制，但同样加载该配置」 | 消费位置改为「admin、store-bff、**mall-bff**（三端均已调域）」，并去掉「一期无 Feign 客户端」的限定 |
 
