@@ -2033,9 +2033,9 @@ cd /e/workspace/panoramic_mall
 echo "--- 1. 禁用写法残留（应为空）---"
 grep -rn "setCreateUser\|setUpdateUser\|setCreateTime\|setUpdateTime" backend --include=*.java | grep -v /target/
 echo "--- 2. 域内鉴权残留（应为空）---"
-grep -rn "@PreAuthorize" backend/store/src backend/goods-center/src --include=*.java | grep -v /target/
+grep -rnE "^[[:space:]]*@PreAuthorize" backend/store/src backend/goods-center/src --include=*.java | grep -v /target/
 echo "--- 3. mall-bff 不得有 @PreAuthorize（应为空）---"
-grep -rn "@PreAuthorize" backend/mall-bff/src --include=*.java
+grep -rnE "^[[:space:]]*@PreAuthorize" backend/mall-bff/src --include=*.java
 echo "--- 4. 旧类型名残留（应为空）---"
 grep -rn "StoreGoodsSpuPlatformPage" backend frontend --include=*.java --include=*.ts --include=*.vue | grep -v /target/ | grep -v node_modules
 echo "--- 5. 前端 any/ts-ignore 残留（应为空）---"
@@ -2048,6 +2048,10 @@ grep -n "whitelist-paths" backend/mall-bff/src/main/resources/application.yml
 ```
 
 Expected: 1–6 全空；7 里 gateway 含 `/mall/catalog/**`、mall-bff 含 `/catalog/**`。
+
+> ⚠ **第 2、3 条必须用带锚点的正则 `^[[:space:]]*@PreAuthorize`，不能用裸 `grep "@PreAuthorize"`**（已实测核实，2026-09-18）：裸 grep 会命中**一堆 javadoc**——它们恰恰在解释「本层有意没有 `@PreAuthorize`」这件事（`store`/`goods-center` 5 处、`mall-bff` 2 处，如 `CatalogController` 类注释、`StoreSecurityConfig` 类注释）。**裸 grep 的预期结果永远不可能是「空」**，而最坏后果不是报错、是**诱导执行者把正确的说明性 javadoc 当残留删掉**——那会抹掉「域内不做鉴权」这一有意设计的记录。带锚点后两条预期为空（已实测：域内与 mall-bff 真注解 0 处）。
+>
+> 反向对照：真注解**只应存在于 admin**——已实测恰好 8 个 controller（`goods/GoodsBrand|GoodsCategory|GoodsSpuController`、`PermissionController`、`RoleController`、`shop/ShopController`、`shop/ShopGoodsController`、`UserController`）。域或 mall-bff 里出现真注解即为违规，反向也成立。
 
 - [ ] **Step 5: 确认无 `.superpowers/` 与 `temp/` 进入版本控制**
 
