@@ -17,16 +17,16 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/register | — | RegisterDTO | RespData<LoginResultVO> | AuthController.java:33 |  |
-| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | AuthController.java:41 |  |
-| POST | /auth/logout | — | — | RespData<Void> | AuthController.java:49 |  |
-| GET | /auth/me | — | — | RespData<CurrentUserVO> | AuthController.java:61 |  |
-| GET | /shops/mine | — | — | RespData<ShopVO> | ShopController.java:32 |  |
-| POST | /shops/save | — | ShopSaveDTO | RespData<Void> | ShopController.java:40 |  |
-| POST | /shops/submit | — | ShopSaveDTO | RespData<Void> | ShopController.java:49 |  |
-| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | GoodsController.java:52 |  |
-| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | GoodsController.java:60 |  |
-| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | GoodsController.java:68 |  |
+| POST | /auth/register | — | RegisterDTO | RespData<LoginResultVO> | AuthController.java:32 |  |
+| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | AuthController.java:40 |  |
+| POST | /auth/logout | — | — | RespData<Void> | AuthController.java:48 |  |
+| GET | /auth/me | — | — | RespData<CurrentUserVO> | AuthController.java:60 |  |
+| GET | /shops/mine | — | — | RespData<ShopVO> | ShopController.java:31 |  |
+| POST | /shops/save | — | ShopSaveDTO | RespData<Void> | ShopController.java:39 |  |
+| POST | /shops/submit | — | ShopSaveDTO | RespData<Void> | ShopController.java:48 |  |
+| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | GoodsController.java:51 |  |
+| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | GoodsController.java:59 |  |
+| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | GoodsController.java:67 |  |
 | PUT | /goods/spu/{id} | — | Long, StoreGoodsSpuUpdateDTO | RespData<Void> | GoodsController.java:75 |  |
 | DELETE | /goods/spu/{id} | — | Long | RespData<Void> | GoodsController.java:85 |  |
 | PUT | /goods/spu/{id}/skus | — | Long, StoreGoodsSkuReplaceDTO | RespData<Void> | GoodsController.java:94 |  |

@@ -35,6 +35,7 @@ mall/
 └── src/
     ├── main.ts             createApp + router + 载入五个 css（令牌 → 基线 → 区块 → 账号页 → 目录页）
     ├── App.vue             <router-view /> + <ToastHost />（全局提示条）
+    ├── env.d.ts            Vite 客户端类型声明（`/// <reference types="vite/client" />`）
     ├── router/index.ts     hash 模式；/ 首页、/login、/register、/search、/category/:id；兜底重定向 /；全局守卫
     ├── styles/
     │   ├── tokens.css      ★ 唯一换肤入口（只改这个文件即可整体换色）
@@ -55,7 +56,7 @@ mall/
     ├── mock/               首页静态数据：banners / goods / hotwords
     ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标 / 手机号打码）
     ├── composables/        useCarousel.ts（轮播）、useSmsCode.ts（取码倒计时）、useToast.ts（提示条）
-    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost + CatalogCard / FilterRow / Pager
+    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost + GoodsCard / CatalogCard / FilterRow / Pager
     └── views/              HomeView.vue（六区块）+ GoodsListView.vue（搜索结果 / 分类商品）+ LoginView.vue + RegisterView.vue
 ```
 
@@ -65,7 +66,7 @@ mall/
 |---|---|---|
 | ① | 顶部用户条 | `TopBar.vue` |
 | ② | 万能搜索长框（含热搜词行） | `SearchBar.vue` |
-| ③ | 全分类展示（10 个一级分类宫格） | `CategoryGrid.vue` |
+| ③ | 全分类展示（一级分类宫格，数量由后端树决定） | `CategoryGrid.vue` |
 | ④ | 大型滚动广告框（自动播放 / 箭头 / 圆点 / 悬停暂停） | `BannerCarousel.vue` |
 | ⑤ | 用户信息展示框 | `UserPanel.vue` |
 | ⑥ | 热门商品列表（5 列 × 2 行 = 10 件） | `GoodsGrid.vue` + `GoodsCard.vue` |
@@ -107,7 +108,7 @@ mall/
 
 | 数据 | 探什么 |
 |---|---|
-| 一级分类 10 项（**已改为后端真实分类树**，不再是 mock） | 宫格是否正好铺满一行，增删后换行好不好看 |
+| 一级分类数量由后端分类树决定（当前 9 项，不再是本工程 mock） | 宫格是否正好铺满一行，增删后换行好不好看 |
 | 轮播第 3 张标题拉长 | 长文案下版式会不会挤爆 / 换行难看 |
 | 商品 g1 超长名 | 两行截断够不够 |
 | 商品 g2 无原价、无角标 | 版式留白会不会塌 |

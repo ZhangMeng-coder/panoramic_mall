@@ -36,9 +36,9 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:54 | |
 | POST | /auth/logout | — | — | `Void` | AuthController.java:62 | |
 | GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:74 | |
-| GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:41 | |
-| POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:49 | |
-| POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:57 | |
+| GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:42 | |
+| POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:57 | |
+| POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:65 | |
 
 ⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
 登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
