@@ -972,7 +972,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Modify: `common/.../goods/dto/CategorySaveDTO.java`、`CategoryUpdateDTO.java`
 - Modify: `common/.../goods/vo/CategoryTreeVO.java`
 - Modify: `backend/goods-center/.../entity/GoodsCategory.java`
-- Modify: `backend/goods-center/.../service/impl/CategoryServiceImpl.java`（若 DTO→实体靠 `BeanUtils.copyProperties` 则无需改）
+- Modify: `backend/goods-center/.../service/impl/CategoryServiceImpl.java`（**必须改**：新增/编辑是逐字段 `set`，不是 `BeanUtils.copyProperties`，见 Step 5）
+- Modify: `frontend/admin/src/api/category.ts`（`CategoryPayload` 加 `icon`）
+- Modify: `frontend/admin/src/types/goods.ts`（`CategoryNode` 加 `icon`）
 - Modify: `frontend/admin/src/views/category/CategoryFormDialog.vue`
 
 **Interfaces:**
@@ -1013,16 +1015,29 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
     private String icon;
 ```
 
-- [ ] **Step 4: 确认树组装处会带出 icon**
+- [ ] **Step 4: 树组装处——已核实，无需改动**
 
-```bash
-cd /e/workspace/panoramic_mall
-grep -rn "CategoryTreeVO" backend/goods-center/src/main/java --include=*.java | grep -v /target/
+`CategoryServiceImpl#buildChildren`（约 :214-215）用的是 `BeanUtils.copyProperties(category, vo)`，`icon` 同名同型会自动带出，**不用补 `vo.setIcon(...)`**。（我核实过：树组装走 BeanUtils，而下面 Step 5 的新增/编辑走逐字段 `set`——两处机制不同，别一并按「BeanUtils 会自动带」处理。）
+
+- [ ] **Step 5: `CategoryServiceImpl` 的新增与编辑必须补 `setIcon`**
+
+⚠ **这是我核实后加的步，别跳过**：`saveCategory`（约 :49-53）与 `updateCategory`（约 :75-81）都是**逐字段 `set`**，不是 `BeanUtils.copyProperties`——不补这两行，admin 表单填了图标也会被**静默丢弃**（编译通过、类型检查通过、检查器通过，三者都看不见）。
+
+`saveCategory` 里 `category.setSort(...)` 之后加：
+
+```java
+        category.setIcon(dto.getIcon());
 ```
 
-若树上溯/组装用的是 `BeanUtils.copyProperties(entity, vo)`，`icon` 会自动带出，无需改动；若是逐字段 `set`，需补 `vo.setIcon(entity.getIcon())`。
+`updateCategory` 里 `category.setSort(...)` 之后加：
 
-- [ ] **Step 5: 编译**
+```java
+        category.setIcon(dto.getIcon());
+```
+
+并把 `updateCategory` 上那句注释「保持原有父级与层级，仅更新名称与排序」改为「保持原有父级与层级，更新名称、排序与图标」。
+
+- [ ] **Step 6: 编译**
 
 ```bash
 /e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl goods-center -am compile
@@ -1030,7 +1045,24 @@ grep -rn "CategoryTreeVO" backend/goods-center/src/main/java --include=*.java | 
 
 Expected: BUILD SUCCESS。
 
-- [ ] **Step 6: admin 分类表单加图标录入**
+- [ ] **Step 7: admin 前端类型加 `icon`（先做这步，否则 Step 8 的类型检查过不去）**
+
+`frontend/admin/src/api/category.ts`：
+
+- `CategoryPayload` 加 `/** 分类图标图片 URL（可空） */ icon?: string`
+- `CategoryUpdatePayload = Omit<CategoryPayload, 'parentId'>` **不用单独改**——`icon` 会被 Omit 自动带进编辑请求体
+- 顺手把两处过时的注释「与后端 `CategoryUpdateDTO` 同构（仅名称与排序）」/「更新分类（仅名称与排序）」改为「（名称、排序与图标）」
+
+`frontend/admin/src/types/goods.ts` 的 `CategoryNode` 加：
+
+```ts
+  /** 分类图标图片 URL（后端可空） */
+  icon: string | null
+```
+
+⚠ **可空列一律 `| null`**，别用可选字段糊（项目前端约定）。后端 `CategoryTreeVO.icon` 是 `String` 且列可为 NULL，故是 `string | null`。
+
+- [ ] **Step 8: admin 分类表单加图标录入**
 
 `CategoryFormDialog.vue`：
 - form 对象加 `icon: ''`
@@ -1042,10 +1074,10 @@ Expected: BUILD SUCCESS。
 </el-form-item>
 ```
 
-- 编辑回填与提交 payload 带上 `icon`
+- 编辑回填与提交 payload 带上 `icon`（回填时 `form.icon = node.icon ?? ''`，把后端的 null 收敛成表单的空串）
 - 若表单有 `rules`，加 `icon: [{ max: 255, message: '不能超过 255 个字符', trigger: 'blur' }]`
 
-- [ ] **Step 7: admin 类型检查**
+- [ ] **Step 9: admin 类型检查**
 
 ```bash
 cd /e/workspace/panoramic_mall/frontend/admin && npm run type-check
@@ -1053,7 +1085,7 @@ cd /e/workspace/panoramic_mall/frontend/admin && npm run type-check
 
 Expected: 无错误。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 10: 提交**
 
 ```bash
 git add backend/goods-center backend/common frontend/admin
