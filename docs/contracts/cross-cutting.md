@@ -106,9 +106,9 @@ layer: cross-cutting
 |---|---|
 | 契约 | `create_user` / `update_user` 值为 `UserType:UserId` 字符串（如 `admin:1` / `store:7`），列类型 **`VARCHAR(32)`**，实体字段类型 **`String`** |
 | 定义位置 | `common/.../vo/BaseEntity.java:12,20,32` |
-| 写值位置 | `common/.../config/MyMetaObjectHandler.java:43`（拼 `{userType}:{userId}`，取不到 userId 留空） |
+| 写值位置 | `common/.../config/MyMetaObjectHandler.java:52`（拼 `{userType}:{userId}`，取不到 userId 留空） |
 | 回退规则 | `common/.../util/UserContext.java:68-72` `getUserType()` 缺省回退 `admin` |
-| 业务列复用 | `store_goods_spu.lock_user`（`store/.../entity/StoreGoodsSpu.java:122`）沿用同一格式 |
+| 业务列复用 | `store_goods_spu.lock_user`（`store/.../entity/StoreGoodsSpu.java:126`）沿用同一格式 |
 | 破坏后果 | 改成 INT 或去掉类型前缀 → 多端身份空间（admin / store / user）无法消歧，同一 id 指向不同人 |
 | 核对方式 | 检查器第 5 项同类：`BaseEntity` 的 `createUser` 类型为 `String`（哨兵 `VARCHAR(32)`） |
 
@@ -243,7 +243,7 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | store 域 `POST /goods/cross-shop/spu/page`（与 `POST /goods/facets`）是**跨店通用**接口：**无数据权限锚点，限定条件由调用方自设**——admin BFF 与 mall-bff 共用同一对接口，域内不判身份、不做端别分流。⚠ 域返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` / `goodsSpuId` 等），**C 端输出前必须由端 BFF 逐字段裁剪** |
+| 契约 | store 域 `POST /goods/cross-shop/spu/page`（与 `POST /goods/facets`）是**跨店通用**接口：**无数据权限锚点，限定条件由调用方自设**——`pageStoreGoodsCrossShop` 由 admin BFF 与 mall-bff 共用、`crossShopFacets` 目前只有 mall-bff 消费；域内不判身份、不做端别分流。⚠ 域返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` / `goodsSpuId` 等），**C 端输出前必须由端 BFF 逐字段裁剪** |
 | 定义位置 | `common/.../store/api/StoreClient.java#pageStoreGoodsCrossShop` / `#crossShopFacets`；域实现 `store/controller/GoodsController.java` + `StoreGoodsSpuServiceImpl#crossShopPage` / `#facets` |
 | 消费位置 | admin BFF `ShopGoodsBffService`（管理端：不传 C 端三条件、走全量）；mall-bff `CatalogBffService#toMallItem`（C 端：**手工逐字段映射，刻意不用 `BeanUtils.copyProperties`**） |
 | 破坏后果 | 改成整对象拷贝 → 域 VO 日后加字段会**自动漏到 C 端**（锁定原因、锁定人一并外泄） |

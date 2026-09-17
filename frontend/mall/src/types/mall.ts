@@ -21,7 +21,7 @@ export type GoodsTag = '直降' | '包邮' | '次日达' | '新品'
 export interface Goods {
   id: string
   name: string
-  /** 占位图上的文字（页面不引外部图片，图位用 CSS 渐变占位） */
+  /** 占位图上的文字（⑥ 热门商品仍是 mock 无图数据，图位用 CSS 渐变占位） */
   imgLabel: string
   price: number
   /** 无原价时为 null —— 探「版式留白会不会塌」 */

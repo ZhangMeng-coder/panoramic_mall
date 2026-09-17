@@ -25,6 +25,8 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
 | `CurrentUserVO` / `LoginResultVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
 | `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
+| `CategoryTreeVO` | `backend/common/src/main/java/com/panoramic/common/goods/vo/` |
+| `PageResult` | `backend/common/src/main/java/com/panoramic/common/store/vo/` ⚠ 与 `common.goods.vo.PageResult` 同名不同包（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；本模块用的是 **store** 那个 |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
 ## 二、接口清单（8 条）

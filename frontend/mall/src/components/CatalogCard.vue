@@ -33,7 +33,7 @@ const imgSrc = computed(() => (imgFailed.value ? '' : (props.goods.mainImage ?? 
 
 <template>
   <li class="cat-card">
-    <!-- 主图：有图用图，空 / 加载失败回退 CSS 渐变占位（不引任何外部图片） -->
+    <!-- 主图：有图用图（后端 URL），空 / 加载失败回退 CSS 渐变占位 -->
     <div class="cat-card__thumb" :style="{ background: grad(hue, 60, 91, 82) }">
       <img
         v-if="imgSrc"

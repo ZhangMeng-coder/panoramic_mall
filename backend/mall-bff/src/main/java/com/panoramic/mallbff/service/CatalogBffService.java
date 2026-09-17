@@ -139,7 +139,7 @@ public class CatalogBffService {
         vo.setBrands(toFacetItems(raw.getBrands()));
         vo.setCategories(dto.getCategoryId() == null
                 ? rollupByTopCategory(tree, raw.getCategories())
-                : toFacetItems(raw.getCategories()));
+                : toCategoryFacetItems(tree, raw.getCategories()));
         return vo;
     }
 
@@ -398,6 +398,32 @@ public class CatalogBffService {
         vo.setBrandId(src.getBrandId());
         vo.setBrandName(src.getBrandName());
         return vo;
+    }
+
+    /**
+     * 分类页的分类 facet：scope 内的分类原样映射（<b>不做顶级上溯</b>），但名称优先取分类树的权威名。
+     * <p>⚠ 域返回的名称是写入时的<b>快照</b>（`store_goods_spu.category_name`），分类改名后会过期；
+     * 分类树是权威源。树降级为空表、或树中查不到该分类时，回退快照名。</p>
+     *
+     * @param tree  分类树（可为空表）
+     * @param items 域 facet 项（可空）
+     * @return C 端 facet 项（不可空）
+     */
+    private List<MallFacetItemVO> toCategoryFacetItems(List<CategoryTreeVO> tree, List<StoreGoodsFacetItemVO> items) {
+        List<MallFacetItemVO> result = toFacetItems(items);
+        if (tree == null || tree.isEmpty()) {
+            return result;
+        }
+        for (MallFacetItemVO item : result) {
+            if (item.getId() == null) {
+                continue;
+            }
+            CategoryTreeVO node = findNode(tree, item.getId());
+            if (node != null && node.getName() != null) {
+                item.setName(node.getName());
+            }
+        }
+        return result;
     }
 
     /**

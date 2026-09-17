@@ -312,9 +312,10 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
      */
     private void applySort(LambdaQueryWrapper<StoreGoodsSpu> wrapper, String sort) {
         if ("priceAsc".equals(sort)) {
-            wrapper.orderByAsc(StoreGoodsSpu::getMinPrice);
+            // ⚠ 必带 id 次级键：min_price 大量重复，无全序时 LIMIT/OFFSET 翻页会重复/漏行
+            wrapper.orderByAsc(StoreGoodsSpu::getMinPrice).orderByAsc(StoreGoodsSpu::getId);
         } else if ("priceDesc".equals(sort)) {
-            wrapper.orderByDesc(StoreGoodsSpu::getMinPrice);
+            wrapper.orderByDesc(StoreGoodsSpu::getMinPrice).orderByAsc(StoreGoodsSpu::getId);
         } else {
             wrapper.orderByDesc(StoreGoodsSpu::getId);
         }

@@ -1,7 +1,7 @@
 # ============================================================
 # Nacos 共享配置：MySQL 数据源 + MyBatis-Plus（data-id: datasource-mysql.yml, GROUP: DEFAULT_GROUP）
-# 由 admin / store-bff / goods-center / store 通过 spring.config.import 加载（gateway 无数据源，不加载）。
-# mybatis-plus 与 MySQL 强绑定：有数据源的服务(admin/goods-center)才有 mybatis-plus，
+# 由 admin / store-bff / mall-bff / goods-center / store 通过 spring.config.import 加载（gateway 无数据源，不加载）。
+# mybatis-plus 与 MySQL 强绑定：有数据源的服务（本文件的全部引用方）才有 mybatis-plus，
 # gateway 两者皆无，故二者并入同一 data-id，与数据源同生共死。
 # 连接信息可用环境变量覆盖（默认值即当前部署实例）；host 端口库名均可覆写。
 # ============================================================

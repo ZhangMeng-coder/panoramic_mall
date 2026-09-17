@@ -60,7 +60,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 |---|:--:|---|---|
 | **owner** | 10 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
 | **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
-| **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets | **不带 `storeId`、也不带任何端别约束**：域只按传入条件过滤，**限定条件全由调用方自设**。admin BFF 与 mall-bff 共用同一对接口，差别只在传入条件——C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`（只出已审核通过店铺的在售未锁定商品），管理端不传这三个约束、走全量 |
+| **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets | **不带 `storeId`、也不带任何端别约束**：域只按传入条件过滤，**限定条件全由调用方自设**。`pageStoreGoodsCrossShop` 由 admin BFF 与 mall-bff 共用、`crossShopFacets` 目前只有 mall-bff 消费，差别只在传入条件——C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`（只出已审核通过店铺的在售未锁定商品），管理端不传这三个约束、走全量 |
 
 > 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
 > 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
