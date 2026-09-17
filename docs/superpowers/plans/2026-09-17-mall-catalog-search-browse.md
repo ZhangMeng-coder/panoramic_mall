@@ -1598,6 +1598,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - 第三节 owner/platform 表：把该分页从 platform 行移出，单列一节说明「跨店通用（无锚点）——调用方自设限定条件；C 端固定传 shopStatus=2 + shelfStatus=1 + lockStatus=0」
 - 第五节类型表补新类型
 - 补一条形状说明：facets 的两维度互斥口径
+- ⚠ **刷新第二节接口表的「声明位置」列行号**（`StoreClient.java:NNN` / `GoodsController.java:NNN`）。Task 4 改名后该列已过期（行内写着 `:155`/`:120`，实际是 `:158`/`:124`），且 `platformStoreGoodsDetail` / `lockStoreGoods` / `unlockStoreGoods` 三行同样整体漂了 +4/+5。检查器解析这两列但**只校验 verb+path/类型/权限串**，所以门禁是绿的、行号错了不会报——正因如此才要人工刷一次。Task 5 会再往这两个文件加方法，故**在本步（所有后端改动做完后）一次刷到位**，别在 T4/T5 里零散改。
 
 - [ ] **Step 4: `mall-bff.md` 更新**
 
@@ -1616,6 +1617,8 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - [ ] **Step 6: `admin.md` 更新**
 
 「店铺商品管理」分页那行的入参描述：品牌由单选改多值（`brandIds`）。
+
+> ⚠ **本步多半已是空步**：Task 4 已同步 `admin.md:79`（出参类型名）与 `:162`（类型清单），且实测 `admin.md` 里已**不存在**任何 `brandId` 文本——按 CLAUDE.md「契约表不抄字段、字段定义去 common 的 DTO 看」，该行的入参类型是 `ShopGoodsPageQueryDTO`，品牌是否多值本就不在表里展开。核一下即可；找不到目标行**不要硬造**，在报告里说明「已无 brandId 文本，本步无操作」即可。
 
 - [ ] **Step 7: 根 `CLAUDE.md` 更新**
 
