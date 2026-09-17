@@ -22,7 +22,7 @@ spring:
 # 端 BFF → 业务域内部 Feign 的熔断参数（resilience4j，经 Feign circuitbreaker 生效）。
 # ⚠ Feign 熔断会把调用放到独立线程执行并套 TimeLimiter：默认 1s 对含远程 DB/Redis 往返的内部调用偏紧，
 #   上游偶发慢查询即被掐断并计入失败、累积打开熔断（表现为页面 500「…服务暂不可用」）。
-#   这里显式放宽并给出可接受的降级/恢复节奏；两个端 BFF 同源一份，与 common 的 Feign 规约配套。
+#   这里显式放宽并给出可接受的降级/恢复节奏；三个端 BFF 同源一份，与 common 的 Feign 规约配套。
 #
 # ⚠ ignore-exceptions：业务 4xx 不计入熔断失败率（2026-09-10 修正）。
 #   域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 common 的
