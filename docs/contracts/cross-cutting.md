@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 16 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 19 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -134,7 +134,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 公网只路由到端 BFF；`panoramic.gateway.bff-services` 是**唯一放行名单**，名单外一律 403 |
-| 定义位置 | `gateway/src/main/resources/application.yml:31-50`（3 条路由）、`:59`（`bff-services = admin,store-bff,mall-bff`） |
+| 定义位置 | `gateway/src/main/resources/application.yml:31-50`（3 条路由）、`:61`（`bff-services = admin,store-bff,mall-bff`） |
 | 强制位置 | `gateway/filter/BffRouteGuardFilter.java`：`getOrder() = -200`，**先于鉴权** `AuthGlobalFilter`（-100）；**空配置 = 拒绝一切**（默认拒绝）；未命中路由直接放行；仅 `scheme=lb` 且在名单内放行 |
 | 消费位置 | 全部公网流量 |
 | 破坏后果 | 新端 BFF 上线忘了进白名单 → 该端**全部 403**（会炸得明显）；线序调整 → 未鉴权先过守卫 |
@@ -145,8 +145,8 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 免鉴权路径需**同时**登记在网关侧与各服务本地侧；**网关侧带前缀、服务侧不带** |
-| 定义位置 | 网关 `gateway/application.yml:61`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code`） |
-| ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401 |
+| 定义位置 | 网关 `gateway/application.yml:63`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/**,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/**`） |
+| ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401。**公开浏览类前缀**（C 端 `/catalog/**`）同理，同样**两处都要登记**：漏一处要么前台游客看不了商品（被 401 拦掉），要么本应鉴权的接口裸露 |
 | 消费位置 | 网关 `AuthGlobalFilter` 与服务侧 `AuthTokenFilter` |
 | 破坏后果 | 只改一处 → 登录接口被拦（登不进去）或本应鉴权的接口裸露 |
 | 核对方式 | 检查器 gateway 专项：两侧白名单去前缀后应互为子集关系 |
@@ -172,7 +172,7 @@ layer: cross-cutting
 
 > 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
 >
-> ⚠ mall-bff **一期没有任何 Feign 客户端**，`feign-circuitbreaker.yml` 属空转——仍按上面的规律加载：配置是惰性的、不产生副作用，且二期接首页聚合调 goods-center 时无需再改加载矩阵。
+> ⚠ mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），其 `feign-circuitbreaker.yml` **不再是空转**——三端 BFF 都已在调域，「端 BFF 一律加载四个」的规律不变。
 
 ### 13. 熔断契约：4xx 不计失败率，5xx 计入
 
@@ -181,7 +181,7 @@ layer: cross-cutting
 | 契约 | 业务 4xx（`ServiceException`）**不计**熔断失败率、原样透传给页面；5xx / 连接 / 熔断**计入**并降级为各端「…暂不可用」 |
 | 定义位置 | Nacos `feign-circuitbreaker.yml:43-44` 的 `resilience4j.circuitbreaker.configs.default.ignore-exceptions` = `com.panoramic.common.exception.ServiceException` |
 | 实现位置 | `common/.../feign/InternalApiErrorDecoder.java` —— **按 HTTP 状态码分野**：4xx → `ServiceException`；5xx → 回落 `Default()` 产出 `FeignException` |
-| 消费位置 | admin、store-bff（引 resilience4j 的两端）；降级包装走 `common/.../feign/BffFeignCall.java`。mall-bff 一期无 Feign 客户端、不触发本机制，但同样加载该配置 |
+| 消费位置 | admin、store-bff、**mall-bff**（三端均已调域，均引 resilience4j）；降级包装走 `common/.../feign/BffFeignCall.java` |
 | 破坏后果 | 5xx 也还原成 `ServiceException` → 熔断**永远打不开**，下游故障直接拖垮调用方；反之若 4xx 计入 → 店主连续几次操作失误就把熔断打开，后续**正常**请求被降级成 500 |
 | 核对方式 | 哨兵 `ignore-exceptions`、`ServiceException`、`InternalApiErrorDecoder` |
 
@@ -214,6 +214,40 @@ layer: cross-cutting
 | 消费位置 | RBAC 菜单渲染、按钮显隐、后端授权判定 |
 | 破坏后果 | 权限串对不上 → 菜单点不开 / 按钮不显示 / 403；路由差一字 → 侧栏菜单点不开 |
 | 核对方式 | 检查器第 2、3、4 项 |
+
+---
+
+## 四、C 端商品浏览与跨店查询
+
+### 17. C 端商品展示口径固定在端 BFF，不在域
+
+| | |
+|---|---|
+| 契约 | mall-bff 调 store 域商品查询（分页 + 筛选聚合）时**固定传** `shopStatus=2`（已审核通过店铺）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未被平台锁定）；store 域的「跨店通用」接口**只按传入条件过滤，不含任何 C 端隐含约束** |
+| 定义位置 | `mall-bff/service/CatalogBffService.java`（`SHOP_STATUS_APPROVED` / `SHELF_ON` / `LOCK_OFF` 三个常量，`goods()` 与 `facets()` 两处都设） |
+| 消费位置 | C 端 `POST /catalog/goods` 与 `POST /catalog/facets`——两处必须同一套口径，否则筛选面板的命中数与列表对不上 |
+| 破坏后果 | 漏传任一条件 → **未过审店铺的商品 / 平台锁定商品漏到公网前台**（静默，列表照常渲染） |
+| 核对方式 | **人工核对**（静态哨兵无法表达"必须传某值"这一语义）。新增 C 端商品查询时必须保持这三个条件 |
+
+### 18. 筛选维度聚合「排除自身维度」
+
+| | |
+|---|---|
+| 契约 | facets 的分类维度**不受已选分类影响**、品牌维度**不受已选品牌影响**：同一维度内的筛选条件不得施加到该维度自身的聚合上 |
+| 定义位置 | `store/service/impl/StoreGoodsSpuServiceImpl.java#facetBy`（`isCategory` 分支决定施加 `filterBrandIds` 还是 `filterCategoryIds`） |
+| 消费位置 | C 端筛选面板（`POST /catalog/facets`） |
+| 破坏后果 | 施加了自身维度 → 选中某个分类后该维度的其他选项 count 归零 / 消失，**用户无法再切换或取消筛选** |
+| 核对方式 | **人工核对**（无法静态表达"某条件下不得出现某筛选"） |
+
+### 19. 跨店分页通用化：admin BFF 与 mall-bff 共用域接口
+
+| | |
+|---|---|
+| 契约 | store 域 `POST /goods/cross-shop/spu/page`（与 `POST /goods/facets`）是**跨店通用**接口：**无数据权限锚点，限定条件由调用方自设**——admin BFF 与 mall-bff 共用同一对接口，域内不判身份、不做端别分流。⚠ 域返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` / `goodsSpuId` 等），**C 端输出前必须由端 BFF 逐字段裁剪** |
+| 定义位置 | `common/.../store/api/StoreClient.java#pageStoreGoodsCrossShop` / `#crossShopFacets`；域实现 `store/controller/GoodsController.java` + `StoreGoodsSpuServiceImpl#crossShopPage` / `#facets` |
+| 消费位置 | admin BFF `ShopGoodsBffService`（管理端：不传 C 端三条件、走全量）；mall-bff `CatalogBffService#toMallItem`（C 端：**手工逐字段映射，刻意不用 `BeanUtils.copyProperties`**） |
+| 破坏后果 | 改成整对象拷贝 → 域 VO 日后加字段会**自动漏到 C 端**（锁定原因、锁定人一并外泄） |
+| 核对方式 | **人工核对**（字段级裁剪无法用静态哨兵表达） |
 
 ---
 

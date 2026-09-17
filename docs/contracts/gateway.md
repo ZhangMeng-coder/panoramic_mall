@@ -29,7 +29,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 | 项 | 值 | 位置 |
 |---|---|---|
-| 配置键 | `panoramic.gateway.bff-services` | `application.yml:59` |
+| 配置键 | `panoramic.gateway.bff-services` | `application.yml:61` |
 | 当前值 | `admin,store-bff,mall-bff`（逗号分隔，**无空格**） | 同上 |
 | 强制者 | `BffRouteGuardFilter` | `gateway/filter/BffRouteGuardFilter.java` |
 
@@ -49,7 +49,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 ### 网关侧
 
-`gateway/src/main/resources/application.yml:61` → `panoramic.auth.whitelist-paths`：
+`gateway/src/main/resources/application.yml:63` → `panoramic.auth.whitelist-paths`：
 
 | 路径 | 说明 |
 |---|---|

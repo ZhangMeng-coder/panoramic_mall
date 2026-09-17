@@ -30,8 +30,10 @@
   - **缺头即不填充、不拦截**：域内身份过滤器（`GoodsUserIdentityFilter` / `StoreUserIdentityFilter`）在缺 `X-User-Id` 时直接放行（审计留空），**不得回 401**——那等于在域内做鉴权。
 - **store 域的数据权限（D5，已按新边界改写）**：store 采用 **store_id 通用数据权限适配**：域内不持 store_user，owner 侧方法带 `store_id` 参数、只作用于「id==store_id 的店」（**账号店同 ID**，D4，store_shop 主键==店主账号 id、无 owner_user_id 列，店主归属收敛在 store-bff）；platform 侧方法不带 store_id、全量。**owner/platform 的分流由「端 BFF 调哪一侧接口」决定，不由 `X-User-Type` 在域内判断**（`assertOwner`/`requirePlatformAdmin` 之类的域内断言已删除）；store-bff 从登录态取 store_id 传给域，admin 走 platform 侧并由 `@PreAuthorize` 把关。`audit_by` 直取 X-User-Id 仅记录，不与平台账号联查（D6）。新增 store 域方法时按「作用对象表是否带 store_id 列 + 调用意图」决定套 owner(限 store_id)/platform(全量) 哪一侧。
   - **store 域现有 owner 侧能力**：店铺 `store_shop`（mine/save/submit）与店主在售商品 `store_goods_spu`/`store_goods_sku`（`/internal/store/goods/**`，带 `storeId` 且按该列过滤；SKU 经 `spuId` 归属，不再单带 store_id）。**「店铺已审核通过」的门禁不在域内**（域不查店铺状态），由 store-bff 调域前判定并回 `403`。
-  - **store 域现有 platform 侧能力（2026-09-12 新增）**：`/internal/store/goods/platform/spu/{page,{id}}` 跨店全量分页与详情（**不带 store_id**，`categoryIds` 多值过滤、回填 `storeName`/`skuCount`）与 `/platform/spu/{id}/lock|unlock`（平台锁定/解锁），供 admin BFF 的「店铺商品管理」编排，权限由 admin 的 `@PreAuthorize store:goods:list|lock` 把关；另有 `/internal/store/shops/options`（店铺下拉）。**平台分页走 `POST + @RequestBody`**（`categoryIds` 是集合，规避 Feign `@SpringQueryMap` 的集合序列化口径问题）。
-  - **上下架是推导量、由域内单一写者维护**：`StoreGoodsSpuServiceImpl#refreshShelfStatus` 是 `SPU上架 ⟺ ≥1 SKU 上架` 的唯一写者（上架任一 SKU → SPU 上架；SKU 全下架 → SPU 下架），前端不得直接传 SPU 上下架；已上架 SKU 锁定其规格/价格（须先下架才能改/删），存在上架 SKU 时 SPU 规格配置只读、SPU 不可删除。
+  - **store 域现有 platform 侧能力（2026-09-12 新增）**：`/internal/store/goods/platform/spu/{id}`（跨店全量详情，**不带 store_id**，回填 `storeName`）与 `/platform/spu/{id}/lock|unlock`（平台锁定/解锁），供 admin BFF 的「店铺商品管理」编排，权限由 admin 的 `@PreAuthorize store:goods:list|lock` 把关；另有 `/internal/store/shops/options`（店铺下拉）。
+  - **store 域现有「跨店通用（无锚点）」侧（2026-09-17 新增）**：`POST /internal/store/goods/cross-shop/spu/page`（原 `platform/spu/page` 改名，`categoryIds`/`brandIds` 多值、回填 `storeName`/`skuCount`）与 `POST /internal/store/goods/facets`（筛选聚合：分类 + 品牌两维度）。**无数据权限锚点，限定条件全由调用方自设**——admin BFF 与 mall-bff **共用同一对接口**，差别只在传入条件（C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`，口径固定在 mall-bff；域侧不含 C 端隐含约束）；两者的 VO 是**管理端超集**，**C 端输出前必须由 mall-bff 逐字段裁剪**。**两者都走 `POST + @RequestBody`**（入参含集合，规避 Feign `@SpringQueryMap` 的集合序列化口径问题）。
+  - **owner 侧为什么不动**：owner 侧是「本店」语义（带 `store_id` 锚点、单值分类、`GET + @SpringQueryMap`），与「任意店 + 多值分类/品牌 + 排序 + 店铺审核状态筛选」的跨店需求不同源；把 owner 侧也改成跨店形态会引入无用的 `storeId` 分支与 C 端字段，故只通用化 platform 侧那一条、owner 侧保持原样。
+  - **推导量由域内单一入口维护**：`StoreGoodsSpuServiceImpl#refreshDerived` 是**推导量统一刷新入口**，内含两个不变量写者——`refreshShelfStatus`（`SPU上架 ⟺ ≥1 SKU 上架`）与 `refreshMinPrice`（`min_price = 名下上架未删 SKU 的最低价`）。前端不得直接传 SPU 上下架；已上架 SKU 锁定其规格/价格（须先下架才能改/删），存在上架 SKU 时 SPU 规格配置只读、SPU 不可删除。⚠ `refreshMinPrice` 必须**独立**比较（不得复用上下架的状态早退：下架高价 SKU 后上下架不变、最低价却变了），且 `min_price` 可被清成 null，回写只能走 `lambdaUpdate().set(...)`——`updateById` 跳过 null 列，会把「SKU 全下架 → 清空 min_price」静默丢掉。
   - **中台版本比对属编排职责（store-bff 做）**：域只落库/回读 `center_version` 与商品字段，不调中台、不判版本；「更新提示 + 同步覆盖」（覆盖与否由店主决定、不阻断保存）在 store-bff 详情编排里组装。
   - **平台锁定（R12，2026-09-12）**：`store_goods_spu` 的 `lock_status/lock_reason/lock_user/lock_time` 四列即锁定态（不建独立锁定表）。**锁定 = 名下已上架 SKU 级联下架 → 由 `refreshShelfStatus` 推导 SPU 下架**（不变量仍是唯一写者，绝不直接改 `shelf_status`）；**锁定期 owner 侧整行只读**（编辑/删除/改 SKU/上下架一律拒绝，`assertNotLocked` 域内强制，不只靠前端禁用按钮）；**解锁只清锁定字段、不恢复上架**（店主手动重上）；锁定写入用条件更新（`where lock_status=0`）防并发重复锁定，解锁必须 `lambdaUpdate().set(col, null)` 显式清（`updateById` 跳过 null）。`lock_user` 是**业务列**（D7，可在 service 内显式写入），存审计同格式 `UserType:UserId`（如 `admin:1`）；**商户端不展示锁定人**，仅管理端展示。
   - **跨域「分类全路径」由端 BFF 读时解析（2026-09-12）**：域只存「分类 id 引用 + 名称快照」，**不持分类表、不解析路径**；端 BFF 读时按页内去重后的 `categoryId` 批量调 goods-center `/categories/paths` 补 `categoryPath`（一次调用，非 N+1），**解析失败只告警、路径留空**，前端回退快照名（展示增强不得拖垮主流程）。分类**子树匹配**同理：前端只传单个 `categoryId`，由端 BFF 用分类树展开成「该节点 + 全部后代」的 `categoryIds` 再传域（域只做 `IN`）。
@@ -48,7 +50,7 @@
 
 ## 对外契约清单（docs/contracts）
 
-**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 16 条），外加基础设施（`gateway.md`）。
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 19 条），外加基础设施（`gateway.md`）。
 
 ⚠ **检查器的端 BFF 名单不硬编码**：`drift-check.mjs` 从网关 `bff-services` 的值推导服务名单、从路由（`uri: lb://<svc>` ↔ `Path=/<前缀>/**`）推导前缀，进而逐个核对「两侧白名单互为子集」；某个端 BFF 推不出唯一前缀即**直接失败**（不降级为警告）。新增端 BFF 时不要回头去改检查器的名单。
 
@@ -77,15 +79,16 @@
 
 ## mall 前台（用户端）视觉与结构约定
 
-`frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175）：**账号功能已接入端 BFF `mall-bff`**（取码 / 注册 / 登录 / 退出 / 当前顾客，契约见 `docs/contracts/mall-bff.md`），**首页六区块的数据仍是静态写死的**（在 `src/mock/`），首页数据聚合属二期。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
+`frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175）：**账号功能已接入端 BFF `mall-bff`**（取码 / 注册 / 登录 / 退出 / 当前顾客），**搜索区、分类展示区与商品列表页已接真实数据**（分类树 / 商品分页 / 筛选聚合三个 catalog 接口，契约见 `docs/contracts/mall-bff.md`），**首页「热门商品列表」区块仍是静态写死的**（在 `src/mock/`）。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
 
 - **色板唯一来源**：只消费 `frontend/mall/src/styles/tokens.css` 的令牌，**禁止硬编码**色值 / 圆角 / 阴影；换肤只改这一个文件。
 - **风格不混用**：前台是 **C 端促销风（橙红主色）**，与 admin / store 的靛蓝后台令牌**刻意不同源**；不要把后台那套 `tokens.css` 引进来，也不要把橙色板反向引回后台。**前台是单独一套风格，不做样式变换**——`element-plus` 虽在依赖里，但只作后续页面（表单 / 弹窗 / 分页）的备用能力：**不注册 EP、不引 EP 样式、页面里不出现 EP 组件**；将来某页要用，在那一页按需引入并把 EP 变量重映射到前台令牌，不全局引 `element-plus/dist/index.css`。
 - **结构基准**：首页六区块顺序即基准——顶部用户条 → 万能搜索长框 → 全分类展示 → 大型滚动广告框 → 用户信息展示框 → 热门商品列表；新增页面的顶栏 / 页脚沿用同一套（`src/styles/mall.css` 的 `.topbar` / `.foot`）。
 - **只做宽屏**：容器固定 1280px，**不写媒体查询**，不做手机 / 窄屏适配。
+- **列表页形态（搜索页 / 分类商品页）**：沿用首页骨架——固定 1280px 容器、商品网格 **7 列**、**每页 49 条**（7×7 整行；后端 `BasePageVO.pageSize` 有 `@Max(100)`，不得写更大的「一页塞满」值）。样式在 `src/styles/catalog.css`，同样只消费 `tokens.css` 令牌。
 - **不做暗色模式**（C 端商城不做，与 admin / store 的 `.dark` 两回事）。
 - **未登录态固定形态**：顶栏左侧「请登录 / 免费注册」文字 link，右侧「购物车 / 我的订单」。⚠ 前两个 link **已接真实路由**（`/login`、`/register`），不要改回 `href="#"`；右侧「购物车 / 我的订单」**仍是死链**（后端没有对应接口）。
-- **不引外部图片与字体**：占位或无图场景用 **CSS 渐变占位**，不接外链图床 / CDN / 外部字体。
+- **图片与字体**：**数据驱动**的图片（分类图标等）可由后端 URL 提供、前端照常渲染；**前端源码内**不写死外链、不引外链字体、不接外链图床 / CDN；占位或无图场景用 **CSS 渐变占位**。
 - **基准先行**：要新增区块或调整风格时，**先在 `frontend/mall` 工程里改好、定了，再往外铺**；该工程始终是唯一风格源头，不各页各写一套。
 
 ⚠ **内容范围**（10 分类铺满一行、商品卡 5 列 × 2 行、价格三层字号、角标 / 原价 / 销量位）与 `src/mock/*.ts` 里逐条探边界的假数据（各文件顶部的 `[探]` 注释），是刻意的基准，不要随手改小。

@@ -6,8 +6,8 @@
 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff）：只持**顾客账号 `mall_user`**，
 签发**第三套身份** `type=user`，Redis 登录态键 `panoramic:login:user:{userId}`。
 
-> ⚠ **一期范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me）——**不调任何业务域**。
-> 首页数据聚合（商品 / 分类）是**二期**，届时才引入 Feign 客户端。
+> ⚠ **服务范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合）。
+> 已接 **goods-center**（分类树）与 **store**（商品分页 / 筛选聚合）两个业务域；首页「**热门商品列表**」区块仍是**静态 mock**。
 
 ## 一、架构位置
 
@@ -16,9 +16,11 @@
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调 | 前台前端，经网关 `/mall/**`（`StripPrefix=1`） | HTTP，返回 `RespData` |
-| 本层调谁 | **一期：无**（`@EnableFeignClients` 未启用，`com.panoramic.common.mall` 包不存在） | — |
-| 二期计划 | goods-center(8081) 的商品 / 分类，做首页聚合 | Feign + 熔断降级 |
+| 本层调谁 | **goods-center**（分类树，8081）与 **store**（商品分页 / 筛选聚合，8083） | Feign + 熔断降级（`BffFeignCall`） |
 | 与谁**互不调用** | admin / store-bff | 三端身份空间彼此隔离 |
+
+`@EnableFeignClients` 扫两个包：`com.panoramic.common.goods`（`GoodsCenterClient`）与 `com.panoramic.common.store`（`StoreClient`），
+编排集中在 `service/CatalogBffService`；Feign 出参 DTO 与域侧**同源于 `common`**，本模块不复制一份。
 
 本层依赖 `common-auth`（`JwtService` / `LoginUserCacheService` / `SecurityConfig` / `AuthTokenFilter`）做鉴权——业务域只依赖 `common`，结构上拿不到这条链。
 
@@ -27,10 +29,11 @@
 | 内容 | 归属 |
 |---|---|
 | 顾客账号 `mall_user`（取码/注册/登录/登出/me，JWT+Redis，`type=user`，**无 RBAC**） | **mall-bff（本模块）** |
-| 商品 / 分类 / 品牌 | goods-center（**一期未接入**） |
+| 分类树 | goods-center（**已接入**，`/categories/tree`） |
+| 在售商品分页 / 筛选聚合 | store 域（**已接入**，`/goods/cross-shop/spu/page` + `/goods/facets`，跨店通用；C 端展示口径由本层固定传参） |
 | 购物车 / 订单 / 评价 | 未来的 `trade-center`（不存在） |
 
-> 📋 对外接口清单（5 条）见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
+> 📋 对外接口清单（8 条）见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记
@@ -70,14 +73,16 @@
 ### 3. 边界（本层不做什么）
 
 - **不持业务域实体、不落域表**：本层只有 `mall_user` 一张表
-- **一期不调任何域**：没有 Feign 客户端、没有编排、没有降级逻辑
+- **只做编排、不持域数据**：调域走 `common` 的 `StoreClient` / `GoodsCenterClient`，编排集中在 `CatalogBffService`；
+  降级统一走 `common` 的 `BffFeignCall`（下游故障 → 「…暂不可用」，业务 4xx 原样透传给页面）；
+  分类树对分页 / facets 只是**增强**（子树展开、筛选名解析），拿不到就降级为「无树」，不拖垮主流程
 - **不做身份类型判断**：`type` claim 由签发端携带、全链路透传；网关只验签 + 查登录态
 
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供；连接其他库请注入环境变量 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`（账号密码勿写入代码或提交到仓库）
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
-  - ⚠ 一期**没有 Feign 客户端**，`feign-circuitbreaker.yml` 属**空转**——仍按「端 BFF 一律加载四个」的规律引入：配置是惰性的、不产生副作用，二期接域调用时无需再改
+  - ⚠ 本层**已接域调用**（goods-center + store），`feign-circuitbreaker.yml` **不再是空转**——「端 BFF 一律加载四个」的规律不变
 - **`config/JacksonConfig` 不是可选项**：Boot 4 的 web starter 不再自动注册 `ObjectMapper`，而 `LoginUserCacheService` 要注入一个用于读写 Redis 登录快照——缺此 bean 服务直接起不来
 - 本地白名单 `panoramic.auth.whitelist-paths: /auth/login,/auth/register,/auth/sms-code`（覆盖 `SecurityConfig` 只含 `/auth/login` 的默认值）
 - 模拟短信固定码 `panoramic.mall.sms-fixed-code: 888888`

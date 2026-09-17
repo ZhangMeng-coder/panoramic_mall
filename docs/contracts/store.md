@@ -10,10 +10,10 @@ typeDirs: backend/common/src/main/java
 # 店铺域（store）内部契约 · 第 ② 层
 
 > 店铺域：店铺 `store_shop` + 审核状态机 + 店主在售商品 `store_goods_spu` / `store_goods_sku`。
-> **不暴露公网路由**，只被 store-bff（owner 侧）与 admin BFF / mall-bff（platform 侧）经内部 Feign 调用。
+> **不暴露公网路由**，只被 store-bff（owner 侧）、admin BFF（platform 侧）与 mall-bff（跨店通用侧）经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 19 个接口**（owner 10 + platform 9）。
+**共 19 个接口**（owner 10 + platform 7 + 跨店通用 2）。
 
 ## 一、前缀怎么拼上的（⚠ 容易踩）
 
@@ -23,7 +23,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | Controller | 类级 `@RequestMapping` | 行号 |
 |---|---|---|
 | `ShopController` | `/internal/store/shops` | :31 |
-| `GoodsController` | `/internal/store/goods` | :40 |
+| `GoodsController` | `/internal/store/goods` | :44 |
 
 下表「路径」列是**去掉 `/internal/store` 前缀后**的部分。改前缀要**同时**改 Feign 客户端与两个 Controller。
 
@@ -31,44 +31,50 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(common) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| mineShop | GET | /shops/mine | Long | ShopVO | StoreClient.java:57 | ShopController.java:41 | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff) |  |
-| saveShop | POST | /shops/{storeId}/save | Long, ShopSaveDTO | void | StoreClient.java:63 | ShopController.java:49 | StoreShopBffService(store-bff) |  |
-| submitShop | POST | /shops/{storeId}/submit | Long, ShopSaveDTO | void | StoreClient.java:69 | ShopController.java:57 | StoreShopBffService(store-bff) |  |
-| pageShops | GET | /shops/page | ShopPageQueryDTO | PageResult<ShopVO> | StoreClient.java:77 | ShopController.java:65 | StoreShopBffService(admin) |  |
-| shopDetail | GET | /shops/{id} | Long | ShopVO | StoreClient.java:83 | ShopController.java:73 | StoreShopBffService(admin) |  |
-| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | void | StoreClient.java:89 | ShopController.java:81 | StoreShopBffService(admin) |  |
-| pageStoreGoods | GET | /goods/spu/page | Long, StoreGoodsSpuPageQueryDTO | PageResult<StoreGoodsSpuPageItemVO> | StoreClient.java:101 | GoodsController.java:50 | StoreGoodsBffService(store-bff) |  |
-| storeGoodsDetail | GET | /goods/spu/{id} | Long, Long | StoreGoodsSpuDetailVO | StoreClient.java:108 | GoodsController.java:59 | StoreGoodsBffService(store-bff) |  |
-| saveStoreGoods | POST | /goods/spu | Long, StoreGoodsSpuSaveDTO | Long | StoreClient.java:114 | GoodsController.java:68 | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoods | PUT | /goods/spu/{id} | Long, Long, StoreGoodsSpuUpdateDTO | void | StoreClient.java:120 | GoodsController.java:77 | StoreGoodsBffService(store-bff) |  |
-| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | StoreClient.java:127 | GoodsController.java:87 | StoreGoodsBffService(store-bff) |  |
-| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, Long, StoreGoodsSkuReplaceDTO | void | StoreClient.java:133 | GoodsController.java:96 | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, Long, StoreGoodsSkuShelfDTO | void | StoreClient.java:140 | GoodsController.java:106 | StoreGoodsBffService(store-bff) |  |
-| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:155 | GoodsController.java:120 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:161 | GoodsController.java:129 | ShopGoodsBffService(admin) |  |
-| lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:167 | GoodsController.java:138 | ShopGoodsBffService(admin) |  |
-| unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:173 | GoodsController.java:146 | ShopGoodsBffService(admin) |  |
-| listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:180 | ShopController.java:90 | ShopGoodsBffService(admin) |  |
+| mineShop | GET | /shops/mine | Long | ShopVO | StoreClient.java:58 | ShopController.java:40 | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff) |  |
+| saveShop | POST | /shops/{storeId}/save | Long, ShopSaveDTO | void | StoreClient.java:64 | ShopController.java:48 | StoreShopBffService(store-bff) |  |
+| submitShop | POST | /shops/{storeId}/submit | Long, ShopSaveDTO | void | StoreClient.java:70 | ShopController.java:56 | StoreShopBffService(store-bff) |  |
+| pageShops | GET | /shops/page | ShopPageQueryDTO | PageResult<ShopVO> | StoreClient.java:78 | ShopController.java:64 | StoreShopBffService(admin) |  |
+| shopDetail | GET | /shops/{id} | Long | ShopVO | StoreClient.java:84 | ShopController.java:72 | StoreShopBffService(admin) |  |
+| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | void | StoreClient.java:90 | ShopController.java:80 | StoreShopBffService(admin) |  |
+| pageStoreGoods | GET | /goods/spu/page | Long, StoreGoodsSpuPageQueryDTO | PageResult<StoreGoodsSpuPageItemVO> | StoreClient.java:102 | GoodsController.java:53 | StoreGoodsBffService(store-bff) |  |
+| storeGoodsDetail | GET | /goods/spu/{id} | Long, Long | StoreGoodsSpuDetailVO | StoreClient.java:109 | GoodsController.java:62 | StoreGoodsBffService(store-bff) |  |
+| saveStoreGoods | POST | /goods/spu | Long, StoreGoodsSpuSaveDTO | Long | StoreClient.java:115 | GoodsController.java:71 | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoods | PUT | /goods/spu/{id} | Long, Long, StoreGoodsSpuUpdateDTO | void | StoreClient.java:121 | GoodsController.java:80 | StoreGoodsBffService(store-bff) |  |
+| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | StoreClient.java:128 | GoodsController.java:90 | StoreGoodsBffService(store-bff) |  |
+| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, Long, StoreGoodsSkuReplaceDTO | void | StoreClient.java:134 | GoodsController.java:99 | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, Long, StoreGoodsSkuShelfDTO | void | StoreClient.java:141 | GoodsController.java:109 | StoreGoodsBffService(store-bff) |  |
+| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:160 | GoodsController.java:126 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:174 | GoodsController.java:144 | ShopGoodsBffService(admin) |  |
+| lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:180 | GoodsController.java:153 | ShopGoodsBffService(admin) |  |
+| unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:186 | GoodsController.java:161 | ShopGoodsBffService(admin) |  |
+| listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:193 | ShopController.java:89 | ShopGoodsBffService(admin) |  |
 | crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | StoreClient.java:168 | GoodsController.java:136 | CatalogBffService(mall-bff) |  |
 
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`storeId`**（owner 侧数据权限锚点），后面的是 `id` / `spuId` / `skuId`。
 > 例：`storeGoodsDetail` 的 `Long, Long` = `storeId, id`；`updateStoreGoodsSkuShelf` 的 `Long, Long, Long, DTO` = `storeId, spuId, skuId, dto`。
 
-## 三、owner / platform 两侧（**分流由"调哪一侧"决定，不由域内判断**）
+## 三、owner / platform / 跨店通用 三侧（**分流由"调哪一侧"决定，不由域内判断**）
 
 | 侧 | 条数 | 方法 | 特征 |
 |---|:--:|---|---|
 | **owner** | 10 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
-| **platform** | 9 | pageShops, shopDetail, auditShop, pageStoreGoodsCrossShop, crossShopFacets, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | 分页 `pageStoreGoodsCrossShop` 与筛选聚合 `crossShopFacets` 已**跨店通用**（无锚点，调用方自设限定条件）：admin BFF 与 mall-bff 共用，差别只在传入条件（C 端固定 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）；其余**不带 `storeId`**，全量，调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
+| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
+| **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets | **不带 `storeId`、也不带任何端别约束**：域只按传入条件过滤，**限定条件全由调用方自设**。admin BFF 与 mall-bff 共用同一对接口，差别只在传入条件——C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`（只出已审核通过店铺的在售未锁定商品），管理端不传这三个约束、走全量 |
 
 > 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
 > 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
+> ⚠ 跨店通用侧返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` 等），
+> **C 端输出前必须由端 BFF 裁剪**（见 [cross-cutting.md](./cross-cutting.md) 第 19 条）。
 
 ## 四、形状规则
 
 - ✅ **不包 `RespData`**；✅ **无 `@PreAuthorize`**；错误走 `{code,msg}` + 真实 HTTP 状态。
-- ⚠ **分页走 `POST + @RequestBody`**（`pageStoreGoodsCrossShop`），而非 owner 侧的 `GET + @SpringQueryMap` ——
-  因为要传 `List<Long> categoryIds` / `brandIds`，规避 Feign `@SpringQueryMap` 对集合字段序列化口径不确定的风险。
+- ⚠ **跨店分页与筛选聚合走 `POST + @RequestBody`**（`pageStoreGoodsCrossShop` / `crossShopFacets`），而非 owner 侧的 `GET + @SpringQueryMap` ——
+  两者的入参都含集合（`List<Long> categoryIds` / `brandIds`），走 query 会在客户端被序列化成 `xxx[]=1` 形状；
+  `POST + body` 规避 Feign `@SpringQueryMap` 对集合字段序列化口径不确定的风险。
+- ⚠ **facets 两个维度互斥地排除自身**：`facets` 返回分类与品牌两个维度，分类维度不受**已选分类**影响、
+  品牌维度不受**已选品牌**影响（`facetBy` 只在另一维度施加筛选），故选中某项后同维度选项不会消失。
 - ⚠ 缺失行**不抛异常**：`mine` / 详情类接口查不到时的行为见模块 README 的边界说明。
 
 ## 五、类型所在包（全部在 `common`，两端引用同一份）
@@ -91,6 +97,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 ## 七、业务规则去哪看
 
-锁定语义（级联下架 / 锁定期整行只读 / 解锁不自动恢复上架）、上下架推导规则（`refreshShelfStatus` 唯一写者）、
+锁定语义（级联下架 / 锁定期整行只读 / 解锁不自动恢复上架）、推导量不变量（`refreshDerived` 是推导量统一刷新入口，
+内含 `refreshShelfStatus` 与 `refreshMinPrice` 两个不变量写者）、
 store_id 数据权限（D4/D5/D6）等**业务规则**见 [`backend/store/README.md`](../../backend/store/README.md)。
 分类全路径**不在域内解析**（域只存快照），由端 BFF 读时调 goods-center `/categories/paths` 补全 —— 见 [cross-cutting.md](./cross-cutting.md) 与 `store-bff.md`。

@@ -12,6 +12,7 @@
 |---|---|---|
 | 被谁调 | store-bff（**owner 侧**：我的店铺、店铺商品） | `common` 的 `StoreClient`，带熔断降级 |
 | 被谁调 | admin BFF（**platform 侧**：店铺管理审核、店铺商品跨店管理与锁定） | 同上 |
+| 被谁调 | mall-bff（**跨店通用侧**：C 端商品分页与筛选聚合，`/goods/cross-shop/spu/page` + `/goods/facets`） | 同上 |
 | 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |
 
 拆分后的归属边界：
@@ -21,7 +22,7 @@
 - 本域只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链与 Redis
 - ⚠ 域端口只在内网可达是**安全前提**：本域不做鉴权，防线在网络层，不在应用层
 
-> 📋 对外接口清单（18 条，owner / platform 两侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)。
+> 📋 对外接口清单（19 条，owner / platform / 跨店通用 三侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记
@@ -31,7 +32,7 @@
 | 表 | 归属 | 说明 |
 |---|---|---|
 | `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段） |
-| `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
+| `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
@@ -78,7 +79,7 @@
 | # | 规则 |
 |---|---|
 | R1 | 新增：SPU 与全部 SKU 一律下架态落库；每个 SKU `price` 必填且 ≥0.01 |
-| R2/R3 | 上架任一 SKU → SPU 自动上架；SKU 全下架 → SPU 自动下架（`refreshShelfStatus` 是唯一写入口） |
+| R2/R3 | 上架任一 SKU → SPU 自动上架；SKU 全下架 → SPU 自动下架（由 `refreshDerived` → `refreshShelfStatus` 推导，不手写） |
 | R4 | 已上架 SKU **整行锁死**：规格组合/价格/编码/图片不可改、不可删（整单替换时缺行即拒绝），须先下架 |
 | R5 | 未上架 SKU 可增、可改、可删 |
 | R6 | 存在上架 SKU 时 `spec_config` 只读（防 SKU 组合孤儿） |
@@ -88,8 +89,18 @@
 | R10 | 中台版本同步（比对 `center_version`、给「同步」按钮）由端 BFF 编排，域只存版本快照 |
 | R11 | owner 侧方法入口以「id + store_id」限定作用域（platform 侧方法不带 store_id、跨店全量） |
 | R12 | **平台锁定**（2026-09-12 新增）：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；仅平台可解锁，解锁不自动恢复上架 |
+| R13 | **最低价推导**（2026-09-17 新增）：`min_price` = 名下**上架且未删** SKU 的最低价；SKU 全下架时清空为 NULL。由 `refreshDerived` → `refreshMinPrice` 推导，不手写 |
 
-> ⚠ `refreshShelfStatus` 是「SPU 上架 ⟺ ≥1 SKU 上架」的**唯一写者**。任何时候都不要绕过它直接改 `shelf_status`——包括锁定时的级联下架。
+> ⚠ `refreshDerived` 是**推导量统一刷新入口**，内含两个不变量写者：`refreshShelfStatus`（「SPU 上架 ⟺ ≥1 SKU 上架」）与
+> `refreshMinPrice`（「`min_price` = 名下上架未删 SKU 最低价」）。任何时候都不要绕过它直接改 `shelf_status` / `min_price`——包括锁定时的级联下架。
+> ⚠ 两者**各自独立比较**（下架高价 SKU 后上下架不变、最低价却变了），且 `min_price` 可被清成 NULL，
+> 回写只能用 `lambdaUpdate().set(...)`：`updateById` 跳过 null 列，会把「SKU 全下架 → 清空 `min_price`」静默丢掉。
+
+**跨店通用查询口径（2026-09-17）**：`/goods/cross-shop/spu/page`（分页）与 `/goods/facets`（筛选聚合）**无数据权限锚点**，
+限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**——admin BFF 与 mall-bff 共用，域内不判身份、不做端别分流；
+域侧**不含任何 C 端隐含约束**（C 端那三个固定条件的口径在 mall-bff，见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 17 条）。
+facets **两个维度互斥地排除自身**：分类维度不受已选分类影响、品牌维度不受已选品牌影响（否则选中某项后同维度选项消失）；
+两个维度都按 count 降序、id 升序兜底。
 
 ### 4. 平台锁定规则（R12，2026-09-12 新增）
 
@@ -98,7 +109,7 @@
 | 项 | 口径 |
 |---|---|
 | 锁定写入 | `lock_status=1` + `lock_reason`（必填）+ `lock_user` + `lock_time`；已锁定则拒绝重复操作（条件更新 `where lock_status=0`，防并发） |
-| 自动下架 | 锁定时把名下**已上架** SKU 批量置下架，再由 `refreshShelfStatus` 推导 SPU 为下架——**不变量不变，仍是唯一写者**，不绕过它直接改 `shelf_status` |
+| 自动下架 | 锁定时把名下**已上架** SKU 批量置下架，再由 `refreshDerived` 重推 SPU 为下架（`refreshShelfStatus` 与 `refreshMinPrice` 一并重算）——**不变量不变，仍是唯一入口**，不绕过它直接改 `shelf_status` / `min_price` |
 | 锁定期 owner 侧 | **整行只读**：编辑 / 删除 / SKU 整单替换 / SKU 上下架 一律拒绝（`assertNotLocked`，域内强制，不只靠前端禁用按钮），提示「商品已被平台锁定，不可 X，请联系平台管理员」 |
 | 解锁 | 清空 `lock_reason`/`lock_user`/`lock_time`、`lock_status=0`（**必须 `lambdaUpdate().set(null)` 显式清**，`updateById` 跳过 null 会清不掉）；**不动 SKU 与 `shelf_status`**——保持下架，由店主手动重新上架 |
 | 锁定人取值 | `UserContext` 直取，按审计同格式存 `UserType:UserId`（如 `admin:1`）。这是**业务列而非审计列**（D7），故在 service 内显式写入；**店铺端不展示锁定人**，仅管理端展示 |
