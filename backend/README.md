@@ -13,7 +13,7 @@
 | [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核、**店铺商品管理**（跨店查询/详情/锁定解锁，内部 Feign → goods-center / store） |
 | [store](store/) | 业务服务（下沉纯域） | 8083 | 店铺域：店铺 store_shop + 审核状态机 + 店主在售商品 store_goods_spu/store_goods_sku（账号店同 ID，id==店主账号 id）；不暴露公网路由，仅被 store-bff/admin 内部 Feign 调用 |
 | [store-bff](store-bff/) | 业务服务（店铺端 BFF） | 8084 | 店主端：店主账号 store_user（注册即登录、签发 type=store）+ 店铺资料编排 + 在售商品编排与中台版本比对（内部 Feign → store / goods-center） |
-| [mall-bff](mall-bff/) | 业务服务（商城前台 BFF） | 8085 | C 端顾客：顾客账号 mall_user（手机号 + 模拟短信验证码，注册即登录、签发 type=user）。**一期只做账号，不调任何业务域**；首页数据聚合是二期 |
+| [mall-bff](mall-bff/) | 业务服务（商城前台 BFF） | 8085 | C 端顾客：顾客账号 mall_user（手机号 + 模拟短信验证码，注册即登录、签发 type=user）+ C 端商品浏览（分类树 / 商品分页 / 筛选聚合，内部 Feign → goods-center / store）。首页**热门商品列表**仍为静态 mock |
 
 > 📋 **各模块的对外接口清单不在此处，统一登记在 [`docs/contracts/`](../docs/contracts/)** —— 页面级（admin / store-bff / mall-bff）、内部 Feign（goods-center / store）、跨服务隐式契约（[cross-cutting.md](../docs/contracts/cross-cutting.md)）三层。改动接口时**同一改动内**更新对应契约文件，提交前跑 `node docs/contracts/drift-check.mjs`。
 > 各模块 README 只写**服务说明**（职责 / 架构位置 / 实体标记 / 边界），不重复列接口。
@@ -78,7 +78,7 @@ curl http://localhost:8080/discovery/services   # 网关探活：查看已注册
 > - 店铺管理：`GET http://localhost:8080/admin/shop/shops` → admin(8082) BFF 编排 → 内部 Feign `/internal/store/**` → store(8083)
 > - 店铺商品管理：`GET http://localhost:8080/admin/shop/goods/page` → admin(8082) BFF（分类子树展开 + 分类全路径解析，另经 Feign → goods-center）→ 内部 Feign `/internal/store/goods/platform/**` → store(8083)
 > - 店主端：`/store/auth/**`、`/store/shops/**`、`/store/goods/**` → store-bff(8084)（店铺/商品编排内部 Feign → store；分类/品牌下拉与中台模板比对 → goods-center）
-> - C 端顾客：`/mall/auth/**` → mall-bff(8085)（**一期只做账号、不调域**；首页数据聚合为二期）
+> - C 端顾客：`/mall/auth/**`、`/mall/catalog/**` → mall-bff(8085)（账号 + 商品浏览编排，内部 Feign → goods-center 分类树 / store 商品分页与筛选聚合；首页热门商品列表仍为静态 mock）
 
 ## 请求链路
 
@@ -88,7 +88,7 @@ store 前端(5174) ──/store──────────────┤
 mall  前台(5175) ──/mall───────────────┤
                                   gateway(8080)  公网只路由到端 BFF，域服务 403
    /admin/** ─▶ admin(8082, 端BFF)      /store/** ─▶ store-bff(8084, 店铺端 BFF)
-   /mall/**  ─▶ mall-bff(8085, C端BFF，一期不调域)
+   /mall/**  ─▶ mall-bff(8085, C端BFF，已接 goods-center / store)
                          │                            │
                          └─────── 内部 Feign（身份头 X-User-Id/X-User-Type + 熔断降级） ───────┘
                                │                              │

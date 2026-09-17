@@ -1,8 +1,10 @@
 # 全景商城 — 前台商城（mall）
 
 mall 前台（用户购物端）的正式前端工程：**Vue 3 + Vite + TypeScript**。
-**账号功能已接入后端 `mall-bff`**（取码 / 注册 / 登录 / 登出 / 当前顾客，共 5 条）；
-**首页六个区块的数据仍全部静态写死**（在 `src/mock/`），首页数据聚合属 mall-bff 二期。
+**账号功能已接入后端 `mall-bff`**（取码 / 注册 / 登录 / 登出 / 当前顾客，共 5 条），
+**商品浏览已接入 catalog 三接口**（分类树 / 商品分页 / 筛选聚合）：搜索区真跳转、分类展示区读真实分类树，
+另有搜索结果页与分类商品页；
+⚠ **首页热门商品列表（⑥）仍是静态 mock**（`src/mock/`），本次范围刻意不含。
 
 > **风格基准**：本工程即 mall 前台的风格基准，换肤唯一入口是 [`src/styles/tokens.css`](./src/styles/tokens.css)。
 > 约束条文见根目录 [CLAUDE.md](../../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」。
@@ -31,26 +33,30 @@ mall/
 ├── vite.config.ts          端口 5175 + /mall 代理（→ 网关 8080 → mall-bff 8085）
 ├── tsconfig.json           strict: true
 └── src/
-    ├── main.ts             createApp + router + 载入四个 css（令牌 → 基线 → 区块 → 账号页）
+    ├── main.ts             createApp + router + 载入五个 css（令牌 → 基线 → 区块 → 账号页 → 目录页）
     ├── App.vue             <router-view /> + <ToastHost />（全局提示条）
-    ├── router/index.ts     hash 模式；/ 首页、/login、/register；兜底重定向 /；全局守卫
+    ├── router/index.ts     hash 模式；/ 首页、/login、/register、/search、/category/:id；兜底重定向 /；全局守卫
     ├── styles/
     │   ├── tokens.css      ★ 唯一换肤入口（只改这个文件即可整体换色）
     │   ├── base.css        reset + 排版基线 + 容器 + 通用工具类
     │   ├── mall.css        首页六个区块的样式，顺序与 HomeView 一致
-    │   └── account.css     登录 / 注册页 + 轻提示条（只消费令牌）
+    │   ├── account.css     登录 / 注册页 + 轻提示条（只消费令牌）
+    │   └── catalog.css     商品列表页（搜索结果 / 分类商品）骨架与筛选条
     ├── types/
-    │   ├── mall.ts         Category / Banner / Goods / GoodsTag
-    │   └── auth.ts         CurrentUser / LoginResult / 登录注册请求体
+    │   ├── mall.ts         首页区块类型：Banner / Goods
+    │   ├── auth.ts         CurrentUser / LoginResult / 登录注册请求体
+    │   ├── api.ts          PageResult<T> 等跨模块共用的响应形状
+    │   └── catalog.ts      C 端商品浏览的类型（照 docs/contracts/mall-bff.md）
     ├── api/
     │   ├── request.ts      axios 实例 + 拦截器（解 RespData、统一报错）
-    │   └── auth.ts         5 条账号接口（路径照 docs/contracts/mall-bff.md）
+    │   ├── auth.ts         5 条账号接口（路径照 docs/contracts/mall-bff.md）
+    │   └── catalog.ts      3 条商品浏览接口（分类树 / 商品分页 / 筛选聚合）
     ├── store/auth.ts       C 端登录态（token 存 localStorage，user 驻留内存）
-    ├── mock/               首页静态数据：categories / banners / goods / hotwords
+    ├── mock/               首页静态数据：banners / goods / hotwords
     ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标 / 手机号打码）
     ├── composables/        useCarousel.ts（轮播）、useSmsCode.ts（取码倒计时）、useToast.ts（提示条）
-    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost
-    └── views/              HomeView.vue（六区块）+ LoginView.vue + RegisterView.vue
+    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost + CatalogCard / FilterRow / Pager
+    └── views/              HomeView.vue（六区块）+ GoodsListView.vue（搜索结果 / 分类商品）+ LoginView.vue + RegisterView.vue
 ```
 
 ## 页面结构（首页自上而下，顺序即基准）
@@ -97,11 +103,11 @@ mall/
 
 ## 内容范围是刻意探过边界的
 
-`src/mock/` 里的数据不是随便凑的，每一项都在探一条边界，用来判断「装多少、装不下怎么办」：
+`src/mock/` 里的数据（以及已改接**后端真实分类树**的一级分类数量）不是随便凑的，每一项都在探一条边界，用来判断「装多少、装不下怎么办」：
 
 | 数据 | 探什么 |
 |---|---|
-| 分类恰好 10 项 | 宫格是否正好铺满一行，增删后换行好不好看 |
+| 一级分类 10 项（**已改为后端真实分类树**，不再是 mock） | 宫格是否正好铺满一行，增删后换行好不好看 |
 | 轮播第 3 张标题拉长 | 长文案下版式会不会挤爆 / 换行难看 |
 | 商品 g1 超长名 | 两行截断够不够 |
 | 商品 g2 无原价、无角标 | 版式留白会不会塌 |
@@ -115,7 +121,7 @@ mall/
 
 ## 明确**不做**的事
 
-- ❌ **首页六区块不接接口**：数据全在 `src/mock/`（账号接口已接入，见上）
+- ❌ **首页热门商品列表（⑥）不接接口**：该区块数据仍在 `src/mock/`，本次范围刻意不含（账号与商品浏览接口均已接入，见上）
 - ❌ 不做手机 / 窄屏适配 —— **只做宽屏**，容器固定 1280px，没有任何媒体查询
 - ❌ 不做暗色模式（C 端商城不做，与 admin / store 的 `.dark` 是两回事）
 - ❌ 不引外部图片与字体 —— 图位一律用 **CSS 渐变占位**（`utils/gradient.ts`）
@@ -136,5 +142,8 @@ mall/
 页面只经网关访问端 BFF：`vite.config.ts` 的 `/mall` 代理 → 网关 8080（`StripPrefix=1`）→ `mall-bff`(8085)。
 账号 5 条**已接入**（`src/api/auth.ts`，路径照契约表 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)）。
 
-首页数据聚合是**二期**：届时 mall-bff 经 Feign 调 goods-center 取得商品 / 分类，页面再把 `src/mock/` 换成接口数据。
-在此之前，首页六个区块的数据来源就是 `src/mock/`。
+商品浏览 3 条**已接入**（`src/api/catalog.ts`）：`GET /catalog/categories`（分类树）、`POST /catalog/goods`（商品分页）、
+`POST /catalog/facets`（筛选聚合）。落地范围：**搜索区**（`SearchBar` 真跳转 → `/search` 结果页）、**分类展示区**
+（`CategoryGrid` 读真实分类树，含分类图标）、**分类商品页**（`/category/:id`），列表骨架为 1280 容器 / 7 列 / 每页 49。
+
+⚠ 首页**热门商品列表（⑥）** 仍读 `src/mock/`，属二期剩余工作（搜索区与分类展示区已完成）。

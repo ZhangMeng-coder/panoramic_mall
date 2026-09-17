@@ -30,6 +30,6 @@
 |---|---|---|---|
 | admin | `admin` | `panoramic:login:admin:1` | 已有 |
 | store-bff | `store` | `panoramic:login:store:7` | 已有 |
-| mall-bff | `user` | `panoramic:login:user:42` | 已有（一期只做账号，不调域） |
+| mall-bff | `user` | `panoramic:login:user:42` | 已有（账号 + 商品浏览，已接 goods-center / store） |
 
 > 修改本模块后需执行 `mvn -pl common-auth install` 并重启依赖它的端 BFF 才生效。

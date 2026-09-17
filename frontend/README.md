@@ -6,7 +6,7 @@
 |---|---|---|
 | [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + **TypeScript** + Element Plus |
 | [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + **TypeScript** + Element Plus |
-| [mall/](./mall/) | 商城前台（用户购物端）——**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容仍**静态写死** | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
+| [mall/](./mall/) | 商城前台（用户购物端）——**账号已接入 mall-bff**（登录 / 注册 / 退出 / me）+ **商品浏览已接 catalog 三接口**（搜索区 / 分类展示区 / 商品列表页）；首页热门商品列表仍**静态 mock** | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
 
 > **三端技术形态已统一为 Vue 3 + Vite + TypeScript + axios**（2026-09-14 拉平）：均开启 `strict`，`npm run build` = `vue-tsc --noEmit && vite build`，**类型不过即构建失败**；另有 `npm run type-check` 只跑类型检查。HTTP 客户端一律 axios，各自只有 `src/api/request.ts` 一个入口（不存在 `fetch` / `XMLHttpRequest` 直调）。
 >
@@ -25,7 +25,7 @@ cd store && npm install && npm run dev
 cd mall && npm install && npm run dev
 ```
 
-三个端均通过 Vite dev proxy 转发至网关 `http://localhost:8080`（admin：`/admin`、`/goods`、`/store`、`/discovery`；store：`/store`、`/auth`；mall：`/mall` —— 后端 **mall-bff（8085）** 的取码/注册/登录/退出/me 共 5 条接口**已接入 mall 的登录与注册页**；首页数据仍是静态的，聚合属二期）。
+三个端均通过 Vite dev proxy 转发至网关 `http://localhost:8080`（admin：`/admin`、`/goods`、`/store`、`/discovery`；store：`/store`、`/auth`；mall：`/mall` —— 后端 **mall-bff（8085）** 的取码/注册/登录/退出/me 共 5 条账号接口**已接入 mall 的登录与注册页**，catalog 三接口（分类树 / 商品分页 / 筛选聚合）**已接入搜索区、分类展示区与商品列表页**；首页热门商品列表仍为静态 mock）。
 
 > 管理后台与店铺端共用同一套设计令牌（`src/styles/tokens.css` 色板 + Element Plus 主题映射），明暗主题各自持久化（`pm-admin-theme` / `pm-store-theme`）。
 >

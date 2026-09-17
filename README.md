@@ -1,6 +1,6 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，账号已接入 mall-bff，首页内容仍静态写死）与**商城前台 BFF（mall-bff，C 端顾客账号）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，账号与 C 端商品浏览已接入 mall-bff，首页热门商品列表仍静态）与**商城前台 BFF（mall-bff，C 端顾客账号 + 商品浏览编排）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
 
 ## 系统架构
 
@@ -20,12 +20,12 @@
 │  端 BFF 层（账号表 + type 的 JWT）        │  │  纯域层（不鉴权、无 Redis、无公网路由）   │
 │  admin（:8082）平台账号 + RBAC + 编排     │  │  goods-center（:8081）分类/品牌/SPU-SKU   │
 │  store-bff（:8084）店主账号 + 店铺商品    │  │  store（:8083）store_shop + 在售商品      │
-│  mall-bff（:8085）顾客账号（一期不调域）  │  │  （域端口只在内网可达是安全前提）         │
+│  mall-bff（:8085）顾客账号（已接业务域）  │  │  （域端口只在内网可达是安全前提）         │
 └───────────────────────────────────────────┘  └───────────────────────────────────────────┘
               MySQL 8（库 panoramic_mall：goods_* / sys_* / store_* / mall_*）
 ```
 
-> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。登录会话由 JWT `type` claim + Redis 键 `panoramic:login:{type}:{userId}` 区分平台管理员（admin）/ 店主（store）/ C 端顾客（user）三套账号体系，三端各自签发自己 `type` 的令牌。业务域（goods-center / store）与端 BFF（admin / store-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、只透传身份头 + 熔断降级；域内不做权限判断）。⚠ **mall-bff 一期只做顾客账号、不调任何业务域**（无 Feign 客户端），首页数据聚合是二期。审计字段 `create_user`/`update_user` 为 `VARCHAR(32)`，值 `UserType:UserId`。
+> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。登录会话由 JWT `type` claim + Redis 键 `panoramic:login:{type}:{userId}` 区分平台管理员（admin）/ 店主（store）/ C 端顾客（user）三套账号体系，三端各自签发自己 `type` 的令牌。业务域（goods-center / store）与端 BFF（admin / store-bff / mall-bff）之间经 `com.panoramic.common.*.api` 同源 Feign 客户端互调（DTO/VO 上移 common、只透传身份头 + 熔断降级；域内不做权限判断）。⚠ **mall-bff 已接 goods-center（分类树）与 store（商品分页 / 筛选聚合）**——搜索区与分类展示区已接真实数据；**首页热门商品列表仍为静态 mock**。审计字段 `create_user`/`update_user` 为 `VARCHAR(32)`，值 `UserType:UserId`。
 
 ## 仓库结构
 
@@ -38,12 +38,12 @@
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
 | ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
 | ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
-| ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）；一期不调业务域 | [README](backend/mall-bff/README.md) |
+| ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）+ C 端商品浏览编排（内部 Feign → goods-center 分类树 / store 商品分页与筛选聚合） | [README](backend/mall-bff/README.md) |
 | ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分；三端统一 Vue 3 + Vite + TypeScript + axios） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
 | ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（5175）：**账号已接入 mall-bff**（登录 / 注册 / 退出 / me），首页内容静态写死 | [README](frontend/mall/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：**账号已接入 mall-bff**（登录 / 注册 / 退出 / me）+ **商品浏览已接 catalog 三接口**（搜索区 / 分类展示区 / 商品列表页），首页热门商品列表仍静态 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
@@ -80,8 +80,8 @@
    - **账号即手机号**：`phone` 既是登录账号也是唯一键；验证方式为**手机号 + 短信验证码**，无密码
    - ⚠ 短信为**模拟实现**：取码接口只写一行日志，**不发真实短信、不落库、不落 Redis**，校验与固定码 `888888` 比对（配置项 `panoramic.mall.sms-fixed-code`）
    - 注册即登录（`mall_user` 建号后直接签发 JWT + Redis 会话 `panoramic:login:user:{id}`）；C 端**不接 RBAC**（无 `@PreAuthorize`，与店主端同理）
-   - **一期不调任何业务域**（无 Feign 客户端）；首页数据聚合为二期
-   - **mall 前台已接入**（2026-09-14）：`frontend/mall` 的 `/login` 与 `/register` 两页打通取码 / 注册 / 登录，顶栏接真实登出，刷新由路由守卫拉 `/auth/me` 重建登录态；**首页六区块仍读静态 `src/mock/`**
+   - **已接 goods-center（分类树）与 store（商品分页 / 筛选聚合）**（2026-09-17 补）：C 端 catalog 三接口上线，经网关 `/mall/catalog/**` **公开免鉴权**；搜索区真跳转、分类展示区读真实分类树、搜索结果页 / 分类商品页接真实商品数据。⚠ **首页热门商品列表（⑥）仍为静态 mock**（`src/mock/`），本次范围刻意不含
+   - **mall 前台已接入**（2026-09-14）：`frontend/mall` 的 `/login` 与 `/register` 两页打通取码 / 注册 / 登录，顶栏接真实登出，刷新由路由守卫拉 `/auth/me` 重建登录态
 8. 逻辑删除、字段自动填充、统一异常处理等公共能力由 `common` 提供，业务模块零重复实现
 
 ## 环境依赖
@@ -135,8 +135,9 @@ cd frontend/mall  && npm install && npm run dev   # → http://localhost:5175
 - [x] 管理后台店铺商品管理（全店铺查询/只读详情/平台锁定解锁，分类子树筛选）+ 商品类别全路径展示
 - [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据
 - [x] 商城前台 BFF 一期（mall-bff）：C 端顾客账号（手机号 + 模拟短信验证码，签发 `type=user`）+ 网关 `/mall/**` 路由
-- [x] mall 前台接入账号接口：登录 / 注册两页 + 顶栏登录态 + 刷新重建（首页数据仍静态）
+- [x] mall 前台接入账号接口：登录 / 注册两页 + 顶栏登录态 + 刷新重建
+- [x] C 端商品搜索与分类浏览（2026-09-17）：store 域分页通用化（`cross-shop/spu/page`）+ 新增筛选聚合 `facets`；mall-bff 接 goods-center 分类树与 store 商品数据，新增 `/mall/catalog/**` 三接口（公开免鉴权）；mall 前台搜索区真跳转 + 分类展示区读真实分类树 + 新增搜索结果页 / 分类商品页
 - [x] 前端三端技术形态拉平：admin / store 由 Vue 3 + JS 转为 **Vue 3 + TypeScript（`strict`）**，与 mall 统一为 Vue 3 + Vite + TS + axios，`vue-tsc` 挂进三端构建
-- [ ] mall-bff 二期：首页数据聚合（经 Feign 调 goods-center 的商品/分类）、`frontend/mall` 首页接入接口
+- [ ] 商城前台二期剩余：首页**热门商品列表**等其余区块接真实数据（搜索区与分类展示区已完成）
 - [ ] trade-center 下沉（购物车 / 订单 / 评价）
 - [ ] 开店后其余业务：店主订单 / 库存、价格库存、图片上传等（店主端已留占位入口）
