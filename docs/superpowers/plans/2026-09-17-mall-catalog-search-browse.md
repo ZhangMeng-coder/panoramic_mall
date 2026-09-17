@@ -1969,10 +1969,12 @@ Expected: 至少 3~4 个顶级分类有商品（搜索结果页的分类筛选�
 ```bash
 cd /e/workspace/panoramic_mall
 /e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -N install
-/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl common,store,goods-center,admin,mall-bff,gateway -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml compile
 ```
 
 Expected: BUILD SUCCESS。
+
+> ⚠ **第二条刻意不带 `-pl`，编整个 reactor**（`gateway, goods-center, store, store-bff, mall-bff, admin, common, common-auth` 八个模块）。本步是**终验**，`-pl` 白名单一旦与 `backend/pom.xml` 的 `<module>` 列表漂移，就会**静默少编模块**而照样 BUILD SUCCESS —— 这正是终验最不该有的失效模式。若确有理由只编一部分，先 `grep -n "<module>" backend/pom.xml` 取全量再精简，不要手写清单。
 
 > 若报「本地仓库 common stale」或「运行中 jar 锁」，按既有经验：停掉相关进程 → `-am clean package`。
 
@@ -2043,8 +2045,10 @@ Expected: 日志含本计划的各次提交。工作区**不要求全空**——
 - 页面级接口用 POST 做查询（此前无先例，理由是集合入参的序列化）
 - `apply("1 = 0")` 的替代写法（若用了）
 - facet 聚合改用字符串列名的 `QueryWrapper`（仓库里唯一一处）
-- 热门商品区通过「mock → GoodsListItem 映射层」保持不动
+- ⚠ **热门商品区（⑥）的做法已定：`GoodsCard.vue` / `GoodsGrid.vue` / `.goods__*` 三处零改动**，新建 `CatalogCard.vue`（`cat-card__*` 前缀）供 7 列列表用（原计划的「mock → `GoodsListItem` 映射层」方案**已废弃**，不要再写进汇报）
 - 测试数据的具体规模与店铺 id=7 的选号
+- C 端口径（`shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）固定在 BFF 而非域侧
+- 公开匿名的 `POST /catalog/goods` 补 `@Valid`（须是**裸 `@Valid`**，带 groups 会静默失效）
 
 ---
 
