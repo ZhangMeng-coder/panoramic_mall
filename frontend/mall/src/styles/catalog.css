@@ -1,0 +1,304 @@
+/* ============================================================================
+   Catalog — 商品列表页（搜索 / 分类）与列表卡片
+   ----------------------------------------------------------------------------
+   只消费 tokens.css 的令牌：**禁止硬编码色值 / 圆角 / 阴影**。
+   只做宽屏：容器沿用 base.css 的 .container（1280px），不写媒体查询。
+   ⚠ 与首页 ⑥ 热门商品的 .goods__* **刻意分成两套**：那边是 5 列栅格 + 角标 /
+     原价 / 销量位（视觉基准，别动），这边是 7 列紧凑列表；类名不共用，
+     改一处不会串到另一处。
+
+   类名清单（页面骨架给 GoodsListView 用）：
+     .catalog / .catalog__bar / .catalog__total / .catalog__sorts /
+     .catalog__sort(.is-on) / .catalog__grid（7 列）/ .catalog__state
+   组件自带：.filter-row__*（FilterRow）、.pager__*（Pager）、.cat-card__*（CatalogCard）
+   ========================================================================== */
+
+/* ============================================================================
+   页面骨架
+   ========================================================================== */
+
+.catalog {
+  padding: var(--s-6) 0 var(--s-16);
+  background: var(--n0);
+}
+
+/* 排序 / 统计条：左边「共 N 件」，右边排序 tab */
+.catalog__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: var(--s-4) 0 var(--s-5);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--n200);
+}
+
+.catalog__total {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.catalog__total b {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+.catalog__sorts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.catalog__sort {
+  padding: 4px var(--s-4);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-pill);
+  background: var(--n0);
+  color: var(--n700);
+  font-size: var(--t-sm);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.catalog__sort:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.catalog__sort.is-on {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: var(--w-medium);
+}
+
+/* ---- 卡片栅格：一行 7 列 ---- */
+.catalog__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--s-3);
+}
+
+/* 加载中 / 空结果的整块占位（不撑高度、不留半截骨架） */
+.catalog__state {
+  padding: var(--s-16) 0;
+  color: var(--n500);
+  font-size: var(--t-base);
+  text-align: center;
+}
+
+/* ============================================================================
+   筛选行（FilterRow）
+   ========================================================================== */
+
+.filter-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
+}
+
+.filter-row__title {
+  flex: none;
+  width: 56px;
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+.filter-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.filter-row__chip {
+  padding: 3px var(--s-3);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-pill);
+  background: var(--n0);
+  color: var(--n700);
+  font-size: var(--t-sm);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.filter-row__chip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.filter-row__chip.is-on {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
+  font-weight: var(--w-medium);
+}
+
+.filter-row__count {
+  margin-left: var(--s-1);
+  color: var(--n400);
+  font-size: var(--t-xs);
+}
+
+.filter-row__chip.is-on .filter-row__count {
+  color: var(--brand);
+}
+
+/* ============================================================================
+   分页条（Pager）
+   ========================================================================== */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  margin-top: var(--s-8);
+}
+
+.pager__btn,
+.pager__num {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  background: var(--n0);
+  color: var(--n700);
+  font-size: var(--t-sm);
+  line-height: 1;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.pager__num {
+  padding: 0;
+}
+
+.pager__btn:hover:not(:disabled),
+.pager__num:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.pager__num.is-on {
+  background: var(--brand-grad);
+  border-color: var(--brand);
+  color: var(--n0);
+  font-weight: var(--w-semibold);
+}
+
+.pager__btn:disabled {
+  background: var(--n100);
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+.pager__gap {
+  padding: 0 var(--s-1);
+  color: var(--n400);
+  font-size: var(--t-sm);
+  user-select: none;
+}
+
+/* ============================================================================
+   列表卡片（CatalogCard）—— 7 列紧凑卡，与首页 .goods__item 是两份
+   ========================================================================== */
+
+.cat-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  transition:
+    transform var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.cat-card:hover {
+  border-color: var(--brand);
+  transform: translateY(-3px);
+  box-shadow: var(--sh-lg);
+}
+
+/* ---- 图位：有图用图，无图是 CSS 渐变底 + 名称首字 ---- */
+.cat-card__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+}
+
+.cat-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cat-card__ph {
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  text-indent: 2px; /* 抵消末字后多出的字距，视觉居中 */
+}
+
+/* ---- 卡片正文 ---- */
+.cat-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3) var(--s-3);
+}
+
+.cat-card__name {
+  min-height: 38px; /* 两行位固定：单行名与两行名的卡片底部对齐 */
+  color: var(--n800);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+
+.cat-card__price {
+  display: flex;
+  align-items: baseline;
+  color: var(--brand);
+  font-size: var(--t-md);
+  font-weight: var(--w-bold);
+  line-height: 1.2;
+}
+
+.cat-card__price-sym {
+  font-size: var(--t-sm);
+}
+
+.cat-card__price-suffix {
+  color: var(--n500);
+  font-size: var(--t-xs);
+  font-weight: var(--w-regular);
+}
+
+.cat-card__price-tbd {
+  color: var(--n500);
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+}
+
+.cat-card__store {
+  overflow: hidden;
+  margin-top: auto;
+  color: var(--n500);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
