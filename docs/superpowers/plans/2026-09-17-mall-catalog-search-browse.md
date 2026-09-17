@@ -14,7 +14,7 @@
 
 以下约束适用于**每一个**任务，逐字取自项目 `CLAUDE.md`，不得变通：
 
-- **验证只到编译通过**：允许 `mvn -pl <模块> -am compile`、`mvn -q -N install`、`npm run build`、`npm run type-check`。**禁止**启动服务、跑 dev/preview、`mvn test`、`curl` 打接口——任何"跑起来看结果"的验收手段都不许用。
+- **验证只到编译通过**：允许 `mvn -f backend/pom.xml -pl <模块> -am compile`、`mvn -q -f backend/pom.xml -N install`、`npm run build`、`npm run type-check`。**禁止**启动服务、跑 dev/preview、`mvn test`、`curl` 打接口——任何"跑起来看结果"的验收手段都不许用。
 - **本仓库零测试基建**（`backend` 下无任何 `src/test`）。计划中**不写单测**，任务的验收一律是编译/类型检查/文本核对/SQL 复核。
 - **审计字段禁止手写赋值**：不得出现 `setCreateUser/setUpdateUser/setCreateTime/setUpdateTime`；不得绕过 `save/updateById` 等触发自动填充的 MP 基类方法。
 - **跨实体只走 owner service**：Service 内不得直接持有/调用其他实体的 Mapper；要读写别的实体，调用其自己的 service（缺能力就在对方 service 上加方法）。
@@ -391,7 +391,7 @@ Expected: `refreshShelfStatus` 只剩「方法定义」1 处 + `refreshDerived` 
 ```bash
 cd /e/workspace/panoramic_mall
 export MAVEN_HOME=/e/tools/apache-maven-3.9.16
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/store -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl store -am compile
 ```
 
 Expected: BUILD SUCCESS（`-am` 会一并编译 common）。
@@ -657,7 +657,7 @@ Expected: **只剩 `shopGoods.ts:17` 与 `:56` 两行**（出参类型，有意�
 
 ```bash
 cd /e/workspace/panoramic_mall
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/store,backend/admin -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl store,admin -am compile
 ```
 
 Expected: BUILD SUCCESS。
@@ -900,7 +900,7 @@ public class StoreGoodsSpuFacetQueryDTO {
 
 ```bash
 cd /e/workspace/panoramic_mall
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/store -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl store -am compile
 ```
 
 Expected: BUILD SUCCESS。
@@ -975,7 +975,7 @@ grep -rn "CategoryTreeVO" backend/goods-center/src/main/java --include=*.java | 
 - [ ] **Step 5: 编译**
 
 ```bash
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/goods-center -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl goods-center -am compile
 ```
 
 Expected: BUILD SUCCESS。
@@ -1212,7 +1212,7 @@ public class CatalogController {
 
 ```bash
 cd /e/workspace/panoramic_mall
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/mall-bff -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl mall-bff -am compile
 ```
 
 Expected: BUILD SUCCESS。
@@ -1760,8 +1760,8 @@ Expected: 至少 3~4 个顶级分类有商品（搜索结果页的分类筛选�
 
 ```bash
 cd /e/workspace/panoramic_mall
-/e/tools/apache-maven-3.9.16/bin/mvn -q -N install
-/e/tools/apache-maven-3.9.16/bin/mvn -q -pl backend/common,backend/store,backend/goods-center,backend/admin,backend/mall-bff,backend/gateway -am compile
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -N install
+/e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl common,store,goods-center,admin,mall-bff,gateway -am compile
 ```
 
 Expected: BUILD SUCCESS。
