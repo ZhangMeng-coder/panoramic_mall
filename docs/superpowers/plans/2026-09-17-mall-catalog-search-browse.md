@@ -1128,7 +1128,21 @@ public class CatalogBffService {
   - 调 `storeClient.mallFacets(...)`
   - `brands` 原样映射
   - `categories`：**有锚点（分类页）→ 原样映射；无锚点（搜索页）→ 用树把每个 id 上溯到顶级祖先，同祖先的 count 累加**，名称取树里的权威名
-- 树解析失败（`BffFeignCall` 降级返回空 / null）时：`resolveCategoryIds` 退化为「只用用户传的 id 本身，不展开子树」，`categories` facet 退化为原样输出——**展示增强不得拖垮主流程**，但要打 warn 日志。
+- ⚠ **`BffFeignCall` 的语义是「抛 `ServiceException`」，不是「返回降级值」**（`call` 无任何 fallback 返回值，4xx 原样透传、其余一律抛 `ServiceException(500, 降级文案)`）。所以「树拿不到就退化」**不会自动发生**，必须自己兜：
+  - `categories()`：直接让异常抛出（首页宫格是主内容，降级成空块即可，前端整块不渲染）
+  - `goods()` / `facets()`：树是**增强**（用于子树展开与筛选名解析），拿不到不应拖垮主流程 → 用
+    ```java
+    /** 取分类树；任何异常（含 BffFeignCall 抛出的 ServiceException）都吞掉并返回空表 */
+    private List<CategoryTreeVO> categoryTreeOrEmpty() {
+        try {
+            return goodsCenterClient.categoryTree();
+        } catch (Exception e) {
+            log.warn("分类树获取失败，本次按无树降级（不展开子树、facet 原样输出）", e);
+            return Collections.emptyList();
+        }
+    }
+    ```
+  - 拿到空表时：`resolveCategoryIds` 退化为「只用调用方传的 id 本身，不展开子树」；`categories` facet 退化为原样映射（不做顶级上溯）。为此 `subtreeIds`/上溯函数在树为空时必须**安全退化**而不是抛异常。
 - `PageResult` 用 `com.panoramic.common.store.vo.PageResult`（与前端分页形状同源）。
 
 - [ ] **Step 6: 建 `CatalogController`**
@@ -1144,25 +1158,25 @@ public class CatalogController {
     /** 全量分类树（首页宫格 / 分类页标题 / 分类筛选名解析共用） */
     @GetMapping("/categories")
     public RespData<List<CategoryTreeVO>> categories() {
-        return RespData.ok(catalogBffService.categories());
+        return RespData.success(catalogBffService.categories());
     }
 
     /** 商品分页（C 端展示口径由 BFF 固定） */
     @PostMapping("/goods")
     public RespData<PageResult<MallGoodsItemVO>> goods(@RequestBody MallGoodsPageQueryDTO dto) {
-        return RespData.ok(catalogBffService.goods(dto));
+        return RespData.success(catalogBffService.goods(dto));
     }
 
     /** 筛选维度聚合（分类 / 品牌） */
     @PostMapping("/facets")
     public RespData<MallFacetVO> facets(@RequestBody MallFacetQueryDTO dto) {
-        return RespData.ok(catalogBffService.facets(dto));
+        return RespData.success(catalogBffService.facets(dto));
     }
 }
 ```
 
 > ⚠ 本 controller **不得有** `@PreAuthorize`（C 端不接 RBAC）。
-> `RespData` 的构造方法以实际 API 为准（可能是 `RespData.success(...)`），按 `backend/common/.../vo/RespData.java` 改。
+> `RespData` 只有 `@Getter` 无 setter，只能用静态工厂 `RespData.success(data)`（**不是 `ok`**）。
 
 - [ ] **Step 7: 编译**
 
@@ -1206,9 +1220,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: Task 7 的三个页面接口。
 - Produces:
-  - `fetchCategories(): Promise<CategoryNode[]>`
-  - `fetchGoodsPage(body: GoodsPageQuery): Promise<PageResult<GoodsListItem>>`
-  - `fetchFacets(body: FacetQuery): Promise<FacetResult>`
+  - `catalogApi.categories(): Promise<CategoryNode[]>`
+  - `catalogApi.goods(body: GoodsPageQuery): Promise<PageResult<GoodsListItem>>`
+  - `catalogApi.facets(body: FacetQuery): Promise<FacetResult>`
   - 组件 `Pager` props `{ total: number; pageSize: number; page: number }` emits `change(page)`
   - 组件 `FilterRow` props `{ title: string; items: FacetItem[]; selected: number[] }` emits `toggle(id)`
   - `GoodsCard` props `{ goods: GoodsListItem }`
@@ -1291,23 +1305,29 @@ import { request } from './request'
 import type { PageResult } from '../types/api'
 import type { CategoryNode, FacetQuery, FacetResult, GoodsListItem, GoodsPageQuery } from '../types/catalog'
 
+// ⚠ 路径必须带 /mall 前缀：mall 前端是直连网关的（与 auth.ts 里 '/mall/auth/login' 同一口径）。
+// gateway 对该前缀做 StripPrefix=1，落到 mall-bff 时是 /catalog/...（服务本地白名单不带前缀）。
+
 /** 全量分类树（首页宫格 / 分类页标题 / 筛选名解析共用） */
-export function fetchCategories(): Promise<CategoryNode[]> {
-  return request.get<CategoryNode[]>('/catalog/categories')
+function categories(): Promise<CategoryNode[]> {
+  return request.get<CategoryNode[]>('/mall/catalog/categories')
 }
 
 /** 商品分页 */
-export function fetchGoodsPage(body: GoodsPageQuery): Promise<PageResult<GoodsListItem>> {
-  return request.post<PageResult<GoodsListItem>>('/catalog/goods', body)
+function goods(body: GoodsPageQuery): Promise<PageResult<GoodsListItem>> {
+  return request.post<PageResult<GoodsListItem>>('/mall/catalog/goods', body)
 }
 
 /** 筛选维度聚合 */
-export function fetchFacets(body: FacetQuery): Promise<FacetResult> {
-  return request.post<FacetResult>('/catalog/facets', body)
+function facets(body: FacetQuery): Promise<FacetResult> {
+  return request.post<FacetResult>('/mall/catalog/facets', body)
 }
+
+// 导出形态对齐同目录的 auth.ts（`export const authApi = { ... }`）
+export const catalogApi = { categories, goods, facets }
 ```
 
-> ⚠ 导入名与用法以 `frontend/mall/src/api/auth.ts` 的实际写法为准（`request` 还是默认导出、`get<T>` 是否泛型），照它写，不要照上面猜。
+> ⚠ 上面前缀与导出形态已按 `frontend/mall/src/api/auth.ts` 与 `request.ts` 的实际写法核对过（`request` 是具名导出、`get<T>` 返回已剥壳的 `T`）。落地时若发现仍有出入，**照 auth.ts 改**。
 
 - [ ] **Step 4: 建 `components/Pager.vue`**
 
@@ -1328,9 +1348,15 @@ export function fetchFacets(body: FacetQuery): Promise<FacetResult> {
 
 - [ ] **Step 7: 建 `styles/catalog.css`**
 
-列表页与卡片样式：1280 容器、7 列网格（`grid-template-columns: repeat(7, 1fr)`）、筛选行、排序条、分页条、紧凑卡片。**色值/圆角/阴影一律用 `var(--*)` 令牌**。
+列表页与卡片样式：1280 容器、7 列网格（`grid-template-columns: repeat(7, 1fr)`）、筛选行、排序条、分页条、紧凑卡片。**色值/圆角/阴影一律用 `var(--*)` 令牌**（`tokens.css` 里有 `--container`、`--r-md`、`--sh-sm`、`--s-*`、`--t-*`、`--brand*`、`--n*` 等，先 `grep` 一遍变量名再写）。
 
-在 `GoodsListView.vue` 里 `import '../styles/catalog.css'`（按 `account.css` 的既有引入方式照做）。
+⚠ 引入位置：本项目所有样式都在 `src/main.ts` 里**按序** import（`tokens → base → mall → account`），**没有**组件内 import css 的先例。所以要在 `main.ts` 第 6 行之后追加：
+
+```ts
+import './styles/catalog.css'
+```
+
+保持 `tokens.css` 仍是第一个（`base.css` 依赖它先加载）。
 
 - [ ] **Step 8: 类型检查**
 
@@ -1408,7 +1434,7 @@ SiteFooter
 
 - 模式判定：`route.path.startsWith('/category/')` → 分类页，锚点 `Number(route.params.categoryId)`；否则搜索页，关键词 `route.query.keyword`
 - 筛选状态**全部放进 URL query**（`categoryIds` / `brandIds` 用逗号分隔的字符串，`sort`、`page`），刷新与分享不丢
-- 三个请求：进页面拉一次 `fetchCategories()` 缓存；`fetchGoodsPage()` 与 `fetchFacets()` 随 query 变化重新拉
+- 三个请求：进页面拉一次 `catalogApi.categories()` 缓存（供解析分类名与「全部分类」链接）；`catalogApi.goods()` 与 `catalogApi.facets()` 随 query 变化重新拉
 - 分类页：分类筛选行的 items 直接用 facets 返回的 `categories`（后端已按锚点范围输出子分类）；搜索页：也是 `categories`（后端已上溯到顶级）——**前端两种模式渲染逻辑一致**，差异全在 BFF
 - 空结果：提示「没有找到相关商品」+ 返回首页按钮
 - 加载中：骨架或文本占位
@@ -1448,7 +1474,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Delete: `frontend/mall/src/mock/categories.ts`
 
 **Interfaces:**
-- Consumes: Task 8 的 `fetchCategories()`、类型 `CategoryNode`。
+- Consumes: Task 8 的 `catalogApi.categories()`、类型 `CategoryNode`。
 - Produces: 首页两个区块接真实数据。
 
 - [ ] **Step 1: 改 `SearchBar.vue` 真跳转**
@@ -1459,7 +1485,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 - [ ] **Step 2: 改 `CategoryGrid.vue` 接真实分类树**
 
-- `onMounted` 调 `fetchCategories()`，取 `level === 1` 的顶级分类渲染
+- `onMounted` 调 `catalogApi.categories()`，取 `level === 1` 的顶级分类渲染
 - 删掉对 `../mock/categories` 的 import
 - 图标：有 `icon` 渲染 `<img>`（加载失败或为空 → 回退现有渐变圆 + 名称首字，色相按 `id % 360` 派生）
 - 点击 → `router.push(`/category/${c.id}`)`
