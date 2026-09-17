@@ -1166,15 +1166,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 ⚠ **本步只做门禁要求的登记**（三行接口、计数、§一 类型表、gateway.md 的字面量）；`mall-bff.md` 里那些**门禁不查的散文**（§一 引言「不调任何业务域」、§二 形状表「内部依赖：一期没有」、§三「首页数据仍是静态 mock／首页聚合属二期」、免鉴权路径那行的路径枚举）**留给 Task 11 Step 4** 统一重写——本步改一半、T11 再改一半，正是 T5/T11 那次「重复登记」修正要避免的形状。
 
-- [ ] **Step 4: 跑契约检查器（提交前硬门禁）**
+> ⚠ **Step 2/3 之间不要跑检查器**：Step 2 只改了本地一侧时，检查器必报「mall-bff 本地白名单「/catalog/**」在网关侧白名单里没有对应项」；Step 3c 登记了接口行、而 `CatalogController` 要到 Step 6 才建，此时又会报反向的「契约表有、代码没有」。**检查器在代码步骤之后统一跑（Step 9）**，中途红是预期的，不用去修。
 
-```bash
-cd /e/workspace/panoramic_mall && node docs/contracts/drift-check.mjs; echo "exit=$?"
-```
-
-Expected: `exit=0`。⚠ 报「mall-bff 本地白名单…没有对应项」= Step 3a 漏改；报「网关白名单有、契约页没有」= Step 3b 漏写；报「代码有、契约表没有」= Step 3c 漏登记。
-
-- [ ] **Step 5: 建 DTO**
+- [ ] **Step 4: 建 DTO**
 
 `MallGoodsPageQueryDTO extends BasePageVO`（`com.panoramic.common.vo.BasePageVO`，提供 `pageNum`/`pageSize`；照 `StoreGoodsSpuCrossShopPageQueryDTO` 的写法加 `@EqualsAndHashCode(callSuper = true)`——继承 `@Data` 父类时不加会退化成 Lombok 警告级的 equals/hashCode 不一致）：
 
@@ -1204,7 +1198,7 @@ Expected: `exit=0`。⚠ 报「mall-bff 本地白名单…没有对应项」= St
     private List<Long> brandIds;
 ```
 
-- [ ] **Step 6: 建 VO**
+- [ ] **Step 5: 建 VO**
 
 `MallGoodsItemVO`（**C 端形状，与域 VO 解耦**）：
 
@@ -1226,7 +1220,7 @@ Expected: `exit=0`。⚠ 报「mall-bff 本地白名单…没有对应项」= St
 `MallFacetItemVO`：`Long id` / `String name` / `Integer count`
 `MallFacetVO`：`List<MallFacetItemVO> categories` / `List<MallFacetItemVO> brands`
 
-- [ ] **Step 7: 建 `CatalogBffService`**
+- [ ] **Step 6: 建 `CatalogBffService`**
 
 职责与关键实现：
 
@@ -1305,7 +1299,7 @@ public class CatalogBffService {
 - ⚠ **`subtreeIds` 返回空集时不要把它当成「不筛」传下去**（Task 5 复评第 4 点）：域侧 `facetBy` 与 `crossShopPage` 都把「集合为空」当作**不过滤**（`StoreGoodsSpuFacetQueryDTO` 的 javadoc 也写「空 = 不限」）。所以锚点分类在树里查不到（id 过期 / 树降级成空表）时，若把 `subtreeIds(...)` 的空结果原样传下去，分类页会**从「只出本分类」翻成「出全站」**——方向相反的错。规则：**锚点解析不出子树时回退成 `List.of(anchorId)`**（至少不放大范围）；`resolveCategoryIds` 只有在**既无已选、又无锚点**时才返回 `null`。同理，已选分类若解析不出子树，回退成该 id 本身而不是丢弃。
 - `PageResult` 用 `com.panoramic.common.store.vo.PageResult`（与前端分页形状同源）。⚠ 本仓库**没有** `com.panoramic.common.vo.PageResult` 这一份；`common.goods` / `common.store` 各一份，别引错包（引错仍能编译，只是把 goods 域的分页形状带进 C 端响应，日后再改要动契约）。
 
-- [ ] **Step 8: 建 `CatalogController`**
+- [ ] **Step 7: 建 `CatalogController`**
 
 ```java
 @RestController
@@ -1338,7 +1332,7 @@ public class CatalogController {
 > ⚠ 本 controller **不得有** `@PreAuthorize`（C 端不接 RBAC）。
 > `RespData` 只有 `@Getter` 无 setter，只能用静态工厂 `RespData.success(data)`（**不是 `ok`**）。
 
-- [ ] **Step 9: 编译**
+- [ ] **Step 8: 编译**
 
 ```bash
 cd /e/workspace/panoramic_mall
@@ -1346,6 +1340,14 @@ cd /e/workspace/panoramic_mall
 ```
 
 Expected: BUILD SUCCESS。⚠ 本任务**不用**改 `backend/mall-bff/pom.xml`——`common` 已把 `spring-cloud-starter-openfeign` 与 `spring-cloud-starter-circuitbreaker-resilience4j` 作为 compile 依赖传递下来（`common/pom.xml:67`/`:75`），admin / store-bff 同样没在自己的 pom 里声明这两项。若编译报找不到 `@EnableFeignClients` / `@FeignClient`，先核对 `common` 是否被 `-am` 一并带上，**不要**急着往 mall-bff 加依赖。
+
+- [ ] **Step 9: 跑契约检查器（提交前硬门禁）**
+
+```bash
+cd /e/workspace/panoramic_mall && node docs/contracts/drift-check.mjs; echo "exit=$?"
+```
+
+Expected: `exit=0`。⚠ 报「mall-bff 本地白名单…没有对应项」= Step 2 漏改或 Step 3a 漏改；报「网关白名单有、契约页没有」= Step 3b 漏写；报「代码有、契约表没有」= Step 3c 漏登记；报「契约表有、代码没有」= 3c 行写错了（路径/方法拼错，或 controller 的 `@RequestMapping` 前缀不是 `/catalog`）。
 
 - [ ] **Step 10: 文本级核对白名单两处（网关是 yml，属配置改动，只做文本核对）**
 
