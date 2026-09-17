@@ -1739,7 +1739,19 @@ Task 7 已把 `/mall/catalog/**` 写进 `gateway.md` 的网关侧免鉴权表、
 - 第五节类型表补新类型
 - 补一条形状说明：facets 的两维度互斥口径
 - ⚠ **把第四节那条「分页走 `POST + @RequestBody`」的形状说明扩到覆盖 `crossShopFacets`**——Task 5 只登记了接口行，没动第四节，而 spec §7 明确「分页与 facets 用 `POST + @RequestBody`：入参含集合」。理由同源：`categoryIds`/`brandIds` 这类集合走 query 会在客户端被序列化成 `xxx[]=1` 形状（spec 第 153 行已写明这是破例用 POST 做查询的原因），POST + body 规避
-- ⚠ **刷新第二节接口表的「声明位置」列行号**（`StoreClient.java:NNN` / `GoodsController.java:NNN`）。Task 4 改名后该列已过期（行内写着 `:155`/`:120`，实际是 `:158`/`:124`），且 `platformStoreGoodsDetail` / `lockStoreGoods` / `unlockStoreGoods` 三行同样整体漂了 +4/+5。检查器解析这两列但**只校验 verb+path/类型/权限串**，所以门禁是绿的、行号错了不会报——正因如此才要人工刷一次。Task 5 会再往这两个文件加方法，故**在本步（所有后端改动做完后）一次刷到位**，别在 T4/T5 里零散改。
+- ⚠ **刷新第二节接口表的「声明位置」列行号**（`StoreClient.java:NNN` / `GoodsController.java:NNN`）。检查器解析这两列但**只校验 verb+path/类型/权限串**，行号错了不报——正因如此才需人工刷一次。两个文件现在都已定型（本任务不再改后端代码），**在本步一次刷到位**。
+
+  ⚠⚠ **不要按偏移量改，旧数字没有可恢复的统一约定**（已实测核实，2026-09-17）：`store.md` 现存那列**既不对齐注解行、也不对齐方法签名行**（例：`StoreClient` 的 `mineShop` 写 `:57`，而那里是 javadoc 的第四行，`@GetMapping` 在 `:58`、签名在 `:59`；`GoodsController` 的 `/spu/page` 写 `:50`，那里是 javadoc 起始 `/**`，`@GetMapping` 在 `:53`）。按注解行口径重算，各行偏移**互不相同且不成规律**（`GoodsController` 前 7 行一律 +3，`cross-shop` +6，`facets` **偏移为 0、旧值恰好仍对**，`platform/{id}`/`lock`/`unlock` 各 +15；`StoreClient` 前段一律 +1，`crossShopFacets` **偏移为 0**，`platform/{id}`/`lock`/`unlock`/`listShopOptions` 各 +13）。**任何「整体 +N」的改法都必然写出新的错行号**——这也是本步必须逐行 grep 而不能「顺手修一下」的原因。
+
+  **做法**：**先定一次约定，再逐行 grep 取真值**。约定取「**映射注解行**」（即 `@GetMapping` / `@PostMapping` / `@PutMapping` / `@DeleteMapping` 所在行）——对读者最有用（一步跳到映射）。然后：
+
+  ```bash
+  # StoreClient：注解行号
+  grep -nE "@(Get|Post|Put|Delete)Mapping" backend/common/src/main/java/com/panoramic/common/store/api/StoreClient.java
+  # GoodsController：注解行号
+  grep -nE "@(Get|Post|Put|Delete)Mapping" backend/store/src/main/java/com/panoramic/store/controller/GoodsController.java
+  ```
+  按**方法名**（不是按顺序）与表内各行一一对上后再写，写完整表复核一遍「每一行的两个行号都指向该方法自己的注解」。⚠ `crossShopFacets` 在**表里排在最后但文件里是倒数第五**——按顺序对会整段错位，**必须按方法名对**。
 
 - [ ] **Step 4: `mall-bff.md` —— ⚠ **门禁要求的部分已在 Task 7 Step 3c 完成，本步只做散文**
 
