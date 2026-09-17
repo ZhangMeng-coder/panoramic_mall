@@ -8,7 +8,8 @@
      改一处不会串到另一处。
 
    类名清单（页面骨架给 GoodsListView 用）：
-     .catalog / .catalog__bar / .catalog__total / .catalog__sorts /
+     .catalog / .catalog__head / .catalog__title / .catalog__link /
+     .catalog__bar / .catalog__total / .catalog__sorts /
      .catalog__sort(.is-on) / .catalog__grid（7 列）/ .catalog__state
    组件自带：.filter-row__*（FilterRow）、.pager__*（Pager）、.cat-card__*（CatalogCard）
    ========================================================================== */
@@ -20,6 +21,35 @@
 .catalog {
   padding: var(--s-6) 0 var(--s-16);
   background: var(--n0);
+}
+
+/* 分类页标题行：分类名 +「全部分类」入口（搜索页没有这一行） */
+.catalog__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+}
+
+.catalog__title {
+  color: var(--n900);
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.3px;
+}
+
+/* 主色文字入口：分类页的「全部分类」与空结果的「返回首页」共用 */
+.catalog__link {
+  color: var(--brand);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+  transition: color var(--dur) var(--ease);
+}
+
+.catalog__link:hover {
+  color: var(--brand-hover);
+  text-decoration: underline;
 }
 
 /* 排序 / 统计条：左边「共 N 件」，右边排序 tab */
@@ -87,6 +117,12 @@
   color: var(--n500);
   font-size: var(--t-base);
   text-align: center;
+}
+
+/* 空结果里的入口文字单独占一行 */
+.catalog__state .catalog__link {
+  display: inline-block;
+  margin-top: var(--s-3);
 }
 
 /* ============================================================================

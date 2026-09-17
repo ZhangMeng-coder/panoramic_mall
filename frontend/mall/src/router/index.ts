@@ -27,6 +27,20 @@ const routes = [
     component: () => import('../views/RegisterView.vue'),
     meta: { title: '注册' }
   },
+  // 商品列表页：搜索结果与分类商品**共用**同一个组件（靠路径分流模式）。
+  // 两条都是公开页 —— 游客可以随便逛商品，不需要 meta.requiresAuth。
+  {
+    path: '/search',
+    name: 'search',
+    component: () => import('../views/GoodsListView.vue'),
+    meta: { title: '搜索结果' }
+  },
+  {
+    path: '/category/:categoryId',
+    name: 'category',
+    component: () => import('../views/GoodsListView.vue'),
+    meta: { title: '分类商品' }
+  },
   // 兜底：未匹配路径回首页
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
