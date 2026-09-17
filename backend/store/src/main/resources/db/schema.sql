@@ -120,3 +120,20 @@ SET @spu_lock_ddl := IF(@spu_has_lock = 0,
      ADD INDEX idx_lock_status (lock_status)',
   'SELECT 1');
 PREPARE spu_lock_stmt FROM @spu_lock_ddl; EXECUTE spu_lock_stmt; DEALLOCATE PREPARE spu_lock_stmt;
+
+-- 3.2 幂等加列：为已存在的 store_goods_spu 表补充在售最低价列（可重复执行）。
+--     新建库走上面的 CREATE TABLE 即已含该列，本块只对「早于本功能建表」的存量库生效；
+--     守卫判定为已存在时跳过，不重复 ALTER。
+SET @spu_has_min_price := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_goods_spu' AND COLUMN_NAME = 'min_price');
+SET @spu_min_price_ddl := IF(@spu_has_min_price = 0,
+  'ALTER TABLE store_goods_spu
+     ADD COLUMN min_price DECIMAL(10,2) DEFAULT NULL COMMENT ''在售SKU最低价（推导量，由SKU联动维护）'' AFTER lock_time',
+  'SELECT 1');
+PREPARE spu_min_price_stmt FROM @spu_min_price_ddl; EXECUTE spu_min_price_stmt; DEALLOCATE PREPARE spu_min_price_stmt;
+
+-- 3.3 存量回填：按不变量「min_price = 上架且未删 SKU 的最低价」重算全部存量行（可重复执行）
+UPDATE store_goods_spu s
+   SET s.min_price = (SELECT MIN(k.price) FROM store_goods_sku k
+                       WHERE k.spu_id = s.id AND k.is_delete = 0 AND k.shelf_status = 1)
+ WHERE s.is_delete = 0;

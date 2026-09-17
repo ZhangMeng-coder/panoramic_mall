@@ -109,3 +109,11 @@ PREPARE sku_version_stmt FROM @sku_version_ddl; EXECUTE sku_version_stmt; DEALLO
 -- 4.3 存量回填：历史数据无版本，用 update_time 折算为毫秒（仅回填 version=0 的行，可重复执行）
 UPDATE goods_spu SET version = COALESCE(UNIX_TIMESTAMP(update_time) * 1000, 0) WHERE version = 0;
 UPDATE goods_sku SET version = COALESCE(UNIX_TIMESTAMP(update_time) * 1000, 0) WHERE version = 0;
+
+-- 4.4 幂等加列：为已存在的 goods_category 表补充图标列，可重复执行
+SET @cat_has_icon := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'goods_category' AND COLUMN_NAME = 'icon');
+SET @cat_icon_ddl := IF(@cat_has_icon = 0,
+  'ALTER TABLE goods_category ADD COLUMN icon VARCHAR(255) DEFAULT NULL COMMENT ''分类图标图片URL'' AFTER sort',
+  'SELECT 1');
+PREPARE cat_icon_stmt FROM @cat_icon_ddl; EXECUTE cat_icon_stmt; DEALLOCATE PREPARE cat_icon_stmt;
