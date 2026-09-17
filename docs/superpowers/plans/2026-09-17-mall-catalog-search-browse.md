@@ -1770,6 +1770,20 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Consumes: Task 2 的 `min_price` 列。
 - Produces: C 端列表有可展示的数据。
 
+**开工前已核实的事实（只读查询，2026-09-17）**——不必再自行试探：
+
+| 事实 | 值 |
+|---|---|
+| `store_shop` 现有行 | id=5（zm测试店铺01, status=2）、id=6（zm_store_02, status=2）；**id=7 空着** ✓ |
+| `audit_by` 列型 | `bigint unsigned`，现有两行的值都是 `1` → 本任务插入用 `audit_by = 1` 与既有数据一致 ✓（`audit_by` 不是 `UserType:UserId` 那种 varchar，别照 `lock_user` 的格式写） |
+| `store_goods_sku` 索引 | `idx_sku_code` 与 `idx_spu_id` **均为非唯一**（NON_UNIQUE=1）→ 复制 SKU 时 `sku_code` 重复**不会**报唯一键冲突 ✓ |
+| `store_goods_spu` 索引 | 无 (store_id, goods_spu_id) 唯一约束 → 复制 SPU 安全 ✓ |
+| 价格分布（店 5 的 216 个 SKU） | 5.92 ~ 8207.77，**213 个不同价** → 价格排序有层次可验 ✓ |
+| 每个 SPU 的 SKU 数 | 2 / 4(×45) / 6 / 8(×2) / 12；**最少的也有 2 个** |
+| 备份 | Task 1 的 `temp/2026-09-17-catalog-backup/panoramic_mall-full.sql`（180011 B，sha256 已核）——写库前若发现库已与基线（shop=2, spu=50, sku=216, cat=37）不符，**停下问人**，别在漂移过的库上继续 |
+
+⚠ **Step 1 的预期要修正一处**：`(k.id % 4) <> 0` 是按**全局自增 id** 取模，而每个 SPU 的 SKU id 是连续的、最少 2 个 → 同一 SPU 内不可能全部 id 都被 4 整除，故**每个未锁 SPU 至少留 1 个在架 SKU**，结果是**49 个未锁 SPU 全部上架**（50 个里那 1 个锁定的被 `lock_status = 0` 排除）。所以「部分上架」只体现为 **SKU 级的缺口**（约 1/4 SKU 未上架），**不是** SPU 级的部分上架——Step 3 复核时看到 `已上架 SPU = 49` 是**正确结果**，不是漏改。
+
 - [ ] **Step 1: 批量上架 `store_id=5` 的商品**
 
 目标：让大部分 SPU 上架、且价格分布有层次（便于验价格排序）。
@@ -1825,6 +1839,8 @@ node "C:/Users/lisi/.claude/skills/mysql-connect/scripts/query.mjs" --write --da
 ```
 
 复制商品：把 `store_id=5` 的 SPU 抽 12 个复制给 `store_id=7`（分类打散到多个顶级下），SKU 一并复制：
+
+> 已核实：`ORDER BY id LIMIT 12` 取到的这 12 个 SPU 落在**3 个顶级分类**（手机数码 5 / 服装 5 / 家用电器 2）——seed 数据的分类是按 id 交错排的，所以「取前 12 个」天然就散开了，不必额外洗牌。Step 7 的「至少 3~4 个顶级分类」据此可达。
 
 ```bash
 node "C:/Users/lisi/.claude/skills/mysql-connect/scripts/query.mjs" --write --database panoramic_mall \
