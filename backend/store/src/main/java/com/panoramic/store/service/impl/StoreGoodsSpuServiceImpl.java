@@ -1,6 +1,7 @@
 package com.panoramic.store.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -15,13 +16,16 @@ import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.StoreGoodsFacetItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSkuVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.common.util.UserContext;
@@ -58,9 +62,10 @@ import java.util.stream.Collectors;
  * 不泄露存在性；SKU 侧操作先经 {@link #getOwnedSkuOrThrow} 校验 SPU 归属。
  * <b>owner 侧锁定只读守卫（R12）</b>：改 / 删 / 改 SKU / 上下架 在取行后立即
  * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
- * <p><b>platform 侧（跨店通用，调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #platformDetail}
- * 不带 store_id 过滤——前者供 admin BFF「店铺商品管理」与 mall-bff C 端浏览共用（差别只在传入条件），
- * 后者供 admin BFF；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
+ * <p><b>platform 侧（跨店通用，调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #facets} / {@link #platformDetail}
+ * 不带 store_id 过滤——{@link #crossShopPage} 供 admin BFF「店铺商品管理」与 mall-bff C 端浏览共用（差别只在传入条件），
+ * {@link #facets} 供 mall-bff C 端筛选面板，{@link #platformDetail} 供 admin BFF；
+ * {@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
  * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
@@ -313,6 +318,58 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         } else {
             wrapper.orderByDesc(StoreGoodsSpu::getId);
         }
+    }
+
+    @Override
+    public StoreGoodsSpuFacetVO facets(StoreGoodsSpuFacetQueryDTO dto) {
+        StoreGoodsSpuFacetVO vo = new StoreGoodsSpuFacetVO();
+        // ⚠ 两个维度互斥地排除自己：分类维度不带 filterCategoryIds，品牌维度不带 filterBrandIds
+        vo.setCategories(facetBy(dto, "category_id", "category_name", true));
+        vo.setBrands(facetBy(dto, "brand_id", "brand_name", false));
+        return vo;
+    }
+
+    /**
+     * 按某一维度的列做 GROUP BY 聚合。
+     *
+     * @param dto        查询参数
+     * @param idColumn   维度列名（{@code category_id} / {@code brand_id}）
+     * @param nameColumn 维度名称快照列名
+     * @param isCategory true = 本次算分类维度（用 scopeCategoryIds + filterBrandIds）；false = 品牌维度（用 scope+filterCategoryIds）
+     */
+    private List<StoreGoodsFacetItemVO> facetBy(StoreGoodsSpuFacetQueryDTO dto, String idColumn,
+                                                String nameColumn, boolean isCategory) {
+        List<Long> scope = dto.getScopeCategoryIds();
+        List<Long> filterCats = dto.getFilterCategoryIds();
+        List<Long> filterBrands = dto.getFilterBrandIds();
+        QueryWrapper<StoreGoodsSpu> qw = new QueryWrapper<>();
+        qw.select(idColumn + " AS id", nameColumn + " AS name", "COUNT(*) AS cnt")
+          .isNotNull(idColumn)
+          .like(StringUtils.hasText(dto.getKeyword()), "name", dto.getKeyword())
+          .eq(dto.getShelfStatus() != null, "shelf_status", dto.getShelfStatus())
+          .eq(dto.getLockStatus() != null, "lock_status", dto.getLockStatus())
+          .in(scope != null && !scope.isEmpty(), "category_id", scope)
+          .in(isCategory && filterBrands != null && !filterBrands.isEmpty(), "brand_id", filterBrands)
+          .in(!isCategory && filterCats != null && !filterCats.isEmpty(), "category_id", filterCats)
+          .groupBy(idColumn, nameColumn)
+          .orderByDesc("cnt")
+          // ⚠ 必须补 id 升序兜底：`StoreGoodsFacetItemVO` / `StoreGoodsSpuFacetVO` 的 javadoc 承诺「按 count 降序，id 升序兜底」，
+          // 而 COUNT 相同的项在 MySQL 里顺序不定 → 同一条件两次请求可能给出不同排列，前端筛选面板会莫名其妙地抖动
+          .orderByAsc(idColumn);
+        if (dto.getShopStatus() != null) {
+            List<Long> shopIds = shopService.idListByStatus(dto.getShopStatus());
+            if (shopIds.isEmpty()) {
+                return Collections.emptyList();
+            }
+            qw.in("store_id", shopIds);
+        }
+        return listMaps(qw).stream().map(row -> {
+            StoreGoodsFacetItemVO item = new StoreGoodsFacetItemVO();
+            item.setId(((Number) row.get("id")).longValue());
+            item.setName((String) row.get("name"));
+            item.setCount(((Number) row.get("cnt")).intValue());
+            return item;
+        }).collect(Collectors.toList());
     }
 
     @Override

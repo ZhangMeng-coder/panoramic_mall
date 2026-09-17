@@ -4,12 +4,14 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
@@ -20,8 +22,8 @@ import com.panoramic.store.entity.StoreGoodsSpu;
  * 上下架联动、SKU 锁定规则与平台锁定能力（见下）。</p>
  * <p><b>owner 侧</b>（store-bff 调用）：方法必带 {@code storeId}，只作用于 {@code store_id == storeId}
  * 的行（R11）；SKU 侧操作先校验其 SPU 归属。<b>platform 侧</b>（admin BFF 调用）：方法不带 storeId、
- * 跨店全量（{@link #crossShopPage} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）；
- * 其中 {@link #crossShopPage} 已通用化为跨店通用（调用方自设限定条件），mall-bff 亦调用。
+ * 跨店全量（{@link #crossShopPage} / {@link #facets} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）；
+ * 其中 {@link #crossShopPage} / {@link #facets} 已通用化为跨店通用（调用方自设限定条件），mall-bff 亦调用。
  * 两侧的分流由端 BFF 选择调哪一侧方法决定，域内不做身份判断。</p>
  * <p>规则口径：
  * <ul>
@@ -123,6 +125,14 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @return 分页结果
      */
     PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(StoreGoodsSpuCrossShopPageQueryDTO dto);
+
+    /**
+     * 商品筛选维度聚合（分类 / 品牌两个维度各有独立口径，见 {@link StoreGoodsSpuFacetVO}）
+     *
+     * @param dto 聚合查询参数
+     * @return 两个维度的可选项及命中数
+     */
+    StoreGoodsSpuFacetVO facets(StoreGoodsSpuFacetQueryDTO dto);
 
     /**
      * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息），额外回填所属店铺名。

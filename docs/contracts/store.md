@@ -13,7 +13,7 @@ typeDirs: backend/common/src/main/java
 > **不暴露公网路由**，只被 store-bff（owner 侧）与 admin BFF / mall-bff（platform 侧）经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 18 个接口**（owner 10 + platform 8）。
+**共 19 个接口**（owner 10 + platform 9）。
 
 ## 一、前缀怎么拼上的（⚠ 容易踩）
 
@@ -49,6 +49,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:167 | GoodsController.java:138 | ShopGoodsBffService(admin) |  |
 | unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:173 | GoodsController.java:146 | ShopGoodsBffService(admin) |  |
 | listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:180 | ShopController.java:90 | ShopGoodsBffService(admin) |  |
+| mallFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | StoreClient.java:168 | GoodsController.java:136 | CatalogBffService(mall-bff) |  |
 
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`storeId`**（owner 侧数据权限锚点），后面的是 `id` / `spuId` / `skuId`。
 > 例：`storeGoodsDetail` 的 `Long, Long` = `storeId, id`；`updateStoreGoodsSkuShelf` 的 `Long, Long, Long, DTO` = `storeId, spuId, skuId, dto`。
@@ -58,7 +59,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | 侧 | 条数 | 方法 | 特征 |
 |---|:--:|---|---|
 | **owner** | 10 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
-| **platform** | 8 | pageShops, shopDetail, auditShop, pageStoreGoodsCrossShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | 分页 `pageStoreGoodsCrossShop` 已**跨店通用**（无锚点，调用方自设限定条件）：admin BFF 与 mall-bff 共用，差别只在传入条件（C 端固定 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）；其余**不带 `storeId`**，全量，调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
+| **platform** | 9 | pageShops, shopDetail, auditShop, pageStoreGoodsCrossShop, mallFacets, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | 分页 `pageStoreGoodsCrossShop` 与筛选聚合 `mallFacets` 已**跨店通用**（无锚点，调用方自设限定条件）：admin BFF 与 mall-bff 共用，差别只在传入条件（C 端固定 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）；其余**不带 `storeId`**，全量，调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
 
 > 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
 > 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
@@ -76,8 +77,8 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO |
-| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO |
+| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO |
 
 > 「子类扩字段」先例：`StoreGoodsSpuPlatformDetailVO extends StoreGoodsSpuDetailVO`（platform 侧追加 `storeName` / `categoryPath`），
 > 避免为平台侧污染 owner 侧 VO。

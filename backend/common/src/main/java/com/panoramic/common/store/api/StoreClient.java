@@ -8,6 +8,7 @@ import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
@@ -15,6 +16,7 @@ import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -158,6 +160,13 @@ public interface StoreClient {
     @PostMapping("/goods/cross-shop/spu/page")
     PageResult<StoreGoodsSpuCrossShopPageItemVO> pageStoreGoodsCrossShop(
             @RequestBody StoreGoodsSpuCrossShopPageQueryDTO dto);
+
+    /**
+     * 商品筛选维度聚合（分类 / 品牌，各带命中数）。
+     * <p>⚠ 口径见 {@link StoreGoodsSpuFacetVO}：两维度互斥排除自身。</p>
+     */
+    @PostMapping("/goods/facets")
+    StoreGoodsSpuFacetVO mallFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
 
     /**
      * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）

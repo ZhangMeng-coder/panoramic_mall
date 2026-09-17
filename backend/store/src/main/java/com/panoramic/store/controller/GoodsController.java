@@ -4,12 +4,14 @@ import com.panoramic.common.store.dto.StoreGoodsLockDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.service.StoreGoodsSpuService;
@@ -112,7 +114,7 @@ public class GoodsController {
         storeGoodsSpuService.updateSkuShelf(storeId, spuId, skuId, dto.getShelfStatus());
     }
 
-    // ---- platform（不带 storeId，跨店通用；分页为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
+    // ---- platform（不带 storeId，跨店通用；分页/聚合为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
 
     /**
      * 店铺商品分页（<b>跨店通用</b>：不带 storeId 锚点，调用方自设限定条件；
@@ -125,6 +127,15 @@ public class GoodsController {
     public PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(
             @Validated @RequestBody StoreGoodsSpuCrossShopPageQueryDTO dto) {
         return storeGoodsSpuService.crossShopPage(dto);
+    }
+
+    /**
+     * 商品筛选维度聚合（分类 / 品牌）。⚠ 两维度互斥排除自身：分类维度不受已选分类影响、
+     * 品牌维度不受已选品牌影响（否则选中后同维度选项即消失）。
+     */
+    @PostMapping("/facets")
+    public StoreGoodsSpuFacetVO facets(@RequestBody StoreGoodsSpuFacetQueryDTO dto) {
+        return storeGoodsSpuService.facets(dto);
     }
 
     /**
