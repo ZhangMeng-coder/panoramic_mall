@@ -715,6 +715,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Modify: `common/.../store/api/StoreClient.java`
 - Modify: `backend/store/.../service/StoreGoodsSpuService.java` + `impl/StoreGoodsSpuServiceImpl.java`
 - Modify: `backend/store/.../controller/GoodsController.java`
+- Modify: `docs/contracts/store.md`（登记新端点 `mallFacets`，见 Step 6）
 
 **Interfaces:**
 - Consumes: Task 4 的 `StoreShopService.idListByStatus`。
@@ -875,7 +876,10 @@ public class StoreGoodsSpuFacetQueryDTO {
           .in(isCategory && filterBrands != null && !filterBrands.isEmpty(), "brand_id", filterBrands)
           .in(!isCategory && filterCats != null && !filterCats.isEmpty(), "category_id", filterCats)
           .groupBy(idColumn, nameColumn)
-          .orderByDesc("cnt");
+          .orderByDesc("cnt")
+          // ⚠ 必须补 id 升序兜底：`StoreGoodsFacetItemVO` / `StoreGoodsSpuFacetVO` 的 javadoc 承诺「按 count 降序，id 升序兜底」，
+          // 而 COUNT 相同的项在 MySQL 里顺序不定 → 同一条件两次请求可能给出不同排列，前端筛选面板会莫名其妙地抖动
+          .orderByAsc(idColumn);
         if (dto.getShopStatus() != null) {
             List<Long> shopIds = shopService.idListByStatus(dto.getShopStatus());
             if (shopIds.isEmpty()) {
@@ -922,7 +926,27 @@ public class StoreGoodsSpuFacetQueryDTO {
     StoreGoodsSpuFacetVO mallFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
 ```
 
-- [ ] **Step 6: 编译**
+- [ ] **Step 6: 同步 `docs/contracts/store.md`：新增 `mallFacets` 行**
+
+> ⚠ 项目硬规则：**改任何对外接口，同一改动内更新对应 `<服务>.md`**，且**提交前检查器差集非空不得提交**。本任务往 `StoreClient` + `GoodsController` 加了新端点 `/goods/facets`，检查器比对 `verb + path` 双向集合与类型存在性，不登记契约表 T5 就无法提交。**不要**标「待实现」——本任务里它就实现了，标了会触发反向哨兵（「标记为待实现，但代码里已有该接口」）。
+
+在 `docs/contracts/store.md` 第二节接口表（平台侧那组）末尾加一行，列顺序照该表既有列：
+
+| 方法 | 路径 | 入参 | 出参 | 声明位置 | 实现位置 | 调用方 | 状态 |
+|---|---|---|---|---|---|---|---|
+| `mallFacets` | `POST` | `/goods/facets` | `StoreGoodsSpuFacetQueryDTO` | `StoreGoodsSpuFacetVO` | `StoreClient.java:NNN`（填实际行号） | `GoodsController.java:NNN`（填实际行号） | `CatalogBffService(mall-bff)` | 留空 |
+
+同时在「共 18 个接口（owner 10 + platform 8）」处把总数与 platform 侧计数各 +1（**只改数字，不动分节结构**——措辞与分节重构留给 Task 11 Step 3）。第五节类型表的 `dto` / `vo` 两列各补 `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO`（`StoreGoodsFacetItemVO` 也一并补入 `vo` 列）。
+
+- [ ] **Step 7: 跑契约检查器（提交前的硬门禁）**
+
+```bash
+cd /e/workspace/panoramic_mall && node docs/contracts/drift-check.mjs; echo "exit=$?"
+```
+
+Expected: `exit=0`。非 0 按输出逐条修正后再跑。⚠ 报「代码有、契约表没有」= Step 6 漏登记；报「类型找不到」= 类型表的类型名写错或没补。
+
+- [ ] **Step 8: 编译**
 
 ```bash
 cd /e/workspace/panoramic_mall
@@ -931,10 +955,10 @@ cd /e/workspace/panoramic_mall
 
 Expected: BUILD SUCCESS。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
-git add backend/store backend/common
+git add backend/store backend/common docs/contracts/store.md
 git commit -m "store：新增 facets 筛选聚合（分类/品牌，两维度互斥排除自身）
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>"
@@ -1593,8 +1617,8 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - [ ] **Step 3: `store.md` 更新**
 
 - ⚠ **改名行已在 Task 4 Step 12 完成**（`platformPageStoreGoods` 行已改为 `pageStoreGoodsCrossShop` / `POST` / `/goods/cross-shop/spu/page` 及新类型名与调用方）——本步**不要再改它**，只做下面的增量
-- 新增 `mallFacets` 行：`POST` / `/goods/facets` / `StoreGoodsSpuFacetQueryDTO` / `StoreGoodsSpuFacetVO` / `CatalogBffService(mall-bff)`
-- 「共 18 个接口（owner 10 + platform 8）」改为**实际条数**（Task 5 新增 facets 后应为 19）并重述「跨店通用」侧
+- ⚠ **`mallFacets` 行也已在 Task 5 Step 6 登记**（含总数计数与类型表），本步**不要再加一行**——重复登记会被检查器判为幽灵行或类型重复。只复核它还在、内容对
+- 「共 N 个接口（owner 10 + platform M）」的**条数已在 Task 5 Step 6 改过**，本步只**重述「跨店通用」侧的文字表述**，数字以文件现状为准、不要照抄本计划里的数字
 - 第三节 owner/platform 表：把该分页从 platform 行移出，单列一节说明「跨店通用（无锚点）——调用方自设限定条件；C 端固定传 shopStatus=2 + shelfStatus=1 + lockStatus=0」
 - 第五节类型表补新类型
 - 补一条形状说明：facets 的两维度互斥口径
