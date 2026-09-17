@@ -1720,12 +1720,20 @@ Task 7 已落地（检查器强制）：接口清单 `5 条 → 8 条`、三行�
 - 补一条形状口径：**C 端展示口径由 BFF 固定**（`shopStatus=2` + `shelfStatus=1` + `lockStatus=0`），域侧不含 C 端隐含约束
 - §三 末段「首页六个区块的数据仍是静态的 `src/mock/`，首页数据聚合属二期」→ 改写为「搜索区与分类展示区已接本表 catalog 三接口；**热门商品列表仍为静态 mock**」
 
-- [ ] **Step 5: `cross-cutting.md` 新增条目**
+- [ ] **Step 5: `cross-cutting.md` 新增条目 + **修正三处已过期的既有条文**
 
 新增三条（编号顺延）：
 1. **C 端商品展示口径在端 BFF，不在域**：mall-bff 调 store 域商品查询时固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`；域侧不含 C 端隐含约束。新增 C 端查询时必须保持这三个条件。
 2. **筛选维度聚合「排除自身维度」**：分类维度不受已选分类影响、品牌维度不受已选品牌影响；否则选中后同维度选项消失。
 3. **跨店分页通用化**：store 域 `/goods/cross-shop/spu/page` 由 admin BFF 与 mall-bff 共用，调用方自设限定条件；域返回的 VO 含管理端字段（`lockUser` 等），**C 端输出前必须由 BFF 裁剪**。
+
+⚠ **另有三处既有条文已被本计划改成假话，本步必须一并改**（Task 7 按简报只动了门禁强制要求的部分，这几处检查器不查、故留到这里；根 `CLAUDE.md` 硬规则 3 要求「改跨服务隐式契约必须同步更新 `cross-cutting.md`」）：
+
+| 行 | 现在写的 | 改成 |
+|---|---|---|
+| §12 白名单的「定义位置」行（约 `:148`） | 网关 `application.yml:61` 的值里**没有** `/mall/catalog/**`；服务侧 mall-bff 的枚举只有 `/auth/login,/auth/register,/auth/sms-code` | 网关侧补 `/mall/catalog/**`（顺带把行号 `:61` 核成现值）、mall-bff 侧补 `/catalog/**`；「⚠ 易漏项」那句可补一句「**公开浏览类前缀**（C 端 `/catalog/**`）同样两处都要登记」 |
+| §12 规律后的 ⚠ 段（约 `:175`） | 「mall-bff **一期没有任何 Feign 客户端**，`feign-circuitbreaker.yml` 属空转……二期接首页聚合调 goods-center 时无需再改加载矩阵」 | mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），熔断配置**不再是空转**；「端 BFF 一律加载四个」的规律不变 |
+| §13 熔断契约的「消费位置」行（约 `:184`） | 「admin、store-bff（引 resilience4j 的两端）……mall-bff 一期无 Feign 客户端、不触发本机制，但同样加载该配置」 | 消费位置改为「admin、store-bff、**mall-bff**（三端均已调域）」，并去掉「一期无 Feign 客户端」的限定 |
 
 - [ ] **Step 6: `admin.md` 更新**
 
@@ -1739,9 +1747,20 @@ Task 7 已落地（检查器强制）：接口清单 `5 条 → 8 条`、三行�
 - mall 前端段：「不引外部图片与字体」改为「**数据驱动**的图片（分类图标等）可由后端 URL 提供；**前端源码内**不写死外链、不引外链字体、不接外链图床」
 - 补一句 mall 列表页形态（1280 固定容器 + 7 列 + 每页 49）
 
-- [ ] **Step 8: `backend/store/README.md` 更新**
+- [ ] **Step 8: `backend/store/README.md` 与 `backend/mall-bff/README.md` 更新**
 
-补 `min_price` 推导不变量与 facets 口径；把 `refreshShelfStatus` 的表述改为「`refreshDerived` 是推导量统一刷新入口，内含 `refreshShelfStatus` 与 `refreshMinPrice` 两个不变量写者」。
+`store/README.md`：补 `min_price` 推导不变量与 facets 口径；把 `refreshShelfStatus` 的表述改为「`refreshDerived` 是推导量统一刷新入口，内含 `refreshShelfStatus` 与 `refreshMinPrice` 两个不变量写者」。
+
+`mall-bff/README.md`：⚠ 该文件**有 7 处**「一期不调任何业务域 / 无 Feign 客户端 / 首页聚合属二期」现在都是假话，Task 7 按简报只改了代码，**留到本步**（Task 7 实现者已逐条列出）：第 `9`、`10`、`19`、`20`、`30`、`73`、`80` 行。改法：
+
+- `:9`/`:10`（引言「一期范围 = 顾客账号骨架——不调任何业务域；首页数据聚合是二期」）→ 改为「已接 goods-center（分类树）与 store（商品分页 / 筛选聚合）」，并说明**热门商品列表仍是静态 mock**
+- `:19`（「本层调谁 = 一期：无」）→ 改为 goods-center + store，注明 `@EnableFeignClients` 扫的两个包
+- `:20`（「二期计划」行）→ 删掉或改写为已落地
+- `:30`（「商品 / 分类 / 品牌 → goods-center（**一期未接入**）」）→ 去掉「一期未接入」
+- `:73`（「一期不调任何域：没有 Feign 客户端、没有编排、没有降级逻辑」）→ 改写为现有编排与降级（`BffFeignCall` + 树降级）
+- `:80`（「一期**没有 Feign 客户端**，`feign-circuitbreaker.yml` 属**空转**」）→ 改为已非空转，「端 BFF 一律加载四个」的规律不变
+
+> 模块 README 只写服务说明（职责 / 架构位置 / 实体标记 / 边界），❌ 不列接口清单——接口清单在 `mall-bff.md`，别在这里再抄一份。
 
 - [ ] **Step 9: 跑契约检查器**
 
@@ -1754,7 +1773,7 @@ Expected: `exit=0`。非 0 按输出逐条修正后再跑。
 - [ ] **Step 10: 提交**
 
 ```bash
-git add docs CLAUDE.md backend/store/README.md backend/gateway/src/main/resources/application.yml
+git add docs CLAUDE.md backend/store/README.md backend/mall-bff/README.md backend/gateway/src/main/resources/application.yml
 git commit -m "契约与文档同步：catalog 三接口、跨店分页通用化、C 端口径、分类 icon 约定
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>"
