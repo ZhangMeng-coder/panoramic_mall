@@ -8,7 +8,11 @@ import type { RespData } from '../types/api'
  */
 const instance = axios.create({
   baseURL: '/',
-  timeout: 10000
+  timeout: 10000,
+  // 数组型 query 参数发成重复键（`brandIds=1&brandIds=2`），不用 axios 默认的 `brandIds[]=1&brandIds[]=2`：
+  // Spring 的 `List<Long>` 只认重复键；PHP 风格的 `[]` 后缀会被 BeanWrapper 当成下标解析（空下标 → NumberFormatException），请求直接失败。
+  // 用对象形式只改数组键名，其余序列化（编码、嵌套对象）仍走 axios 默认，不接管。
+  paramsSerializer: { indexes: null }
 })
 
 /**
