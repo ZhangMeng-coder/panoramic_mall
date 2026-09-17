@@ -1724,9 +1724,19 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ## Task 11: 契约与文档同步
 
 **Files:**
-- Modify: `docs/contracts/store.md`、`mall-bff.md`、`gateway.md`、`cross-cutting.md`、`admin.md`
-- Modify: `CLAUDE.md`（根）
-- Modify: `backend/store/README.md`、`backend/mall-bff/README.md`（若存在）
+- Modify: `docs/contracts/store.md`、`mall-bff.md`、`gateway.md`、`cross-cutting.md`、`admin.md`、`README.md`（契约索引，计数）
+- Modify: `CLAUDE.md`（根）、`README.md`（根）、`frontend/mall/README.md`
+- Modify: `backend/store/README.md`、`backend/mall-bff/README.md`、`backend/README.md`、`backend/common-auth/README.md`
+
+> ⚠ **本清单是枚举出来的，而「mall-bff 一期不调任何业务域」这句话散落在 6 个文件里**（复评实测：`backend/mall-bff/README.md`、`backend/README.md`、根 `README.md`、`frontend/mall/README.md`、`backend/common-auth/README.md`、`docs/contracts/cross-cutting.md`）——初版清单只扫到其中一个，其余全部漏掉（其中 `backend/README.md` 甚至**已被本任务打开过**只为改一个计数，却把同文件里三处假话留着）。故本任务的**权威验收不是「清单里的文件都改了」，而是下面这条 grep 必须为空**；清单只作起点，**按 grep 找全，不要按清单找**：
+
+```bash
+cd /e/workspace/panoramic_mall
+grep -rn "不调任何业务域\|不调域\|一期只做账号\|一期未接入\|无 Feign 客户端\|没有 Feign 客户端\|空转\|首页数据聚合[是属为]二期\|首页六个区块的数据仍全部静态" \
+  --include=*.md . | grep -v node_modules | grep -v "/.superpowers/" | grep -v "docs/superpowers/"
+```
+
+Expected: **空**。（排除 `docs/superpowers/` 是**刻意**的：计划与 spec 是本次改动的记录，它们引述旧说法是正常的。）
 
 - [ ] **Step 1: `gateway.md` —— ⚠ **已在 Task 7 Step 3b 完成，本步只复核、不要重复加**
 
