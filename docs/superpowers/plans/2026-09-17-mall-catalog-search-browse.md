@@ -1375,9 +1375,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Files:**
 - Create: `frontend/mall/src/types/api.ts`、`frontend/mall/src/types/catalog.ts`
 - Create: `frontend/mall/src/api/catalog.ts`
-- Create: `frontend/mall/src/components/Pager.vue`、`FilterRow.vue`
+- Create: `frontend/mall/src/components/Pager.vue`、`FilterRow.vue`、`CatalogCard.vue`
 - Create: `frontend/mall/src/styles/catalog.css`
-- Modify: `frontend/mall/src/components/GoodsCard.vue`（改紧凑版，接收新形状）
+- ⚠ **不改** `frontend/mall/src/components/GoodsCard.vue`、`GoodsGrid.vue` 与 `styles/mall.css` 的 `.goods__*`（见 Step 6 的说明）
 
 **Interfaces:**
 - Consumes: Task 7 的三个页面接口。
@@ -1387,7 +1387,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
   - `catalogApi.facets(body: FacetQuery): Promise<FacetResult>`
   - 组件 `Pager` props `{ total: number; pageSize: number; page: number }` emits `change(page)`
   - 组件 `FilterRow` props `{ title: string; items: FacetItem[]; selected: number[] }` emits `toggle(id)`
-  - `GoodsCard` props `{ goods: GoodsListItem }`
+  - 组件 `CatalogCard` props `{ goods: GoodsListItem }`（**新建**；首页的 `GoodsCard` 不动，见 Step 6）
 
 - [ ] **Step 1: 建 `types/api.ts`**
 
@@ -1499,14 +1499,22 @@ export const catalogApi = { categories, goods, facets }
 
 一行筛选维度：标题 + 若干可点选项（chips，显示 `名称 数量`），选中态高亮，点击 emit `toggle(id)`。空数组时整行不渲染（`v-if`）。
 
-- [ ] **Step 6: 改 `components/GoodsCard.vue` 为紧凑版**
+- [ ] **Step 6: 新建 `components/CatalogCard.vue`（**不是**改 `GoodsCard.vue**）
 
-- props 改为 `{ goods: GoodsListItem }`
-- 主图：`<img v-if="goods.mainImage" :src="goods.mainImage" @error="onImgError">`，`imgFailed` 为 true 或 `mainImage` 为空时渲染现有渐变占位（色相由 `goods.id` 取模派生：`hue = goods.id % 360`），占位文字取商品名首字
-- 名称 2 行截断（沿用 `clamp-2`）
+> ⚠ **原计划是「把 `GoodsCard.vue` 改成紧凑版、接收新形状」，核实后改为新建组件**——理由是它违反项目约定且越界：
+> - `GoodsCard.vue` 现在**没有 Style 块**，它的全部样式（`.goods__*`）住在 `styles/mall.css:623-755`，是按首页的 **5 列栅格**（`mall.css:623` `repeat(5, 1fr)`）调过的（`.goods__name { min-height: 41px }` 等）。
+> - 按原计划删掉「原价 / 销量 / 角标」的模板，等于**把 ⑥ 热门商品区的角标 / 原价 / 销量位一起删掉**——而根 `CLAUDE.md` 明写「商品卡 5 列 × 2 行、价格三层字号、**角标 / 原价 / 销量位**…是刻意的基准，不要随手改小」，且用户本次明确「热门商品那**先忽略**」。项目约定与本次范围都指向「不许动它」。
+> - 复用一个卡片还会让 7 列紧凑卡与 5 列首页卡共用类名 → 改一边必串另一边。
+> 故：**`GoodsCard.vue` / `GoodsGrid.vue` / `.goods__*` 一律零改动**（原 Step 9 的 mock→新形状映射也随之取消，不需要了），列表页用**独立组件 + 独立类名前缀**。
+
+`CatalogCard.vue`（props `{ goods: GoodsListItem }`，类名前缀 `cat-card__*`，样式写在 `catalog.css`）：
+
+- 根元素用 `<li class="cat-card">`（父级 7 列栅格 `<ul>` 的子项；与 `GoodsCard` 的 `<li class="goods__item">` 同构）
+- 主图：`<img v-if="goods.mainImage && !imgFailed" :src="goods.mainImage" @error="imgFailed = true">`；`imgFailed` 为 true 或 `mainImage` 为空时渲染 **CSS 渐变占位**（`grad()` 现成工具：`src/utils/gradient.ts`），色相由 `goods.id` 取模派生（`hue = goods.id % 360`），占位文字取商品名首字
+- 名称 2 行截断（`.clamp-2` 是 `base.css` 的全局工具类，可直接用）
 - 价格：`¥{{ minPrice }} 起`，`minPrice` 为 null 时显示「价格待定」
-- 底部一行：店铺名（单行截断）
-- **删除** 原价 / 销量 / 角标相关的模板与 `priceParts`/`tagClass`/`trimNum` 中不再使用的引用（`noUnusedLocals` 会报错）
+- 底部一行：店铺名（单行截断，`goods.storeName`）
+- ⚠ 不要 `import` `priceParts`/`tagClass`/`trimNum`——`noUnusedLocals` 会因未使用而报错；价格直接用 `minPrice` 原值渲染即可（**不加** `tnum` 之外的格式化函数，除非确实要用 `trimNum`）
 
 - [ ] **Step 7: 建 `styles/catalog.css`**
 
@@ -1526,24 +1534,15 @@ import './styles/catalog.css'
 cd /e/workspace/panoramic_mall/frontend/mall && npm run type-check
 ```
 
-Expected: 无错误。（此时 `GoodsCard` 的旧引用方 `GoodsGrid.vue` 会因 props 形状变化报错——**Step 9 一并处理**，若报错先继续。）
+Expected: 无错误。⚠ 因为 Step 6 是**新建**组件、没有改 `GoodsCard` 的 props，首页那侧（`GoodsGrid.vue` → `GoodsCard.vue`）**不应该出现任何报错**；若出现，说明动到了不该动的文件，回去检查。
 
-- [ ] **Step 9: 让首页热门商品区继续可用**
-
-首页 `GoodsGrid.vue` 仍用 `src/mock/goods.ts`。两种做法二选一，**取第一种**：
-
-1. `GoodsGrid.vue` 内部把 mock 行映射成 `GoodsListItem` 形状后再传给 `GoodsCard`（`mainImage: null`、`minPrice: price`、`storeName: ''`、`categoryName: null`、`brandId: null`、`brandName: null`），模板与样式零改动；
-2. 给 `GoodsCard` 加 `variant` prop 区分两套渲染。
-
-选 1 的理由：热门商品区本次不改，映射层最薄。
-
-- [ ] **Step 10: 类型检查（复核）**
+- [ ] **Step 9: 复核首页零改动（原「让热门商品区继续可用」一步已不需要，改为核对）**
 
 ```bash
-cd /e/workspace/panoramic_mall/frontend/mall && npm run type-check
+cd /e/workspace/panoramic_mall && git diff --stat frontend/mall/src/components/GoodsCard.vue frontend/mall/src/components/GoodsGrid.vue frontend/mall/src/styles/mall.css
 ```
 
-Expected: 零错误。
+Expected: **空输出**（三个文件均未改）。非空即越界，回退这三处。
 
 - [ ] **Step 11: 提交**
 
@@ -1587,7 +1586,7 @@ TopBar
 FilterRow 分类（多选）
 FilterRow 品牌（多选）
 排序条：共 N 件 | 综合 / 价格 ↑ / 价格 ↓
-7 列网格（GoodsCard）
+7 列网格（CatalogCard）
 Pager（每页 49）
 SiteFooter
 ```
@@ -1641,9 +1640,13 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 - [ ] **Step 1: 改 `SearchBar.vue` 真跳转**
 
-- 删掉 `hint` 那句「演示：搜索未接入」以及 `search__hint` 提示区（或改为无关键词时的轻提示）
+现状（已核实）：`SearchBar.vue` 有 `const hint = ref('')`、`doSearch()` 只写 `hint.value = '（演示：搜索未接入…）'`、模板里有一段 `<p class="search__hint" role="status">{{ hint }}</p>`，`pickHot` 只是回填 + 调 `doSearch`。本步：
+
+- **删干净 `hint`**：`hint` ref、`doSearch` 里给它赋值的分支、模板里的 `<p class="search__hint">` 整段一并删除。⚠ **不要**「改为无关键词时的轻提示」——搜索现在真跳转，这条提示条没有任何时候该出现，留着就是个永远空着的 `<p>`（且是演示外壳的最后残留）。
+- `import { useRouter } from 'vue-router'` + `const router = useRouter()`（现有文件**没有** router import，要新加）
 - `doSearch()` 改为 `router.push({ path: '/search', query: kw ? { keyword: kw } : {} })`
-- 点热搜词：回填输入框后同样跳转；热搜词数组**保持现有静态 mock**（本次忽略该需求），删掉「仅提示」的注释
+- 点热搜词：回填输入框后同样跳转（`pickHot` 调 `doSearch`）；热搜词数组**保持现有静态 mock**（本次忽略该需求），删掉「只出提示、不跳转」的注释
+- ⚠ 改完确认没有残留的 `search__hint` 样式引用问题：`.search__hint` 定义在 `styles/mall.css`，删模板后该规则成为死样式，**可以留着**（本次不动 mall.css），不要为它去改样式文件
 
 - [ ] **Step 2: 改 `CategoryGrid.vue` 接真实分类树**
 
