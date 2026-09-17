@@ -129,7 +129,7 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
 
     /**
      * 锁定商品（平台）：写锁定状态/原因/锁定人/锁定时间，并把名下 SKU 全部级联下架，
-     * 再由 {@code refreshShelfStatus} 推导 SPU 为下架。已锁定则拒绝重复操作。
+     * 再由 {@code refreshDerived} 推导 SPU 为下架。已锁定则拒绝重复操作。
      * <p>锁定期 owner 侧整行只读，仅本方法可解。</p>
      *
      * @param id  店铺商品 id

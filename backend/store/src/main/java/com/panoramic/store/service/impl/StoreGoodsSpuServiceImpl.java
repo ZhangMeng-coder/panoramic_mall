@@ -37,6 +37,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -58,8 +59,9 @@ import java.util.stream.Collectors;
  * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
  * <p><b>platform 侧（跨店全量）</b>：{@link #platformPage} / {@link #platformDetail} 不带 store_id 过滤，
  * 供 admin BFF 编排「店铺商品管理」；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
- * <p><b>上下架不变量</b>：SPU 的 {@code shelf_status} 从不直接接受入参，只由
- * {@link #refreshShelfStatus} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架}；
+ * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
+ * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
+ * {@code min_price = 上架且未删 SKU 的最低价}；
  * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。</p>
  * <p><b>域内不做鉴权/审核判断</b>：店铺 {@code status == 2} 的门禁由端 BFF 前置（R9），
  * 审计字段由 MyMetaObjectHandler 经 UserContext 自动填充，本类一律不手写。</p>
@@ -230,7 +232,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
             skuService.removeByIds(removedIds);
         }
         // 整单替换可能清空/新增上架行，按最新 SKU 状态重新联动 SPU
-        refreshShelfStatus(spu);
+        refreshDerived(spu);
     }
 
     @Override
@@ -242,7 +244,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         sku.setShelfStatus(shelfStatus);
         skuService.updateById(sku);
         // R2/R3：SKU 上下架反向联动 SPU（上架任一 → SPU 上架；全下架 → SPU 下架）
-        refreshShelfStatus(spu);
+        refreshDerived(spu);
     }
 
     // ---- platform 侧（admin BFF 调用，跨店全量）----
@@ -311,7 +313,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         skuService.offShelfBySpuId(id);
         // ⚠ 必须重取实体：上面的条件更新绕过实体，手上这行的 lock_* 仍是旧值，
         // 直接拿来 updateById 会把 lock_status=0 写回去，把刚落的锁抹掉
-        refreshShelfStatus(getById(id));
+        refreshDerived(getById(id));
     }
 
     @Override
@@ -396,10 +398,18 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     /**
-     * 按名下 SKU 重算并回写 SPU 上下架状态（R2/R3）。
-     * <p>不变量的唯一写入口：SPU 上架 ⟺ 至少一个 SKU 上架。状态未变则不发 UPDATE。</p>
+     * 推导量统一刷新入口：SPU 的 {@code shelf_status} 与 {@code min_price} 都只经此处写入。
      *
-     * @param spu 店铺商品实体（已确权）
+     * @param spu 店铺商品实体（须是**从库中重取**的最新行，不可用被条件更新绕过的旧对象）
+     */
+    private void refreshDerived(StoreGoodsSpu spu) {
+        refreshShelfStatus(spu);
+        refreshMinPrice(spu);
+    }
+
+    /**
+     * 按名下 SKU 重算并回写 SPU 上下架状态（R2/R3）。
+     * <p>不变量「SPU上架 ⟺ 至少一个 SKU 上架」的唯一写入口。状态未变则不发 UPDATE。</p>
      */
     private void refreshShelfStatus(StoreGoodsSpu spu) {
         int derived = skuService.hasOnShelfSku(spu.getId())
@@ -409,6 +419,35 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         }
         spu.setShelfStatus(derived);
         updateById(spu);
+    }
+
+    /**
+     * 按名下上架 SKU 重算并回写 SPU 最低价。
+     * <p>不变量「min_price = 上架且未删 SKU 的最低价」的唯一写入口。
+     * ⚠ 必须<b>独立</b>比较 min_price 是否变化，不得复用 {@link #refreshShelfStatus} 的状态早退——
+     * 上下架状态没变时 min_price 仍可能变（例：下架高价 SKU 后最低价改变但 SPU 仍为上架）。</p>
+     */
+    private void refreshMinPrice(StoreGoodsSpu spu) {
+        BigDecimal derived = skuService.minPriceBySpuId(spu.getId());
+        if (samePrice(spu.getMinPrice(), derived)) {
+            return;
+        }
+        spu.setMinPrice(derived);
+        // ⚠ 不能用 updateById：MP 默认 FieldStrategy 为 NOT_NULL，derived 为 null 时该列会被跳过，
+        // 「SKU 全部下架 → min_price 清空」这条就静默不落库（同解锁清 lock_* 的陷阱）。
+        // 条件更新 + 显式 set 是唯一可靠写法。
+        lambdaUpdate()
+                .set(StoreGoodsSpu::getMinPrice, derived)
+                .eq(StoreGoodsSpu::getId, spu.getId())
+                .update();
+    }
+
+    /** 价格等值比较（都用 compareTo：BigDecimal.equals 对精度敏感，10.0 与 10.00 判定不等） */
+    private boolean samePrice(BigDecimal a, BigDecimal b) {
+        if (a == null || b == null) {
+            return a == null && b == null;
+        }
+        return a.compareTo(b) == 0;
     }
 
     /**

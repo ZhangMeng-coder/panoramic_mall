@@ -40,6 +40,14 @@ public interface StoreGoodsSkuService extends IService<StoreGoodsSku> {
     boolean hasOnShelfSku(Long spuId);
 
     /**
+     * 某店铺商品名下<b>已上架且未删</b> SKU 的最低价（SPU 的 min_price 推导用）
+     *
+     * @param spuId 店铺商品 SPU id
+     * @return 最低价；无上架 SKU 时返回 null
+     */
+    java.math.BigDecimal minPriceBySpuId(Long spuId);
+
+    /**
      * 逻辑删除某店铺商品下的全部 SKU（SPU 删除时级联）
      *
      * @param spuId 店铺商品 SPU id
@@ -49,7 +57,7 @@ public interface StoreGoodsSkuService extends IService<StoreGoodsSku> {
     /**
      * 把某店铺商品名下<b>已上架</b>的 SKU 批量置为下架（平台锁定时的级联动作），返回是否有行被改动。
      * <p>只更新上架行（下架行本就不必写）；调用方随后须经
-     * {@code StoreGoodsSpuServiceImpl#refreshShelfStatus} 重推 SPU 上下架，保持
+     * {@code StoreGoodsSpuServiceImpl#refreshDerived} 重推 SPU 上下架，保持
      * 「SPU上架 ⟺ ≥1 SKU 上架」的不变量，本方法不自行改 SPU 状态。</p>
      *
      * @param spuId 店铺商品 SPU id

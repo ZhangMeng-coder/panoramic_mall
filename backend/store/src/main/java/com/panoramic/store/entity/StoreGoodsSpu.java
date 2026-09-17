@@ -7,6 +7,7 @@ import com.panoramic.common.vo.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -128,4 +129,11 @@ public class StoreGoodsSpu extends BaseEntity {
      * 锁定时间
      */
     private LocalDateTime lockTime;
+
+    /**
+     * 在售（上架且未删）SKU 的最低价；无上架 SKU 时为 null。
+     * <p>推导量，由 {@code StoreGoodsSpuServiceImpl#refreshMinPrice} 唯一写入，
+     * 不接受外部直接赋值。用于 C 端列表展示「¥xx.xx 起」与价格排序。</p>
+     */
+    private BigDecimal minPrice;
 }

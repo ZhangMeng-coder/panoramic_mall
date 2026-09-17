@@ -8,9 +8,11 @@ import com.panoramic.store.service.StoreGoodsSkuService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -50,6 +52,21 @@ public class StoreGoodsSkuServiceImpl extends ServiceImpl<StoreGoodsSkuMapper, S
         return count(Wrappers.<StoreGoodsSku>lambdaQuery()
                 .eq(StoreGoodsSku::getSpuId, spuId)
                 .eq(StoreGoodsSku::getShelfStatus, StoreGoodsSku.SHELF_ON)) > 0;
+    }
+
+    @Override
+    public BigDecimal minPriceBySpuId(Long spuId) {
+        // 取全量再求最小是有意的：本方法**只在写路径**被调用（save/replaceSkus/updateSkuShelf/lock），
+        // 读路径一律直接读 store_goods_spu.min_price 冗余列（这正是加该列的理由），故不存在 N+1。
+        // 一个 SPU 的 SKU 数是个位数，不值得为它引入字符串列名的聚合查询。
+        List<StoreGoodsSku> onShelf = list(Wrappers.<StoreGoodsSku>lambdaQuery()
+                .eq(StoreGoodsSku::getSpuId, spuId)
+                .eq(StoreGoodsSku::getShelfStatus, StoreGoodsSku.SHELF_ON));
+        return onShelf.stream()
+                .map(StoreGoodsSku::getPrice)
+                .filter(Objects::nonNull)
+                .min(BigDecimal::compareTo)
+                .orElse(null);
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.panoramic.common.store.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -76,6 +77,11 @@ public class StoreGoodsSpuPlatformPageItemVO {
      * SKU 数量
      */
     private Integer skuCount;
+
+    /**
+     * 在售 SKU 最低价（无上架 SKU 时为 null）
+     */
+    private BigDecimal minPrice;
 
     /**
      * 锁定状态：0 未锁定，1 已锁定
