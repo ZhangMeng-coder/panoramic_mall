@@ -32,6 +32,9 @@ todo.md
 # 本地临时数据/备份
 temp/
 
+# superpowers 工作区（brainstorm 样张、SDD 台账与评审包，属机器本地scratch）
+.superpowers/
+
 # hookify 本地规则（机器本地配置，按 hookify 约定不入库；同 .claude/settings.local.json）
 .claude/*.local.md
 .claude/*.local.json
