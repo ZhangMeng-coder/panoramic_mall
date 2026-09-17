@@ -238,8 +238,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ## Task 3: `min_price` 推导列（代码）
 
 **Files:**
-- Modify: `backend/common/src/main/java/com/panoramic/common/store/vo/StoreGoodsSpuPageItemVO.java`（加 `minPrice`）
-- Modify: `backend/common/src/main/java/com/panoramic/common/store/vo/StoreGoodsSpuPlatformPageItemVO.java`（加 `minPrice`）
+- Modify: `backend/common/src/main/java/com/panoramic/common/store/vo/StoreGoodsSpuPlatformPageItemVO.java`（加 `minPrice`；owner 侧 VO **不动**）
 - Modify: `backend/store/src/main/java/com/panoramic/store/entity/StoreGoodsSpu.java`（加 `minPrice` 字段）
 - Modify: `backend/store/src/main/java/com/panoramic/store/service/StoreGoodsSkuService.java` + `impl/StoreGoodsSkuServiceImpl.java`（加 `minPriceBySpuId`）
 - Modify: `backend/store/src/main/java/com/panoramic/store/service/impl/StoreGoodsSpuServiceImpl.java`（拆 `refreshDerived`）
@@ -267,9 +266,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 （`java.math.BigDecimal` 需 import。）
 
-- [ ] **Step 2: 两个 VO 加 `minPrice`**
+- [ ] **Step 2: 跨店 VO 加 `minPrice`（**只加这一个**）**
 
-`StoreGoodsSpuPageItemVO` 与 `StoreGoodsSpuPlatformPageItemVO` 各加：
+只改 `StoreGoodsSpuPlatformPageItemVO`：
 
 ```java
     /**
@@ -277,6 +276,8 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
      */
     private java.math.BigDecimal minPrice;
 ```
+
+> ⚠ **不要**同时给 owner 侧的 `StoreGoodsSpuPageItemVO` 加这个字段。owner 侧（店主自己的商品列表）本次改动完全不涉及、也没有任何消费方会读它——加了就是纯未使用的新增对外字段（YAGNI）。C 端与「¥xx 起」展示走的是跨店侧。
 
 - [ ] **Step 3: SKU service 加取最低价能力**
 
@@ -297,6 +298,9 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ```java
     @Override
     public BigDecimal minPriceBySpuId(Long spuId) {
+        // 取全量再求最小是有意的：本方法**只在写路径**被调用（save/replaceSkus/updateSkuShelf/lock），
+        // 读路径一律直接读 store_goods_spu.min_price 冗余列（这正是加该列的理由），故不存在 N+1。
+        // 一个 SPU 的 SKU 数是个位数，不值得为它引入字符串列名的聚合查询。
         List<StoreGoodsSku> onShelf = list(Wrappers.<StoreGoodsSku>lambdaQuery()
                 .eq(StoreGoodsSku::getSpuId, spuId)
                 .eq(StoreGoodsSku::getShelfStatus, StoreGoodsSku.SHELF_ON));
@@ -373,7 +377,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 - [ ] **Step 5: 把所有 `refreshShelfStatus(spu)` 调用点改为 `refreshDerived(spu)`**
 
-⚠ **以下枚举不保证完整**（很可能还包含 `save`），**以 grep 结果为准**——凡调用 `refreshShelfStatus(spu)` 的地方一律改调 `refreshDerived(spu)`，一个都不能漏（漏了就会留下 min_price 不更新的入口）：
+已核实：**恰好 3 个调用点**（`replaceSkus` 尾部、`updateSkuShelf` 尾部、`lock` 尾部的 `refreshShelfStatus(getById(id))`）——`delete` 与 `update` 都不调它。逐个改成 `refreshDerived(...)`；改完用下面的 grep 复核：
 
 ```bash
 cd /e/workspace/panoramic_mall
