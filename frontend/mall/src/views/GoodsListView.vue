@@ -183,18 +183,6 @@ function changePage(page: number): void {
 /** 并发序号：后发的请求作废先发的响应（连点筛选 / 排序时不串数据） */
 let seq = 0
 
-/**
- * 钳「越界的当前页」—— ⚠ Pager 只钳它自己的高亮、**不 emit**，兜底责任在本页面。
- * 漏了就是：改筛选后结果从 5 页缩到 2 页 → 分页器正确高亮「2」，而这里仍发 pageNum=5
- * → 列表空白，且点已高亮的「2」按 Pager 的设计是 no-op，用户只能靠「上一页」自救。
- * 修正写回 URL（URL 是唯一真相源），watcher 会用钳后的页号重发一次。
- */
-function normalizePage(asked: number, newTotal: number): void {
-  const pageCount = Math.max(1, Math.ceil(newTotal / PAGE_SIZE))
-  if (asked <= pageCount) return
-  void router.replace({ query: toQuery({ ...selection(), page: pageCount }) })
-}
-
 async function load(page: number): Promise<void> {
   const current = ++seq
   loading.value = true
@@ -224,12 +212,24 @@ async function load(page: number): Promise<void> {
     return
   }
 
-  items.value = goodsRes.value.records
-  total.value = goodsRes.value.total
   // facets 只是筛选面板（增强）：它失败不该让已经拿到的商品列表一起消失，保留上一次的 chips
   if (facetRes.status === 'fulfilled') facets.value = facetRes.value
 
-  normalizePage(page, goodsRes.value.total)
+  // 钳「越界的当前页」—— ⚠ Pager 只钳它自己的高亮、**不 emit**，兜底责任在本页面。
+  // 漏了就是：改筛选后结果从 5 页缩到 2 页 → 分页器正确高亮「2」，而这里仍发 pageNum=5
+  // → 列表空白，且点已高亮的「2」按 Pager 的设计是 no-op，用户只能靠「上一页」自救。
+  // ⚠ 必须**先判后写**：若先把这批越界页的数据落地，模板会立刻命中「没有找到相关商品」
+  // 渲染出一句假文案（replace 是异步导航，要等守卫跑完才重拉）。保持 loading，
+  // 让重拉的结果直接覆盖这一帧。
+  const pageCount = Math.max(1, Math.ceil(goodsRes.value.total / PAGE_SIZE))
+  if (page > pageCount) {
+    loading.value = true
+    void router.replace({ query: toQuery({ ...selection(), page: pageCount }) })
+    return
+  }
+
+  items.value = goodsRes.value.records
+  total.value = goodsRes.value.total
 }
 
 /**
@@ -259,8 +259,16 @@ async function loadTree(): Promise<void> {
 }
 
 onMounted(() => {
-  void loadTree()
+  // 分类树只服务分类页（标题 + 「全部分类」入口）：搜索页不消费它，
+  // 无条件拉会白打一次 goods-center，且它失败时弹出一条与本页无关的「分类暂不可用」
+  if (isCategory.value) void loadTree()
   void load(pageNum.value)
+})
+
+// 组件实例复用：从 /search 前进/后退到 /category/:id 时 onMounted 不会再跑，
+// 只靠上面的守卫会让树永远为空、标题退化成「分类商品」
+watch(isCategory, (v) => {
+  if (v && !tree.value.length) void loadTree()
 })
 
 watch(signature, () => {

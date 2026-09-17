@@ -2,16 +2,6 @@
    首页数据类型 —— 全部对应静态 mock 数据，不接接口。
    ========================================================================== */
 
-/** 一级分类（③ 全分类展示） */
-export interface Category {
-  id: string
-  name: string
-  /** 图标字符（Emoji）；图标圆底由 hue 生成的渐变充当，不引外部图片 */
-  emoji: string
-  /** 色相，决定占位渐变的颜色 */
-  hue: number
-}
-
 /** 轮播广告（④ 大型滚动广告框） */
 export interface Banner {
   id: string

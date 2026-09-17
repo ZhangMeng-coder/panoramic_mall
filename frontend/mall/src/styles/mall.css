@@ -178,15 +178,6 @@
   background: var(--brand-grad-active);
 }
 
-/* 回车后的静态提示：始终占位，避免出现时页面跳动 */
-.search__hint {
-  height: 20px;
-  margin-top: var(--s-2);
-  padding-left: var(--s-5);
-  font-size: var(--t-sm);
-  color: var(--brand);
-}
-
 .search__hot {
   display: flex;
   align-items: center;
