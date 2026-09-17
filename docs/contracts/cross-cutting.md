@@ -45,7 +45,7 @@ layer: cross-cutting
 | 契约 | 分页查询入参 `extends BasePageVO`，出参 `PageResult<T>` |
 | 定义位置 | `common/.../common/vo/BasePageVO.java` |
 | 消费位置 | 所有分页接口 |
-| ⚠ 已知风险 | `PageResult` 存在**两个同名独立类型**：`common.goods.vo.PageResult` 与 `common.store.vo.PageResult`（不同包）。跨域复用时类型不兼容，需显式转换 |
+| ⚠ 已知风险 | `PageResult` 存在**三个同名独立类型**：`common.goods.vo.PageResult`、`common.store.vo.PageResult` 与 admin 自己的 `admin.vo.PageResult`（不同包）。跨域复用时类型不兼容，需显式转换 |
 | 破坏后果 | 误用另一域的 `PageResult` → 编译期即报错（属"会炸得明显"的一类，风险较低） |
 | 核对方式 | 检查器第 5 项（入出参类型名可在 `common` 找到） |
 
@@ -105,7 +105,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | `create_user` / `update_user` 值为 `UserType:UserId` 字符串（如 `admin:1` / `store:7`），列类型 **`VARCHAR(32)`**，实体字段类型 **`String`** |
-| 定义位置 | `common/.../vo/BaseEntity.java:12,20,32` |
+| 定义位置 | `common/.../vo/BaseEntity.java:12,23,35`（`:12` 类 javadoc 声明 `VARCHAR(32)` 约定；`:23`/`:35` 为 `createUser` / `updateUser` 字段声明） |
 | 写值位置 | `common/.../config/MyMetaObjectHandler.java:52`（拼 `{userType}:{userId}`，取不到 userId 留空） |
 | 回退规则 | `common/.../util/UserContext.java:68-72` `getUserType()` 缺省回退 `admin` |
 | 业务列复用 | `store_goods_spu.lock_user`（`store/.../entity/StoreGoodsSpu.java:126`）沿用同一格式 |
