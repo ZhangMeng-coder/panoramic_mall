@@ -26,6 +26,7 @@
 - **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
 - **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
 - **信任与防线（鉴权与权限判定全部收敛在端 BFF）**：**域服务不做任何鉴权、不做任何权限判断、不校验 token**。内部调用只透传身份头 `X-User-Id` / `X-User-Type`（网关注入 → 端 BFF 经 Feign 原样转发），域服务把它直取填 `UserContext`，**仅用于两件事**：审计字段自动填充（`UserType:UserId`）与 `audit_by` 留痕——读 ≠ 判断，读身份不等于做鉴权。端 BFF 的 `@PreAuthorize` 是唯一授权点，其各操作权限串与域接口一一对应（goods:brand/category/spu 的 list/add/edit/delete）。⚠ **不再有内部令牌 `X-Internal-Token`**（已删除）：域端口只在内网可达是前提，否则可伪造 `X-User-Id`——防线在网络层，不在应用层。
+  - **端 BFF 身份类型绑定（2026-09-17 新增）**：每个端 BFF 在**自己的** `application.yml` 声明 `panoramic.auth.user-type`（admin=`admin` / store-bff=`store` / mall-bff=`user`），`common-auth` 的 `AuthTokenFilter` 从 Redis 快照重建出 `LoginUser` 后比对 `userType`，**不匹配即按未认证处理（HTTP 401）**——与「未登录」同一出口，不自写响应。⚠ **这是跨端隔离的唯一防线**：网关侧只按 `type` claim 拼 Redis 键查登录态，**不校验该 type 与目标路由是否匹配**（网关的"不做身份类型判断"仍然成立）。缺此断言则任一端的 token 都能被另一端的 BFF 当作本端身份——**已实测**：顾客 token 打 `/store/**` 被当成店主，`StoreShopBffService#currentStoreId` 直接把 `loginUser.getId()` 当 `store_id`；`mall_user.id` 与 `store_shop.id` 同库自增**必然撞号**，且 C 端注册公网可达（固定码 `888888`）→ **注册即越权，可刷号定向命中目标 store_id**。⚠ 该配置**无默认值，漏配启动即失败**（取向同 `config.import` 不带 `optional:`：宁可起不来）。见 [cross-cutting.md](docs/contracts/cross-cutting.md) 第 9 条。
   - **缺头即不填充、不拦截**：域内身份过滤器（`GoodsUserIdentityFilter` / `StoreUserIdentityFilter`）在缺 `X-User-Id` 时直接放行（审计留空），**不得回 401**——那等于在域内做鉴权。
 - **store 域的数据权限（D5，已按新边界改写）**：store 采用 **store_id 通用数据权限适配**：域内不持 store_user，owner 侧方法带 `store_id` 参数、只作用于「id==store_id 的店」（**账号店同 ID**，D4，store_shop 主键==店主账号 id、无 owner_user_id 列，店主归属收敛在 store-bff）；platform 侧方法不带 store_id、全量。**owner/platform 的分流由「端 BFF 调哪一侧接口」决定，不由 `X-User-Type` 在域内判断**（`assertOwner`/`requirePlatformAdmin` 之类的域内断言已删除）；store-bff 从登录态取 store_id 传给域，admin 走 platform 侧并由 `@PreAuthorize` 把关。`audit_by` 直取 X-User-Id 仅记录，不与平台账号联查（D6）。新增 store 域方法时按「作用对象表是否带 store_id 列 + 调用意图」决定套 owner(限 store_id)/platform(全量) 哪一侧。
   - **store 域现有 owner 侧能力**：店铺 `store_shop`（mine/save/submit）与店主在售商品 `store_goods_spu`/`store_goods_sku`（`/internal/store/goods/**`，带 `storeId` 且按该列过滤；SKU 经 `spuId` 归属，不再单带 store_id）。**「店铺已审核通过」的门禁不在域内**（域不查店铺状态），由 store-bff 调域前判定并回 `403`。
@@ -47,7 +48,7 @@
 
 ## 对外契约清单（docs/contracts）
 
-**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 15 条），外加基础设施（`gateway.md`）。
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 16 条），外加基础设施（`gateway.md`）。
 
 ⚠ **检查器的端 BFF 名单不硬编码**：`drift-check.mjs` 从网关 `bff-services` 的值推导服务名单、从路由（`uri: lb://<svc>` ↔ `Path=/<前缀>/**`）推导前缀，进而逐个核对「两侧白名单互为子集」；某个端 BFF 推不出唯一前缀即**直接失败**（不降级为警告）。新增端 BFF 时不要回头去改检查器的名单。
 

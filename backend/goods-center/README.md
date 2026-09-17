@@ -88,7 +88,7 @@
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：
   `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**（缺失即启动失败）。**不引入** `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`——本服务不依赖 `common-auth`，结构上拿不到认证链与 Redis，没有登录态可查；也不走 Feign 客户端。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 11 条
+- **Nacos 共享配置**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**（缺失即启动失败）。**不引入** `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`——本服务不依赖 `common-auth`，结构上拿不到认证链与 Redis，没有登录态可查；也不走 Feign 客户端。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - MyBatis-Plus：主键自增、`is_delete` 逻辑删除、驼峰映射、SQL 日志打印（StdOutImpl，上线前移除）
 - 启动类扫描 `com.panoramic` 以加载 common 中的字段自动填充等
 - 异常语义（内部）：业务失败 `ServiceException` → 真实 HTTP 状态（如 400/403/404）+ `{code,msg}`，由 `GoodsDomainExceptionHandler` 产出；未知异常 → 500 `{code:500,msg:"系统异常"}`

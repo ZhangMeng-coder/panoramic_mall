@@ -32,6 +32,9 @@ spring:
 panoramic:
   auth:
     whitelist-paths: /auth/login,/auth/register
+    # 本端身份类型：AuthTokenFilter 只接受该类型的登录态，跨端 token 一律按未认证处理（401）。
+    # ⚠ 无默认值——必须显式声明，漏配则启动失败（见 docs/contracts/cross-cutting.md 第 9 条）。
+    user-type: store
 
 # 店铺端 BFF → 业务域内部 Feign 的熔断参数（spring.cloud.openfeign.circuitbreaker + resilience4j）
 # 已收敛到 Nacos 共享配置 feign-circuitbreaker.yml——与 admin 同源一份（两处原先逐字重复），不再本地重复。

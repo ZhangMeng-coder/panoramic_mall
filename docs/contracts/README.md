@@ -29,7 +29,7 @@
 
 | 文件 | 覆盖 | 条数 | 层 |
 |---|---|---|---|
-| [cross-cutting.md](./cross-cutting.md) | 跨服务隐式契约 | 15 条 | ③ |
+| [cross-cutting.md](./cross-cutting.md) | 跨服务隐式契约 | 16 条 | ③ |
 | [gateway.md](./gateway.md) | 网关路由 / 白名单 / 守卫 | 3 条路由 | 基础设施 |
 | [admin.md](./admin.md) | admin 端 BFF 对外接口 | 55 | ① |
 | [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 17 | ① |

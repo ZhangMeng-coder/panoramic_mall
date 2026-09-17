@@ -70,7 +70,7 @@
 - `StoreShopBffService` / `StoreGoodsBffService`（`com.panoramic.storebff.bff`）**只做编排**，不持域实体：分别持 `StoreClient`（后者另持 `GoodsCenterClient`）。
 - **业务异常原样透传，故障才降级**：下游业务异常（400 参数/业务，如「审核中锁定」「提交前请补全」；403；404）原样透传给页面，由 common 统一异常处理还原 `RespData`；**熔断/连接/序列化**等降级为「店铺服务暂不可用，请稍后重试」。
 - 该「剥 cause 链还原业务异常 / 其余降级」的逻辑抽在 common 的 **`com.panoramic.common.feign.BffFeignCall`**，store-bff 与 admin BFF 共用一份，各端只传自己的降级文案。
-- 熔断参数见 Nacos 共享配置 `feign-circuitbreaker.yml`（与 admin 同源一份），降级口径见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条。
+- 熔断参数见 Nacos 共享配置 `feign-circuitbreaker.yml`（与 admin 同源一份），降级口径见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 13 条。
 - 出站**只**原样透传 `X-User-Id`/`X-User-Type`（**不做 goods 版「缺省回退 admin」的写死兜底**，避免店主侧被盖成 admin）；**不带任何内部令牌**（该信任头已于 2026-09-10 删除——store 域不鉴权）。
 
 ### 4. 边界（本层不做什么）
@@ -82,6 +82,6 @@
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`（`jwt-secret` / `redis-prefix` / `header-name` 由端 BFF 与 gateway 同源；熔断参数与 admin 同源一份）。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 11 条
+- **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`（`jwt-secret` / `redis-prefix` / `header-name` 由端 BFF 与 gateway 同源；熔断参数与 admin 同源一份）。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - `@EnableFeignClients(basePackages = {"com.panoramic.common.store", "com.panoramic.common.goods"})` 扫描内部 Feign 客户端（store 域 + goods-center）
 - 响应结构：成功 `code=200`；业务校验失败 `code=400` 携带中文提示；店铺未过审 `code=403`；下游不可用统一 `code=500`（store 域「店铺服务暂不可用」/ 中台「商品服务暂不可用」）

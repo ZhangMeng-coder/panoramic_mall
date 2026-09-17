@@ -26,9 +26,12 @@ import java.util.Map;
  * <p>无状态 + JWT/Redis 认证：端 BFF 经 gateway 透传的 userId（或兜底 Bearer JWT）由
  * {@link AuthTokenFilter} 从 Redis 重建登录用户；非白名单接口一律要求认证。
  * <ul>
- *   <li>401（未认证/登录态失效）：HTTP 401 + {@code {code:401,msg}}</li>
+ *   <li>401（未认证/登录态失效/**身份类型非本端**）：HTTP 401 + {@code {code:401,msg}}</li>
  *   <li>403（已认证无权限）：沿用现状 body-code（HTTP 200 + {@code {code:403,msg}}），前端按 code 分支提示</li>
- * </ul></p>
+ * </ul>
+ * <p>⚠ 本端身份类型由 {@code panoramic.auth.user-type} 声明，**无默认值**：漏配则启动失败。
+ * 取向与 {@code config.import} 不带 {@code optional:} 一致——宁可起不来，也不要静默失去跨端隔离
+ * （见 cross-cutting.md 第 9 条）。</p></p>
  */
 @Configuration
 @EnableWebSecurity
@@ -47,9 +50,10 @@ public class SecurityConfig {
 
     public SecurityConfig(LoginUserCacheService loginUserCacheService,
                           JwtService jwtService,
-                          @Value("${panoramic.auth.header-name:X-User-Id}") String headerName) {
+                          @Value("${panoramic.auth.header-name:X-User-Id}") String headerName,
+                          @Value("${panoramic.auth.user-type}") String userType) {
         this.headerName = headerName;
-        this.authTokenFilter = new AuthTokenFilter(loginUserCacheService, jwtService, headerName);
+        this.authTokenFilter = new AuthTokenFilter(loginUserCacheService, jwtService, headerName, userType);
     }
 
     /**

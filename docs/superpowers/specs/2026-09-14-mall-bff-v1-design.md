@@ -95,7 +95,7 @@ panoramic:
     sms-fixed-code: 888888
 ```
 
-- **四个 dataId 全加载**（不带 `optional:`）：cross-cutting 第 11 条矩阵规定「端 BFF 加载 4 个」。
+- **四个 dataId 全加载**（不带 `optional:`）：cross-cutting 第 12 条矩阵规定「端 BFF 加载 4 个」。
   ⚠ 一期**没有 Feign 客户端**，故 `feign-circuitbreaker.yml` 是随矩阵加载的空转件——在 yml 注释里写明，
   二期接域调用时无需再改配置。
 - **`@EnableFeignClients` 一期不加**：`com.panoramic.common.mall` 包还不存在，加了等于去扫一个空包（假装配）。
@@ -258,7 +258,7 @@ panoramic:
 | `docs/contracts/mall-bff.md` | 重写：去「待建」，补 5 行接口表 + 形状规则 + 类型所在 + 「一期不调域」 + 已确定的身份/Redis/网关约定 |
 | `docs/contracts/README.md` | 索引里 `mall-bff` 条数 `待建` → `5` |
 | `docs/contracts/gateway.md` | 路由表 2→3 条、`bff-services` 值、两侧白名单表、相关位置注释 |
-| `docs/contracts/cross-cutting.md` | 第 1 条（消费位置补 mall-bff Controller）、第 4 条（签发位置补 mall-bff）、第 9/10 条（路由与白名单值）、**第 11 条加载矩阵加 mall-bff 列**、第 12 条（如实登记：三端中 mall-bff 一期无调用点） |
+| `docs/contracts/cross-cutting.md` | 第 1 条（消费位置补 mall-bff Controller）、第 4 条（签发位置补 mall-bff）、第 10/11 条（路由与白名单值）、**第 12 条加载矩阵加 mall-bff 列**、第 13 条（如实登记：三端中 mall-bff 一期无调用点） |
 | `docs/contracts/drift-check.mjs` | 第六节的改法 |
 | `backend/pom.xml` | `<modules>` 加 `mall-bff` |
 | `backend/mall-bff/README.md` | 新建：服务说明（职责/架构位置/实体标记/边界/一期不做什么），**不列接口** |
@@ -297,6 +297,6 @@ panoramic:
 | 漏登记 `/auth/sms-code` → 「获取验证码」按钮 401 | 已列入白名单三对路径；契约页也会登记 |
 | `setUserType` 与 `generateToken` 的 type 不一致 → 全端 401 | 文本核对项；`USER_TYPE_USER` 全网只应出现在这两处 |
 | 漏 `JacksonConfig` → `ObjectMapper` 无 bean → **起不来** | 已列为骨架必做项 |
-| 一期无 Feign 客户端却加载熔断配置 | 空转、无害；yml 注释写明，第 12 条如实登记 |
+| 一期无 Feign 客户端却加载熔断配置 | 空转、无害；yml 注释写明，第 13 条如实登记 |
 | 检查器改为推导后解析失效 → 覆盖静默下降 | 推不出前缀即 **fail**，不降级为 warn |
 | 固定验证码 888888 被误当正式实现 | 配置键命名 `sms-fixed-code` 自带「临时」语义；schema/README/契约三处标注「模拟」与升级路径 |

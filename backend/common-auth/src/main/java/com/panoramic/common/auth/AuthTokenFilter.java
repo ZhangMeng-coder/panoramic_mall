@@ -6,6 +6,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -18,9 +19,15 @@ import java.util.List;
  * 认证过滤器（端 BFF 经 common-auth 启用；业务域不依赖本模块）
  * <p>链路：gateway 已验 JWT + Redis 并把 userId、userType 放进 {@code X-User-Id} / {@code X-User-Type} 头；
  * 本过滤器据此从 Redis 取 LoginUser 重建上下文。无头（直连等）时兜底解析 Bearer JWT。
- * 任一环查不到用户（无头/缓存失效/签名失败），则保持匿名——由 Security 对非白名单接口统一回 401
- * （AuthenticationEntryPoint）。请求结束 finally 清理 UserContext，防止 ThreadLocal 串号。</p>
+ * 任一环查不到用户（无头/缓存失效/签名失败/**身份类型不匹配本端**），则保持匿名——由 Security
+ * 对非白名单接口统一回 401（AuthenticationEntryPoint）。请求结束 finally 清理 UserContext，
+ * 防止 ThreadLocal 串号。</p>
+ * <p>⚠ **身份类型绑定**：只接受 {@code expectedUserType}（本端身份）的登录态，跨端 token 一律按未认证
+ * 处理。这是跨端隔离的**唯一**防线——网关侧只按 JWT 的 {@code type} claim 拼 Redis 键查登录态，
+ * **不校验该 type 与目标路由是否匹配**（见 cross-cutting.md 第 9 条）。缺此断言则任一端的 token
+ * 都能被另一端的 BFF 当成本端身份（例：顾客 token 打店主端，其 id 会被当作 store_id）。</p>
  */
+@Slf4j
 public class AuthTokenFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
@@ -29,12 +36,17 @@ public class AuthTokenFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final String headerName;
 
+    /** 本端身份类型（admin / store / user），跨端 token 一律拒绝 */
+    private final String expectedUserType;
+
     public AuthTokenFilter(LoginUserCacheService loginUserCacheService,
                            JwtService jwtService,
-                           String headerName) {
+                           String headerName,
+                           String expectedUserType) {
         this.loginUserCacheService = loginUserCacheService;
         this.jwtService = jwtService;
         this.headerName = headerName;
+        this.expectedUserType = expectedUserType;
     }
 
     @Override
@@ -43,6 +55,14 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         try {
             LoginUser loginUser = resolveLoginUser(request);
+            // 身份类型绑定：只放行本端身份的登录态。不匹配时置空 → 走匿名分支 → Security 回 401。
+            // ⚠ 必须保持「置空」而非抛异常：401 响应形状由 AuthenticationEntryPoint 统一产出，
+            //   在这里自己写响应会绕过它，导致形状与其余 401 不一致。
+            if (loginUser != null && !expectedUserType.equals(loginUser.getUserType())) {
+                log.warn("身份类型与本服务不匹配，按未认证处理: expected={}, actual={}, uri={}",
+                        expectedUserType, loginUser.getUserType(), request.getRequestURI());
+                loginUser = null;
+            }
             if (loginUser != null) {
                 List<SimpleGrantedAuthority> authorities = loginUser.getPerms().stream()
                         .filter(perm -> perm != null && !perm.isBlank())

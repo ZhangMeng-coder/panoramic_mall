@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 15 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 16 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -112,11 +112,24 @@ layer: cross-cutting
 | 破坏后果 | 改成 INT 或去掉类型前缀 → 多端身份空间（admin / store / user）无法消歧，同一 id 指向不同人 |
 | 核对方式 | 检查器第 5 项同类：`BaseEntity` 的 `createUser` 类型为 `String`（哨兵 `VARCHAR(32)`） |
 
+### 9. 端 BFF 身份类型绑定 `panoramic.auth.user-type`
+
+| | |
+|---|---|
+| 契约 | 每个端 BFF **只接受本端身份类型**的登录态：`AuthTokenFilter` 从 Redis 快照重建出 `LoginUser` 后比对 `userType`，不匹配即按**未认证**处理（HTTP 401 + `{code:401,msg}`，由 `AuthenticationEntryPoint` 统一产出，不在此自写响应） |
+| 定义位置 | 各端**自己的** `application.yml`：`panoramic.auth.user-type` = `admin`（admin）/ `store`（store-bff）/ `user`（mall-bff）；取值须与 `LoginUser.USER_TYPE_*` 常量（第 4 条）逐字一致 |
+| 消费位置 | `common-auth/.../AuthTokenFilter.java`——在 `resolveLoginUser` 之后统一比对，**网关透传头与 Bearer 兜底两条路都覆盖**；装配于 `common-auth/.../SecurityConfig.java` |
+| ⚠ 不得放共享配置 | 三端值不同，**不能**放进 Nacos 共享 `auth.yml`（网关与三端 BFF 都加载该 dataId，会一并拿到错的值） |
+| ⚠ 无默认值 | `@Value("${panoramic.auth.user-type}")` **不带兜底**，漏配 → **启动即失败**。取向同 `config.import` 不带 `optional:`：宁可起不来，也不要静默失去隔离 |
+| ⚠ 网关侧**仍不绑定** | `AuthGlobalFilter` 只按 `type` claim 拼 Redis 键查登录态，**不校验该 type 与目标路由前缀是否匹配**（第 10 条的路由与身份类型之间没有绑定关系）。**本断言是跨端隔离的唯一防线**，删掉它不会编译报错 |
+| 破坏后果 | 断言缺失/失效 → 任一端的 token 可被另一端的 BFF 当成本端身份。已实测实例：**顾客 token 打 `/store/**` 被当作店主**——`StoreShopBffService#currentStoreId` / `StoreGoodsBffService#currentStoreId` 把 `loginUser.getId()` 当 `store_id` 用；`mall_user.id` 与 `store_shop.id` **同库自增、必然撞号**，且 C 端注册公网可达（固定码 `888888`）→ **注册即越权**，可定向刷号命中目标 `store_id` |
+| 核对方式 | 哨兵 `panoramic.auth.user-type`（消费处）+ 三端 yml 各一处 `user-type:` 声明 |
+
 ---
 
 ## 三、基础设施
 
-### 9. 网关路由与 BFF 白名单
+### 10. 网关路由与 BFF 白名单
 
 | | |
 |---|---|
@@ -127,7 +140,7 @@ layer: cross-cutting
 | 破坏后果 | 新端 BFF 上线忘了进白名单 → 该端**全部 403**（会炸得明显）；线序调整 → 未鉴权先过守卫 |
 | 核对方式 | 检查器 gateway 专项（路由 ↔ `application.yml`；白名单 ↔ 实际存在的 BFF 模块）。⚠ 端 BFF 名单与路由前缀**由网关配置推导**（`bff-services` 的值 + `uri: lb://<svc>` ↔ `Path=/<前缀>/**`），推不出唯一前缀即**直接失败**——不降级为警告，否则新增端 BFF 时该项会静默跳过 |
 
-### 10. 鉴权白名单**在网关与服务两处各写一份**
+### 11. 鉴权白名单**在网关与服务两处各写一份**
 
 | | |
 |---|---|
@@ -138,7 +151,7 @@ layer: cross-cutting
 | 破坏后果 | 只改一处 → 登录接口被拦（登不进去）或本应鉴权的接口裸露 |
 | 核对方式 | 检查器 gateway 专项：两侧白名单去前缀后应互为子集关系 |
 
-### 11. Nacos 共享配置 data-id
+### 12. Nacos 共享配置 data-id
 
 | | |
 |---|---|
@@ -161,7 +174,7 @@ layer: cross-cutting
 >
 > ⚠ mall-bff **一期没有任何 Feign 客户端**，`feign-circuitbreaker.yml` 属空转——仍按上面的规律加载：配置是惰性的、不产生副作用，且二期接首页聚合调 goods-center 时无需再改加载矩阵。
 
-### 12. 熔断契约：4xx 不计失败率，5xx 计入
+### 13. 熔断契约：4xx 不计失败率，5xx 计入
 
 | | |
 |---|---|
@@ -172,7 +185,7 @@ layer: cross-cutting
 | 破坏后果 | 5xx 也还原成 `ServiceException` → 熔断**永远打不开**，下游故障直接拖垮调用方；反之若 4xx 计入 → 店主连续几次操作失误就把熔断打开，后续**正常**请求被降级成 500 |
 | 核对方式 | 哨兵 `ignore-exceptions`、`ServiceException`、`InternalApiErrorDecoder` |
 
-### 13. Feign 入出参类型必须**同源于 `common`**
+### 14. Feign 入出参类型必须**同源于 `common`**
 
 | | |
 |---|---|
@@ -182,7 +195,7 @@ layer: cross-cutting
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
 | 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在 `common` 找到对应 `.java` |
 
-### 14. 域端口只在内网可达（**安全前提，非代码约束**）
+### 15. 域端口只在内网可达（**安全前提，非代码约束**）
 
 | | |
 |---|---|
@@ -192,7 +205,7 @@ layer: cross-cutting
 | 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏） |
 | 核对方式 | **无法静态核对**。本页仅登记，属部署/运维前提 |
 
-### 15. 权限串与前端路由一致性
+### 16. 权限串与前端路由一致性
 
 | | |
 |---|---|
@@ -225,9 +238,11 @@ layer: cross-cutting
     { "literal": "panoramic:login", "in": ["backend/nacos-config", "backend/gateway", "backend/common-auth"], "why": "Redis 登录态键前缀，网关↔端 BFF 共享（第 5 条）" },
     { "literal": "X-User-Id", "in": ["backend/nacos-config"], "why": "X-User-Id 头名的唯一权威源（第 6 条）" },
     { "literal": "X-User-Type", "in": ["backend/gateway", "backend/common/src/main/java/com/panoramic/common/goods/api", "backend/common/src/main/java/com/panoramic/common/store/api"], "why": "身份头注入与透传（第 6 条）" },
-    { "literal": "bff-services", "in": ["backend/gateway"], "why": "网关 BFF 白名单键（第 9 条）" },
-    { "literal": "ignore-exceptions", "in": ["backend/nacos-config"], "why": "熔断忽略 ServiceException（第 12 条）" },
-    { "literal": "InternalApiErrorDecoder", "in": ["backend/common/src/main/java/com/panoramic/common/feign"], "why": "4xx/5xx 分野的实现处（第 12 条）" }
+    { "literal": "bff-services", "in": ["backend/gateway"], "why": "网关 BFF 白名单键（第 10 条）" },
+    { "literal": "${panoramic.auth.user-type}", "in": ["backend/common-auth"], "why": "端 BFF 身份类型绑定的消费处（第 9 条）；⚠ 必须带 ${} 占位符形式——裸属性名会被类注释里的散文假性满足" },
+    { "literal": "user-type:", "in": ["backend/admin", "backend/store-bff", "backend/mall-bff"], "why": "三端 BFF 各须显式声明本端身份类型（第 9 条）" },
+    { "literal": "ignore-exceptions", "in": ["backend/nacos-config"], "why": "熔断忽略 ServiceException（第 13 条）" },
+    { "literal": "InternalApiErrorDecoder", "in": ["backend/common/src/main/java/com/panoramic/common/feign"], "why": "4xx/5xx 分野的实现处（第 13 条）" }
   ],
   "absence": [
     { "literal": "X-Internal-Token", "in": ["backend"], "ext": [".java", ".yml", ".yaml"], "why": "2026-09-10 已删除的内部令牌，不得复活" },

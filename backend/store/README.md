@@ -125,7 +125,7 @@
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置加载**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**——配置中心不可用或该 dataId 缺失时启动即失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 11 条
+- **Nacos 共享配置加载**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**——配置中心不可用或该 dataId 缺失时启动即失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - MyBatis-Plus：主键 `IdType.INPUT`（store_shop.id = 账号 id）、`is_delete` 逻辑删除、驼峰映射
 - 启动类扫描 `com.panoramic` 以加载 common 的全局异常处理、分页插件、字段自动填充与安全链
 - 异常语义（内部）：经 `StoreDomainExceptionHandler` 还原**真实 HTTP 状态 + `{code,msg}`**，供内部 Feign ErrorDecoder 还原为 `ServiceException`

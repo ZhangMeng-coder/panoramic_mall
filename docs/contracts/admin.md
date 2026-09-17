@@ -132,7 +132,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 | 店铺商品 | `store:goods:list` / `:lock` | shop/ShopGoodsController |
 
 ⚠ 这些字面量**必须三方一致**：本表 ↔ `admin/src/main/resources/db/*.sql` 的 `sys_permission.perms` 种子 ↔ 前端 `v-perm`。
-由检查器第 2、3 项核对（见 [cross-cutting.md](./cross-cutting.md) 第 15 条）。
+由检查器第 2、3 项核对（见 [cross-cutting.md](./cross-cutting.md) 第 16 条）。
 
 ## 三、**无 `@PreAuthorize`** 的接口（2 个，属预期）
 
@@ -152,6 +152,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 - ⚠ **分类全路径**：本层读时调 goods-center `/categories/paths` 批量补 `categoryPath`，**失败只告警、路径留空**。
 - ⚠ **锁定人渲染**：库里存 `admin:{id}` 原串；前端渲染为「平台管理员(N)」，**不做 `sys_user` 联查取名**。
 - ⚠ **锁定/解锁走 POST 而非 PUT**（`/shop/goods/{id}/lock`、`/unlock`），与其语义（动作而非幂等更新）一致。
+- ⚠ **身份类型绑定**：本层只接受 `type=admin` 的登录态（`panoramic.auth.user-type: admin`）。跨端 token（`store` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**，**不会**走到 `@PreAuthorize`。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
 
 ## 五、类型所在
 
@@ -171,7 +172,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD；分类树与分类全路径 |
 | store(8083) | Feign `StoreClient`（**platform 侧**方法） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉 |
 
-全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 12 条。
+全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 `ShopGoodsBffService` 与 `StoreShopBffService` 是本层两个主要编排类。
 
 ## 七、业务规则去哪看

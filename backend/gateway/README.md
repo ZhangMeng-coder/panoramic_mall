@@ -57,6 +57,6 @@ curl -H "Authorization: Bearer <token>" http://localhost:8080/admin/goods/catego
 
 ## 五、配置说明
 
-- **Nacos**：服务发现（地址/账号由父 POM properties 经 Maven 过滤注入）+ 共享配置 `datasource-redis.yml` / `auth.yml`，import **不带 `optional:`**。**不加载** `datasource-mysql.yml`（网关无数据源）与 `feign-circuitbreaker.yml`（网关不出站调域）。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 11 条
+- **Nacos**：服务发现（地址/账号由父 POM properties 经 Maven 过滤注入）+ 共享配置 `datasource-redis.yml` / `auth.yml`，import **不带 `optional:`**。**不加载** `datasource-mysql.yml`（网关无数据源）与 `feign-circuitbreaker.yml`（网关不出站调域）。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - 负载均衡：Spring Cloud LoadBalancer（非 Ribbon）
 - Redis（reactive）：登录态校验；JJWT：token 验签

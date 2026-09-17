@@ -64,7 +64,7 @@ goods-center 的 `application.yml` 里**没有** context-path（只有 `server.p
 - ✅ **不包 `RespData`**：出参一律是业务类型（`BrandVO` / `PageResult<...>` / `void`）。
 - ✅ **无 `@PreAuthorize`**：域内不做鉴权。
 - ✅ 错误返回真实 HTTP 状态 + `{code,msg}`，由 `common` 的 `InternalApiErrorDecoder` → `ServiceException` 还原。
-  **4xx 不计熔断失败率、5xx 计入**（[cross-cutting.md](./cross-cutting.md) 第 12 条）。
+  **4xx 不计熔断失败率、5xx 计入**（[cross-cutting.md](./cross-cutting.md) 第 13 条）。
 
 ## 四、类型所在包（全部在 `common`，两端引用同一份）
 

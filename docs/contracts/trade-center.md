@@ -25,9 +25,9 @@ typeDirs: backend/common/src/main/java
 | 鉴权 | **不做任何鉴权、不做权限判断、不校验 token**；只读身份头填 `UserContext`，且**仅用于审计留痕** | [cross-cutting.md](./cross-cutting.md) 第 6、7 条 |
 | 依赖 | 只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链与 Redis | `backend/README.md` 模块约定 |
 | 形状 | **不包 `RespData`**，直接返回业务结果类型；错误抛 `ServiceException` + 真实 HTTP 状态 | [cross-cutting.md](./cross-cutting.md) 第 2、12 条 |
-| 类型 | 入出参 DTO 放 `common`，调用方与被调方引用**同一份** | 同上第 13 条 |
-| 熔断 | 端 BFF 侧配 `ignore-exceptions: ServiceException`（4xx 不计失败率） | 同上第 12 条 |
-| Nacos | 需加载 `datasource-mysql.yml`；**不加载** `datasource-redis` / `auth` / `feign-circuitbreaker` | 同上第 11 条加载矩阵 |
+| 类型 | 入出参 DTO 放 `common`，调用方与被调方引用**同一份** | 同上第 14 条 |
+| 熔断 | 端 BFF 侧配 `ignore-exceptions: ServiceException`（4xx 不计失败率） | 同上第 13 条 |
+| Nacos | 需加载 `datasource-mysql.yml`；**不加载** `datasource-redis` / `auth` / `feign-circuitbreaker` | 同上第 12 条加载矩阵 |
 | 路由前缀 | 类级 `@RequestMapping` 写死 `/internal/trade/xxx`（本仓库既有做法，**不用 context-path**） | 见 [goods-center.md](./goods-center.md) 第一节 |
 
 ## 三、接口清单

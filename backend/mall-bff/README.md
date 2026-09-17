@@ -76,7 +76,7 @@
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供；连接其他库请注入环境变量 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`（账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 11 条
+- **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
   - ⚠ 一期**没有 Feign 客户端**，`feign-circuitbreaker.yml` 属**空转**——仍按「端 BFF 一律加载四个」的规律引入：配置是惰性的、不产生副作用，二期接域调用时无需再改
 - **`config/JacksonConfig` 不是可选项**：Boot 4 的 web starter 不再自动注册 `ObjectMapper`，而 `LoginUserCacheService` 要注入一个用于读写 Redis 登录快照——缺此 bean 服务直接起不来
 - 本地白名单 `panoramic.auth.whitelist-paths: /auth/login,/auth/register,/auth/sms-code`（覆盖 `SecurityConfig` 只含 `/auth/login` 的默认值）

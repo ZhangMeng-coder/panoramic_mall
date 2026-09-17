@@ -9,7 +9,7 @@ spring:
     # ⚠ 不带 optional: 前缀——配置中心不可用或任一 dataId 缺失时**启动即失败**，不做静默降级
     #   （本地开发环境 Nacos 本身就是必需依赖；且 feign-circuitbreaker 缺失会回落 resilience4j 默认超时 1s，属已知有问题的行为）
     # ⚠ 一期本模块没有任何 Feign 客户端，feign-circuitbreaker 属空转——但仍随「终端 BFF 加载四个」的
-    #   加载矩阵一并引入（见 docs/contracts/cross-cutting.md 第 11 条）：配置是惰性的、不产生副作用，
+    #   加载矩阵一并引入（见 docs/contracts/cross-cutting.md 第 12 条）：配置是惰性的、不产生副作用，
     #   且二期接 home 聚合调 goods-center 时无需再改本文件。
     import:
       - nacos:datasource-mysql.yml
@@ -34,6 +34,9 @@ spring:
 panoramic:
   auth:
     whitelist-paths: /auth/login,/auth/register,/auth/sms-code
+    # 本端身份类型：AuthTokenFilter 只接受该类型的登录态，跨端 token 一律按未认证处理（401）。
+    # ⚠ 无默认值——必须显式声明，漏配则启动失败（见 docs/contracts/cross-cutting.md 第 9 条）。
+    user-type: user
   mall:
     # 模拟短信：不接真实短信通道，取码接口只打日志，校验时与下方固定码比对
     sms-fixed-code: 888888

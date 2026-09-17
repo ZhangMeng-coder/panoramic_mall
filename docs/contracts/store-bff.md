@@ -43,6 +43,8 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 - ⚠ **全 17 个接口都没有 `@PreAuthorize`** —— 店主端**不接 RBAC**。
   登录态是唯一门槛：`/auth/login`、`/auth/register` 在网关与服务两处白名单内免鉴权，**其余全部要求已登录**。
   所以「权限串」列整列为 `—` 是**预期状态**，不是漏登记。
+- ⚠ **身份类型绑定**：本层只接受 `type=store` 的登录态（`panoramic.auth.user-type: store`）。跨端 token（`admin` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**。
+  ⚠ 本层**不接 RBAC**，也没有任何「登录者是不是店主」的断言（`currentStoreId()` 直接取 `loginUser.getId()` 当 store_id），所以**这道绑定就是店主端的唯一身份防线**：删掉它，顾客 token 会被当作店主。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
 
 ## 三、本层独有的业务门禁（不在域内）
 
@@ -70,7 +72,7 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 | store 域(8083) | Feign `StoreClient`（owner 侧方法） | 店铺 mine/save/submit；在售商品 CRUD 与 SKU 上下架 |
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类树、分类全路径、品牌列表、SPU 详情、按 SKU 编码反查 SPU |
 
-全部经 `common` 的 `BffFeignCall` 包装（剥 cause 链 + 降级文案）。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 12 条。
+全部经 `common` 的 `BffFeignCall` 包装（剥 cause 链 + 降级文案）。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 
 ## 六、业务规则去哪看
 

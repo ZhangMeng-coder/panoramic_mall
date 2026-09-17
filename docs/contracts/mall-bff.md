@@ -46,6 +46,7 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
 | 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
 | 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
+| 身份类型绑定 | 本端只接受 `type=user` 的登录态（`panoramic.auth.user-type: user`）；跨端 token（`admin` / `store`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**（见 [cross-cutting.md](./cross-cutting.md) 第 9 条） |
 | 登出 | 删除 Redis 快照即服务端下线；本地 token 由前端清除 |
 | 内部依赖 | **一期没有**：`@EnableFeignClients` 未启用、`com.panoramic.common.mall` 包不存在。二期接 goods-center（商品/分类）做首页聚合时再加 |
 
