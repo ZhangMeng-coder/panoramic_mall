@@ -39,5 +39,7 @@ export interface CategoryNode {
   /** 层级：1 / 2 / 3（最多三级） */
   level: number
   sort: number
+  /** 分类图标图片 URL（后端可空） */
+  icon: string | null
   children: CategoryNode[]
 }

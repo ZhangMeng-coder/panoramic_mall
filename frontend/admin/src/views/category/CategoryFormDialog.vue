@@ -17,6 +17,9 @@
       <el-form-item label="排序" prop="sort">
         <el-input-number v-model="form.sort" :min="0" :max="99999" />
       </el-form-item>
+      <el-form-item label="图标 URL" prop="icon">
+        <el-input v-model="form.icon" maxlength="255" placeholder="分类图标图片地址（可留空）" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="onUpdateVisible(false)">取消</el-button>
@@ -45,10 +48,11 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue', 'save'])
 
 const formRef = ref<FormInstance | null>(null)
-const form = ref({ name: '', sort: 0 })
+const form = ref({ name: '', sort: 0, icon: '' })
 
 const rules = {
-  name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }],
+  icon: [{ max: 255, message: '不能超过 255 个字符', trigger: 'blur' }]
 }
 
 const title = computed(() => {
@@ -70,9 +74,14 @@ function onUpdateVisible(visible: boolean) {
 
 function initForm() {
   if (props.type === 'edit' && props.category) {
-    form.value = { name: props.category.name, sort: props.category.sort ?? 0 }
+    // 回填把后端的 null 收敛成空串，表单里不出现 null
+    form.value = {
+      name: props.category.name,
+      sort: props.category.sort ?? 0,
+      icon: props.category.icon ?? ''
+    }
   } else {
-    form.value = { name: '', sort: 0 }
+    form.value = { name: '', sort: 0, icon: '' }
   }
   formRef.value?.clearValidate()
 }

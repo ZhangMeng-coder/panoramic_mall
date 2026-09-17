@@ -57,10 +57,11 @@ import { categoryApi } from '../../api/category'
 import type { CategoryNode } from '../../types/goods'
 import CategoryFormDialog from './CategoryFormDialog.vue'
 
-/** 表单弹窗的保存载荷：名称 + 排序（新增时的父级由列表行单独带入，不由弹窗回传） */
+/** 表单弹窗的保存载荷：名称 + 排序 + 图标（新增时的父级由列表行单独带入，不由弹窗回传） */
 interface CategorySaveForm {
   name: string
   sort: number
+  icon: string
 }
 
 const loading = ref(false)
@@ -103,12 +104,13 @@ async function handleSave(form: CategorySaveForm) {
       const payload = {
         parentId: dialogParent.value ? dialogParent.value.id : 0,
         name: form.name,
-        sort: form.sort
+        sort: form.sort,
+        icon: form.icon
       }
       await categoryApi.add(payload)
       ElMessage.success('分类创建成功')
     } else {
-      const payload = { name: form.name, sort: form.sort }
+      const payload = { name: form.name, sort: form.sort, icon: form.icon }
       // 编辑态由 openEdit 赋值；提前取出仅为把 `CategoryNode | null` 收窄
       const category = dialogCategory.value
       if (!category) return

@@ -40,4 +40,9 @@ public class GoodsCategory extends BaseEntity {
      * 排序值，越小越靠前
      */
     private Integer sort;
+
+    /**
+     * 分类图标图片 URL（可空；前台分类宫格展示，空则前端回退渐变占位）
+     */
+    private String icon;
 }

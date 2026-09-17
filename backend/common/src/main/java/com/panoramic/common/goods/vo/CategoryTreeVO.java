@@ -36,6 +36,11 @@ public class CategoryTreeVO {
     private Integer sort;
 
     /**
+     * 分类图标图片 URL（可空）
+     */
+    private String icon;
+
+    /**
      * 子分类列表
      */
     private List<CategoryTreeVO> children;

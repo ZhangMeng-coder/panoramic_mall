@@ -7,9 +7,11 @@ export interface CategoryPayload {
   parentId: number
   name: string
   sort?: number
+  /** 分类图标图片 URL（可空） */
+  icon?: string
 }
 
-/** 分类编辑请求体，与后端 `CategoryUpdateDTO` 同构（仅名称与排序） */
+/** 分类编辑请求体，与后端 `CategoryUpdateDTO` 同构（名称、排序与图标） */
 export type CategoryUpdatePayload = Omit<CategoryPayload, 'parentId'>
 
 /**
@@ -26,7 +28,7 @@ export const categoryApi = {
     return request.get<CategoryNode[]>('/admin/goods/categories/tree')
   },
 
-  /** 更新分类（仅名称与排序） */
+  /** 更新分类（名称、排序与图标） */
   update(id: number, data: CategoryUpdatePayload) {
     return request.put<void>(`/admin/goods/categories/${id}`, data)
   },

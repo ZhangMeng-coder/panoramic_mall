@@ -51,6 +51,7 @@ public class CategoryServiceImpl extends ServiceImpl<GoodsCategoryMapper, GoodsC
         category.setParentId(dto.getParentId());
         category.setName(dto.getName());
         category.setSort(dto.getSort() == null ? 0 : dto.getSort());
+        category.setIcon(dto.getIcon());
 
         if (dto.getParentId() == 0L) {
             // 顶级分类
@@ -74,11 +75,12 @@ public class CategoryServiceImpl extends ServiceImpl<GoodsCategoryMapper, GoodsC
     @Transactional(rollbackFor = Exception.class)
     public void updateCategory(Long id, CategoryUpdateDTO dto) {
         GoodsCategory category = getByIdOrThrow(id);
-        // 保持原有父级与层级，仅更新名称与排序
+        // 保持原有父级与层级，更新名称、排序与图标
         checkNameDuplicate(dto.getName(), category.getParentId(), id);
 
         category.setName(dto.getName());
         category.setSort(dto.getSort() == null ? 0 : dto.getSort());
+        category.setIcon(dto.getIcon());
         updateById(category);
     }
 
