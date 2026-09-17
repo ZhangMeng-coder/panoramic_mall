@@ -1560,6 +1560,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Files:**
 - Create: `frontend/mall/src/views/GoodsListView.vue`
 - Modify: `frontend/mall/src/router/index.ts`
+- Modify（**仅当确有类名缺口时**）: `frontend/mall/src/styles/catalog.css` —— Task 8 已预置页面骨架类（见 Step 2），正常情况下本任务**不需要**改它；只有 `grep` 后确认某个必需类不存在，才在此文件按 `.catalog*` 命名空间补，**不得**改 `mall.css` 或 `GoodsCard.vue`/`GoodsGrid.vue`
 
 **Interfaces:**
 - Consumes: Task 8 的 api / 类型 / 组件。
@@ -1599,6 +1600,19 @@ SiteFooter
 - 分类页：分类筛选行的 items 直接用 facets 返回的 `categories`（后端已按锚点范围输出子分类）；搜索页：也是 `categories`（后端已上溯到顶级）——**前端两种模式渲染逻辑一致**，差异全在 BFF
 - 空结果：提示「没有找到相关商品」+ 返回首页按钮
 - 加载中：骨架或文本占位
+
+⚠ **类名是 Task 8 与本任务之间的隐式契约 —— 页面必须用 Task 8 `catalog.css` 里已有的类，不要自创**（Task 8 已写好样式，但它的 Files 清单**不含** `catalog.css`，故你改不了那个文件；用错类名**不会报错**，只会静默无样式）。已落地清单（实现后核实过）：
+
+| 用途 | 类名 |
+|---|---|
+| Pager | `.pager` / `.pager__btn` / `.pager__num` / `.pager__num.is-on` / `.pager__gap` |
+| FilterRow | `.filter-row` / `.filter-row__title` / `.filter-row__chips` / `.filter-row__chip` / `.filter-row__chip.is-on` / `.filter-row__count` |
+| 商品卡 | `.cat-card` / `.cat-card__thumb` / `.cat-card__img` / `.cat-card__ph` / `.cat-card__body` / `.cat-card__name` / `.cat-card__price` / `.cat-card__price-sym` / `.cat-card__price-suffix` / `.cat-card__price-tbd` / `.cat-card__store` |
+| 页面骨架（Task 8 预留） | `.catalog` / `.catalog__bar` / `.catalog__total` / `.catalog__sorts` / `.catalog__sort` / `.catalog__sort.is-on` / `.catalog__grid`（已是 7 列）/ `.catalog__state` |
+
+⚠ **动手前先 `grep -n` 一遍 `frontend/mall/src/styles/catalog.css` 核对**（本表可能随时漂）；缺哪个类就在 `.catalog*` 命名空间下**新增到 `catalog.css`**（该文件归本任务维护的现实入口在此），不要用 `mall.css` 里 `.goods__*` 那套——那是首页 5 列卡片的受保护基线。
+
+⚠ 分页每页 **49**、容器固定 **1280**（`.catalog__grid` 已是 7 列）——与本任务一致，勿改。
 
 - [ ] **Step 3: 类型检查**
 
@@ -1695,9 +1709,20 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 Task 7 已把 `/mall/catalog/**` 写进 `gateway.md` 的网关侧免鉴权表、并在服务本地侧表的 mall-bff 行补上 `/catalog/**`。原因：检查器第 8 项（`:601` + `:643-651`）把「网关白名单字面量必须出现在契约页」与「本地白名单必须在网关侧有对应项」当**一个原子门禁**，两侧分离则 Task 7 提交时必红。本步只 `grep -n "catalog" docs/contracts/gateway.md` 确认还在、措辞对；**找不到再加**。
 
-- [ ] **Step 2: `gateway/src/main/resources/application.yml` —— ⚠ **已在 Task 7 Step 3a 完成，本步只复核**
+⚠ **另需顺手刷新 `gateway.md` 里两处指向 `application.yml` 的裸行号**（Task 7 改了那个 yml，行号又漂了两位；这几处**门禁不查**——检查器解析契约表的内容，不解析散文里的行号引用，所以只有人工能发现）：
+
+| 位置 | 现写 | 实际（已核实） |
+|---|---|---|
+| `docs/contracts/gateway.md:32` | `panoramic.gateway.bff-services` 的位置列写 `application.yml:59` | **`:61`** |
+| `docs/contracts/gateway.md:52` | 网关侧免鉴权表上一行写 `application.yml:61` → `whitelist-paths` | **`:63`** |
+
+（两处在本次改动之前本就已各差 1，Task 7 追加白名单后又各差 2。改法：**按语义定位、不要照抄本表行号**——先 `grep -n "bff-services\|whitelist-paths" backend/gateway/src/main/resources/application.yml` 取现值再写。）
+
+- [ ] **Step 2: `gateway/src/main/resources/application.yml` —— ⚠ **白名单已在 Task 7 Step 3a 完成，本步只复核 + 清一处过期注释**
 
 `whitelist-paths` 追加 `,/mall/catalog/**` 已在 Task 7 Step 3a 落地（同 Step 1 的理由）。`grep -n "whitelist-paths" backend/gateway/src/main/resources/application.yml` 确认含 `/mall/catalog/**`；**不要重复追加**（重复会写出两个相同路径，检查器按集合比不会报，但脏）。
+
+⚠ 同一文件 `:45` 的 `mall-bff-route` 路由注释仍写「**一期不调任何业务域**」，现在已是假话 —— 该路由的 sibling 注释块（`:56-58`）Task 7 已顺手更新，只有这一处漏了。改为「已接 goods-center（分类树）与 store（商品分页/筛选聚合）」。
 
 - [ ] **Step 3: `store.md` 更新**
 
