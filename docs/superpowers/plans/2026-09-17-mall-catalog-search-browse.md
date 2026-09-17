@@ -976,6 +976,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Modify: `frontend/admin/src/api/category.ts`（`CategoryPayload` 加 `icon`）
 - Modify: `frontend/admin/src/types/goods.ts`（`CategoryNode` 加 `icon`）
 - Modify: `frontend/admin/src/views/category/CategoryFormDialog.vue`
+- Modify: `frontend/admin/src/views/category/CategoryManage.vue`（⚠ **必须改，第三处静默丢弃点**——该页**不从 dialog 的 form 透传**，而是按字段重建 payload（`{ name, sort }`），不补 `icon` 则 dialog 里填的图标在这一层被丢掉，与 Step 5 是同一失效类）
 
 **Interfaces:**
 - Consumes: Task 2 的 `goods_category.icon` 列。
@@ -994,15 +995,18 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 - [ ] **Step 2: 两个 DTO 加字段**
 
-`CategorySaveDTO` / `CategoryUpdateDTO` 各加：
+`CategorySaveDTO` / `CategoryUpdateDTO` 各加（⚠ **必须带 `groups`**，否则校验是死的——见下）：
 
 ```java
     /**
      * 分类图标图片 URL（可空）。仅做非空时的长度校验，不校验可达性。
      */
-    @Size(max = 255, message = "图标 URL 不能超过 255 个字符")
+    @Size(max = 255, message = "图标 URL 不能超过 255 个字符", groups = ValidationGroups.Create.class)
     private String icon;
 ```
+
+> ⚠ `CategoryUpdateDTO` 那一份 `groups` 换成 `ValidationGroups.Update.class`（两组各自对应自己 controller 的 `@Validated(ValidationGroups.Xxx.class)`）。
+> ⚠ **不加 `groups` 这条约束等于没写**：两个分类 controller 都用 `@Validated(ValidationGroups.Create/Update.class)` 触发校验，而 `ValidationGroups.Create`/`Update` 都是**裸接口、不继承 `Default`**，故 Default 组的约束（裸 `@Size`）**永不被求值**。这是编译期完全看不见的失效——本仓库其它分组 DTO（`BrandSaveDTO:17-29`、`SpuSaveDTO:20`、本文件既有字段）**一律带 `groups`**，照着写即可。
 
 - [ ] **Step 3: 树 VO 加字段**
 
@@ -1101,6 +1105,8 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 **Files:**
 - Modify: `backend/mall-bff/src/main/java/com/panoramic/mallbff/MallBffApplication.java`
 - Modify: `backend/mall-bff/src/main/resources/application.yml`（白名单）
+- Modify: `backend/gateway/src/main/resources/application.yml`（白名单另一侧，见 Step 3）
+- Modify: `docs/contracts/mall-bff.md`、`docs/contracts/gateway.md`（门禁要求的登记，见 Step 3）
 - Create: `controller/CatalogController.java`、`service/CatalogBffService.java`
 - Create: `dto/MallGoodsPageQueryDTO.java`、`dto/MallFacetQueryDTO.java`
 - Create: `vo/MallGoodsItemVO.java`、`vo/MallFacetVO.java`、`vo/MallFacetItemVO.java`
@@ -1116,7 +1122,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 `MallBffApplication` 加 `@EnableFeignClients(basePackages = {"com.panoramic.common.store", "com.panoramic.common.goods"})`，并把类注释里「一期没有 Feign 客户端」的说明改为「已接 goods-center（分类树）与 store（商品分页/筛选聚合）」。
 
-- [ ] **Step 2: 白名单加 `/catalog/**`**
+- [ ] **Step 2: mall-bff 侧白名单加 `/catalog/**`**
 
 `backend/mall-bff/src/main/resources/application.yml`：
 
@@ -1127,9 +1133,50 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 
 同时删掉该 yml 里「一期本模块没有任何 Feign 客户端，feign-circuitbreaker 属空转」那段过期注释。
 
-- [ ] **Step 3: 建 DTO**
+- [ ] **Step 3: 网关侧白名单 + 契约登记（**必须与 Step 2 同一提交，否则提交门禁必红**）**
 
-`MallGoodsPageQueryDTO extends BasePageVO`：
+> ⚠ 这一条原计划归 Task 11，**核实后前移**：`drift-check.mjs` 第 8 项（约 `:631-653`）对每个端 BFF 做**扣前缀后的两侧白名单交叉核对**——mall-bff 本地写了 `/catalog/**` 而网关侧没有 `/mall/catalog/**`，检查器**直接 fail**：`mall-bff 本地白名单「/catalog/**」在网关侧白名单里没有对应项`。而「提交前差集非空不得提交」是硬规则，所以两侧白名单与两份契约文档在门禁眼里是**一个原子改动**（同 Task 4 的改名行）。只改一侧 = Step 4 的检查器必红，T7 无法提交。
+
+**3a. 网关白名单**（`backend/gateway/src/main/resources/application.yml` 第 62 行）追加 `,/mall/catalog/**`：
+
+```yaml
+    whitelist-paths: /admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/**,/discovery/**
+```
+
+（`/discovery/**` 保持在末尾，只是可读性；检查器按逗号切分，位置无关。）
+
+**3b. `docs/contracts/gateway.md`**：网关侧免鉴权表补 `/mall/catalog/**` 一行（说明：C 端商品浏览公开）；服务本地侧表 mall-bff 那行路径补 `/catalog/**`。⚠ 检查器（`:601`）逐条要求网关 `whitelist-paths` 的**每个字面量都出现在契约页里**——漏一个就 fail。
+
+**3c. `docs/contracts/mall-bff.md`**：新端点在门禁眼里是「代码有、契约表没有」。接口清单 `5 条` → `8 条`，在 §二 表（**7 列**：`方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态`）末尾加三行，权限串列填 `—`，状态列**留空**（本任务里就实现了；填「待实现」会触发反向哨兵）：
+
+| 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
+|---|---|---|---|---|---|---|
+| GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:NNN | |
+| POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:NNN | |
+| POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:NNN | |
+
+同时在 §一 类型表补四行（按该表既有两列「类型 | 所在包」写）：
+
+| 类型 | 所在包 |
+|---|---|
+| `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
+| `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
+
+⚠ `PageResult` **不用登记**——本仓库没有 `com.panoramic.common.vo.PageResult` 这一份，只有 `common.goods` / `common.store` 各一份（store 域那份即本任务所引），类型表是「本模块自有类型」清单，且检查器的类型存在性按 `typeDirs` 全局解析，写进去反而制造重复。`CategoryTreeVO` 同理已在 common，不重复登记。
+
+⚠ **本步只做门禁要求的登记**（三行接口、计数、§一 类型表、gateway.md 的字面量）；`mall-bff.md` 里那些**门禁不查的散文**（§一 引言「不调任何业务域」、§二 形状表「内部依赖：一期没有」、§三「首页数据仍是静态 mock／首页聚合属二期」、免鉴权路径那行的路径枚举）**留给 Task 11 Step 4** 统一重写——本步改一半、T11 再改一半，正是 T5/T11 那次「重复登记」修正要避免的形状。
+
+- [ ] **Step 4: 跑契约检查器（提交前硬门禁）**
+
+```bash
+cd /e/workspace/panoramic_mall && node docs/contracts/drift-check.mjs; echo "exit=$?"
+```
+
+Expected: `exit=0`。⚠ 报「mall-bff 本地白名单…没有对应项」= Step 3a 漏改；报「网关白名单有、契约页没有」= Step 3b 漏写；报「代码有、契约表没有」= Step 3c 漏登记。
+
+- [ ] **Step 5: 建 DTO**
+
+`MallGoodsPageQueryDTO extends BasePageVO`（`com.panoramic.common.vo.BasePageVO`，提供 `pageNum`/`pageSize`；照 `StoreGoodsSpuCrossShopPageQueryDTO` 的写法加 `@EqualsAndHashCode(callSuper = true)`——继承 `@Data` 父类时不加会退化成 Lombok 警告级的 equals/hashCode 不一致）：
 
 ```java
     /** 关键字（模糊匹配商品名称） */
@@ -1157,7 +1204,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
     private List<Long> brandIds;
 ```
 
-- [ ] **Step 4: 建 VO**
+- [ ] **Step 6: 建 VO**
 
 `MallGoodsItemVO`（**C 端形状，与域 VO 解耦**）：
 
@@ -1179,7 +1226,7 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 `MallFacetItemVO`：`Long id` / `String name` / `Integer count`
 `MallFacetVO`：`List<MallFacetItemVO> categories` / `List<MallFacetItemVO> brands`
 
-- [ ] **Step 5: 建 `CatalogBffService`**
+- [ ] **Step 7: 建 `CatalogBffService`**
 
 职责与关键实现：
 
@@ -1255,9 +1302,10 @@ public class CatalogBffService {
     }
     ```
   - 拿到空表时：`resolveCategoryIds` 退化为「只用调用方传的 id 本身，不展开子树」；`categories` facet 退化为原样映射（不做顶级上溯）。为此 `subtreeIds`/上溯函数在树为空时必须**安全退化**而不是抛异常。
-- `PageResult` 用 `com.panoramic.common.store.vo.PageResult`（与前端分页形状同源）。
+- ⚠ **`subtreeIds` 返回空集时不要把它当成「不筛」传下去**（Task 5 复评第 4 点）：域侧 `facetBy` 与 `crossShopPage` 都把「集合为空」当作**不过滤**（`StoreGoodsSpuFacetQueryDTO` 的 javadoc 也写「空 = 不限」）。所以锚点分类在树里查不到（id 过期 / 树降级成空表）时，若把 `subtreeIds(...)` 的空结果原样传下去，分类页会**从「只出本分类」翻成「出全站」**——方向相反的错。规则：**锚点解析不出子树时回退成 `List.of(anchorId)`**（至少不放大范围）；`resolveCategoryIds` 只有在**既无已选、又无锚点**时才返回 `null`。同理，已选分类若解析不出子树，回退成该 id 本身而不是丢弃。
+- `PageResult` 用 `com.panoramic.common.store.vo.PageResult`（与前端分页形状同源）。⚠ 本仓库**没有** `com.panoramic.common.vo.PageResult` 这一份；`common.goods` / `common.store` 各一份，别引错包（引错仍能编译，只是把 goods 域的分页形状带进 C 端响应，日后再改要动契约）。
 
-- [ ] **Step 6: 建 `CatalogController`**
+- [ ] **Step 8: 建 `CatalogController`**
 
 ```java
 @RestController
@@ -1290,16 +1338,16 @@ public class CatalogController {
 > ⚠ 本 controller **不得有** `@PreAuthorize`（C 端不接 RBAC）。
 > `RespData` 只有 `@Getter` 无 setter，只能用静态工厂 `RespData.success(data)`（**不是 `ok`**）。
 
-- [ ] **Step 7: 编译**
+- [ ] **Step 9: 编译**
 
 ```bash
 cd /e/workspace/panoramic_mall
 /e/tools/apache-maven-3.9.16/bin/mvn -q -f backend/pom.xml -pl mall-bff -am compile
 ```
 
-Expected: BUILD SUCCESS。
+Expected: BUILD SUCCESS。⚠ 本任务**不用**改 `backend/mall-bff/pom.xml`——`common` 已把 `spring-cloud-starter-openfeign` 与 `spring-cloud-starter-circuitbreaker-resilience4j` 作为 compile 依赖传递下来（`common/pom.xml:67`/`:75`），admin / store-bff 同样没在自己的 pom 里声明这两项。若编译报找不到 `@EnableFeignClients` / `@FeignClient`，先核对 `common` 是否被 `-am` 一并带上，**不要**急着往 mall-bff 加依赖。
 
-- [ ] **Step 8: 文本级核对白名单两处**
+- [ ] **Step 10: 文本级核对白名单两处（网关是 yml，属配置改动，只做文本核对）**
 
 ```bash
 cd /e/workspace/panoramic_mall
@@ -1307,13 +1355,13 @@ grep -n "whitelist-paths" backend/mall-bff/src/main/resources/application.yml
 grep -n "whitelist-paths" backend/gateway/src/main/resources/application.yml
 ```
 
-Expected: mall-bff 含 `/catalog/**`；gateway 含 `/mall/catalog/**`（gateway 的改动在 Task 11，此处仅确认 mall-bff 一侧已加）。
+Expected: mall-bff 含 `/catalog/**`；gateway 含 `/mall/catalog/**`。**两处都在本任务里改完**（原计划把网关那侧放 Task 11，已前移到 Step 3a——两侧分离会让 Step 4 的检查器必红）。
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 11: 提交**
 
 ```bash
-git add backend/mall-bff
-git commit -m "mall-bff：启用 Feign，新增 catalog 编排（分类树 / 商品分页 / 筛选聚合）
+git add backend/mall-bff backend/gateway/src/main/resources/application.yml docs/contracts/mall-bff.md docs/contracts/gateway.md
+git commit -m "mall-bff：启用 Feign，新增 catalog 编排（分类树 / 商品分页 / 筛选聚合）；网关放行 /mall/catalog/**
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>"
 ```
@@ -1638,13 +1686,13 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - Modify: `CLAUDE.md`（根）
 - Modify: `backend/store/README.md`、`backend/mall-bff/README.md`（若存在）
 
-- [ ] **Step 1: `gateway.md` 免鉴权表补一行**
+- [ ] **Step 1: `gateway.md` —— ⚠ **已在 Task 7 Step 3b 完成，本步只复核、不要重复加**
 
-网关侧表加 `/mall/catalog/**`（说明：C 端商品浏览公开）；服务本地侧表 mall-bff 那行的路径补 `/catalog/**`。
+Task 7 已把 `/mall/catalog/**` 写进 `gateway.md` 的网关侧免鉴权表、并在服务本地侧表的 mall-bff 行补上 `/catalog/**`。原因：检查器第 8 项（`:601` + `:643-651`）把「网关白名单字面量必须出现在契约页」与「本地白名单必须在网关侧有对应项」当**一个原子门禁**，两侧分离则 Task 7 提交时必红。本步只 `grep -n "catalog" docs/contracts/gateway.md` 确认还在、措辞对；**找不到再加**。
 
-- [ ] **Step 2: `gateway/src/main/resources/application.yml` 加白名单**
+- [ ] **Step 2: `gateway/src/main/resources/application.yml` —— ⚠ **已在 Task 7 Step 3a 完成，本步只复核**
 
-`whitelist-paths` 追加 `,/mall/catalog/**`。
+`whitelist-paths` 追加 `,/mall/catalog/**` 已在 Task 7 Step 3a 落地（同 Step 1 的理由）。`grep -n "whitelist-paths" backend/gateway/src/main/resources/application.yml` 确认含 `/mall/catalog/**`；**不要重复追加**（重复会写出两个相同路径，检查器按集合比不会报，但脏）。
 
 - [ ] **Step 3: `store.md` 更新**
 
@@ -1657,12 +1705,15 @@ Co-Authored-By: Claude Code <noreply@anthropic.com>"
 - ⚠ **把第四节那条「分页走 `POST + @RequestBody`」的形状说明扩到覆盖 `crossShopFacets`**——Task 5 只登记了接口行，没动第四节，而 spec §7 明确「分页与 facets 用 `POST + @RequestBody`：入参含集合」。理由同源：`categoryIds`/`brandIds` 这类集合走 query 会在客户端被序列化成 `xxx[]=1` 形状（spec 第 153 行已写明这是破例用 POST 做查询的原因），POST + body 规避
 - ⚠ **刷新第二节接口表的「声明位置」列行号**（`StoreClient.java:NNN` / `GoodsController.java:NNN`）。Task 4 改名后该列已过期（行内写着 `:155`/`:120`，实际是 `:158`/`:124`），且 `platformStoreGoodsDetail` / `lockStoreGoods` / `unlockStoreGoods` 三行同样整体漂了 +4/+5。检查器解析这两列但**只校验 verb+path/类型/权限串**，所以门禁是绿的、行号错了不会报——正因如此才要人工刷一次。Task 5 会再往这两个文件加方法，故**在本步（所有后端改动做完后）一次刷到位**，别在 T4/T5 里零散改。
 
-- [ ] **Step 4: `mall-bff.md` 更新**
+- [ ] **Step 4: `mall-bff.md` —— ⚠ **门禁要求的部分已在 Task 7 Step 3c 完成，本步只做散文**
 
-- 接口清单 5 条 → 8 条，加 `/catalog/categories`、`/catalog/goods`、`/catalog/facets`（权限串均为空）
-- 免鉴权路径行改为含 `/catalog/**`
-- 「内部依赖：**一期没有**」一段改写为已接 goods-center 与 store
-- 补充「C 端展示口径由 BFF 固定」的说明
+Task 7 已落地（检查器强制）：接口清单 `5 条 → 8 条`、三行接口（`GET /catalog/categories`、`POST /catalog/goods`、`POST /catalog/facets`，权限串 `—`、状态留空）、§一 类型表补 `MallGoodsPageQueryDTO`/`MallFacetQueryDTO`/`MallGoodsItemVO`/`MallFacetVO`/`MallFacetItemVO`。**本步只改门禁不查的散文**，且**不要重复加接口行或类型行**（重复加会被检查器判幽灵行/类型重复）：
+
+- §一 引言「一期范围 = 顾客账号骨架…**不调任何业务域**；首页数据聚合是二期」→ 改写为「已接 goods-center（分类树）与 store（商品分页 / 筛选聚合）」
+- §二 形状表的「内部依赖：**一期没有**：`@EnableFeignClients` 未启用…」行 → 改写为已启用 + 扫的两个包
+- §二 形状表的「免鉴权路径」行 → 路径枚举补 `/catalog/**`
+- 补一条形状口径：**C 端展示口径由 BFF 固定**（`shopStatus=2` + `shelfStatus=1` + `lockStatus=0`），域侧不含 C 端隐含约束
+- §三 末段「首页六个区块的数据仍是静态的 `src/mock/`，首页数据聚合属二期」→ 改写为「搜索区与分类展示区已接本表 catalog 三接口；**热门商品列表仍为静态 mock**」
 
 - [ ] **Step 5: `cross-cutting.md` 新增条目**
 
