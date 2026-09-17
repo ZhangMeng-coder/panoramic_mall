@@ -512,6 +512,12 @@ grep -rln "StoreGoodsSpuPlatformPage" backend --include=*.java | grep -v /target
 
 `StoreGoodsSpuService`：接口方法 `platformPage(...)` 改名 `crossShopPage(...)`，入参出参换新类型。
 
+⚠ **别漏掉 javadoc 里的 `{@link #platformPage}` 引用**——它们不参与编译，漏了不会报错，但会留下指向不存在方法的断链。已知位置（已核实）：
+- `StoreGoodsSpuService.java:23` — 类注释「跨店全量（{@link #platformPage} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）」
+- `StoreGoodsSpuServiceImpl.java:59` — 「<b>platform 侧（跨店全量）</b>：{@link #platformPage} / {@link #platformDetail} 不带 store_id 过滤」
+
+两处都把 `{@link #platformPage}` 改为 `{@link #crossShopPage}`，并把「跨店全量」的措辞改成「跨店通用（调用方自设限定条件）」；`platformDetail`/`lock`/`unlock` 的引用保持不动。用 `grep -rn "platformPage" backend --include=*.java | grep -v /target/` 收尾确认（结果应为空）。
+
 `StoreGoodsSpuServiceImpl`：
 
 - 方法改名 `crossShopPage`，返回类型换 `PageResult<StoreGoodsSpuCrossShopPageItemVO>`
@@ -606,26 +612,46 @@ grep -rln "StoreGoodsSpuPlatformPage" backend --include=*.java | grep -v /target
 
 - [ ] **Step 10: admin 侧同步（前端）**
 
-`frontend/admin/src/api/shopGoods.ts`：入参类型里 `brandId?: number` → `brandIds?: number[]`；出参 `ShopGoodsPageItem` 类型名与引用同步（若该类型是本地声明的）。
+⚠ **`shopGoods.ts` 里有 4 处 `brandId`，只有 1 处该改**（已核实行号）：
+
+| 行 | 上下文 | 改成什么 |
+|---|---|---|
+| 17 | `ShopGoodsPageItem.brandId: number \| null`（**出参**，来自域 VO） | **不动**（域侧 VO 的 `brandId` 仍是单数） |
+| 56 | `ShopGoodsDetail.brandId`（**出参**，同上） | **不动** |
+| 78 | `ShopGoodsPageQuery.brandId?: number`（**查询入参**） | → `brandIds?: number[]` |
+| 104 | 一条文档注释里的字段罗列 | 把注释里的 `brandId` 改为 `brandIds` |
+
+改错前两行会让页面渲染不出品牌名——它们与本次改动无关。
 
 `frontend/admin/src/views/shopgoods/ShopGoodsManage.vue`：
-- 品牌 `el-select` 加 `multiple collapse-tags`，`v-model="query.brandIds"`
-- `query.brandId` → `query.brandIds`（含重置逻辑那行）
+- :19 品牌 `el-select` 加 `multiple collapse-tags`，`v-model="query.brandId"` → `query.brandIds`（宽度 150px 可适当放宽，如 200px，避免多选标签挤爆）
+- :197 `query` 初始对象里 `brandId: undefined` → `brandIds: undefined`
+- :246 `handleReset` 里 `query.brandId = undefined` → `query.brandIds = undefined`
 
 - [ ] **Step 11: 全局残留扫描**
 
 ```bash
 cd /e/workspace/panoramic_mall
-grep -rn "StoreGoodsSpuPlatformPage\|platformPageStoreGoods\|brandId\b" backend --include=*.java | grep -v /target/ | grep -v "platformStoreGoodsDetail"
+echo "--- 旧类型名（应为空）---"
+grep -rn "StoreGoodsSpuPlatformPage" backend frontend --include=*.java --include=*.ts --include=*.vue | grep -v /target/ | grep -v node_modules
+echo "--- 旧路径（应为空）---"
+grep -rn "/goods/platform/spu/page" backend --include=*.java | grep -v /target/
+echo "--- 旧方法名 tokens（应为空）---"
+grep -rn "platformPage\|platformPageStoreGoods" backend --include=*.java | grep -v /target/
 ```
 
-Expected: 无输出（`platformStoreGoodsDetail` 详情接口是有意保留的）。
+Expected: 三条**全部无输出**。
+
+⚠ 注意这里**刻意不做任何「排除保留项」的过滤**。早先版本写过 `grep -v "platformDetail"`，那是个自我拆台的过滤器——:23 与 :59 两行 javadoc **同时**含 `platformPage` 与 `platformDetail`，`grep -v` 会把它们整行滤掉，于是「javadoc 漏改」永远查不出来。保留项 `platformDetail` / `platformStoreGoodsDetail` 不含 `platformPage` 这个子串，本来就不会命中，不需要过滤。
 
 ```bash
-grep -rn "brandId" frontend/admin/src | grep -v brandIds
+echo "--- admin 前端：查询入参侧不应再有单数 brandId ---"
+grep -rn "brandId" frontend/admin/src/api/shopGoods.ts frontend/admin/src/views/shopgoods/
 ```
 
-Expected: 无输出。
+Expected: **只剩 `shopGoods.ts:17` 与 `:56` 两行**（出参类型，有意保留单数）。若还出现 `query.brandId` 或 `ShopGoodsPageQuery` 里的 `brandId?`，就是漏改。
+
+> ⚠ **不要**对整个 `frontend/admin/src` 跑 `grep brandId` 然后要求空输出——`api/spu.ts`、`views/spu/SpuManage.vue`、`views/spu/SpuFormDialog.vue` 里的 `brandId` 属于 goods-center「标准商品」模块（SPU 的品牌属性），与本次「店铺商品跨店筛选」是两回事，改它们会破坏无关功能。
 
 - [ ] **Step 12: 编译三端后端**
 
@@ -1799,7 +1825,7 @@ git check-ignore -v .superpowers temp 2>/dev/null || echo "⚠ 未忽略，需�
 cd /e/workspace/panoramic_mall && git status --porcelain && git log --oneline -8
 ```
 
-Expected: 工作区干净；日志含本计划的各次提交。
+Expected: 日志含本计划的各次提交。工作区**不要求全空**——开工前就存在 4 个与本计划无关的未暂存删除（`docs/superpowers/specs/2026-09-14-*.md`，非本次产生），**不要**把它们一并提交或还原，原样留着。
 
 - [ ] **Step 7: 汇报**
 
