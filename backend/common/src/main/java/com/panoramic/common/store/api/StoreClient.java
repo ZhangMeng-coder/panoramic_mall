@@ -166,7 +166,7 @@ public interface StoreClient {
      * <p>⚠ 口径见 {@link StoreGoodsSpuFacetVO}：两维度互斥排除自身。</p>
      */
     @PostMapping("/goods/facets")
-    StoreGoodsSpuFacetVO mallFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
+    StoreGoodsSpuFacetVO crossShopFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
 
     /**
      * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）
