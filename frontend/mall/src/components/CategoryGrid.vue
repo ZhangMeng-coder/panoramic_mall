@@ -79,20 +79,3 @@ onMounted(async () => {
     </div>
   </section>
 </template>
-
-<style scoped>
-/* 列数 = 顶级分类数（上限 10），保住「一行铺满」的基准又不写死 10。
-   mall.css 的 .cats__grid 是 repeat(10, 1fr)，这里只覆盖列数：本规则多一个
-   [data-v-*] 属性选择器，特异性更高。--cols 恒有值（v-if 保证 cells 非空）。
-   ⚠ 写在组件里是因为本次不动 styles/mall.css。 */
-.cats__grid {
-  grid-template-columns: repeat(var(--cols), 1fr);
-}
-
-/* 分类图标多为方形透明底 logo：用 contain 完整显示，不裁切 */
-.cats__img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-</style>
