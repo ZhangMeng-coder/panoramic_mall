@@ -3,6 +3,7 @@ package com.panoramic.mallbff.controller;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.common.vo.RespData;
+import com.panoramic.mallbff.dto.ChangePhoneDTO;
 import com.panoramic.mallbff.dto.LoginDTO;
 import com.panoramic.mallbff.dto.RegisterDTO;
 import com.panoramic.mallbff.dto.SmsCodeDTO;
@@ -74,5 +75,16 @@ public class AuthController {
     @GetMapping("/me")
     public RespData<CurrentUserVO> me() {
         return RespData.success(authService.currentUser());
+    }
+
+    /**
+     * 换绑手机号（旧号码 + 新号码双验证）
+     * <p>⚠ <b>必须登录才能调</b>：本路径<b>不在</b>网关与服务的免鉴权白名单内——加进去等于公网可改任意账号手机号。</p>
+     * <p>成功后服务器登录态快照即时更新、<b>不重签 token</b>（JWT 不含手机号，前端无需换 token / 重新登录）。</p>
+     */
+    @PostMapping("/phone")
+    public RespData<Void> changePhone(@Valid @RequestBody ChangePhoneDTO dto) {
+        authService.changePhone(dto);
+        return RespData.success();
     }
 }

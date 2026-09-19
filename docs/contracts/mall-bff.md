@@ -40,11 +40,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:37 | |
-| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:46 | |
-| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:54 | |
-| POST | /auth/logout | — | — | `Void` | AuthController.java:62 | |
-| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:74 | |
+| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:38 | |
+| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:47 | |
+| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:55 | |
+| POST | /auth/logout | — | — | `Void` | AuthController.java:63 | |
+| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:75 | |
 | GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:46 | |
 | POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:61 | |
 | POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:69 | |
@@ -55,7 +55,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | — | 待实现 |
 | DELETE | /addresses/{id} | — | `Long` | `Void` | — | 待实现 |
 | POST | /addresses/{id}/default | — | `Long` | `Void` | — | 待实现 |
-| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | — | 待实现 |
+| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:85 | |
 
 ⚠ **本表按行分批实现**（契约先行）：**某一行是否已落地，以上表的「状态」列为准**
 （留空 = 已实现，`待实现` = 已定契约、代码未写）——本文件正文不另记进度与条数，写死只会在下次改动时失真。
@@ -75,7 +75,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 免鉴权路径 | `/auth/sms-code`、`/auth/register`、`/auth/login`、`/catalog/categories`（**两处各写一份**，见 [gateway.md](./gateway.md) 第三节）。⚠ `sms-code` 在登录**之前**被调用，漏登记则「获取验证码」直接 401；`/catalog/categories` 是**首页宫格分类树的精确路径**，不是 `/catalog/**` 前缀——写成前缀会把商品查询与详情一起放开到公网 |
 | 鉴权分级 | **首页公开、一涉及商品查询与详情就要登录态**：免鉴权只有上一条那 4 条，`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` 一律需顾客登录态。前端配套三层：① 需登录页（`/search`、`/category/:id`、`/goods/:id`）由路由守卫拦，未登录带 `redirect` 跳 `/login`，登录后回原页；② 登录态**中途失效**由拦截器 401 兜底：清本地态 + 提示「请先登录」+ 带 `redirect` 跳登录页；③ **唯一静默的 401** 是路由守卫刷新重建用户态的 `/auth/me`（`silent401`）——公开首页上的重建失败不该把游客弹走。⚠ 静默分支**会先清掉本地 token**，所以同一导航里后续接口再吃 401 时，拦截器已判不出「本来有登录态」（既不提示、也不跳转）；**需登录页上「会话真没了」（`!getToken()`）必须由守卫自己收口**（跳登录页），不能推给拦截器，否则页面会渲染成「商品暂不可用」——把未登录报成下游故障。⚠ 判据带 `!getToken()` 是必要的：`me()` 因网络 / 5xx 失败时 token 未动，那种情况**不跳**（跳了会与「已登录不该待在登录页」来回弹成环） |
 | 未认证响应 | HTTP **401** + `{code:401,msg}`（`common-auth` 的 `AuthenticationEntryPoint` 写出，网关侧同形）。⚠ 对本端前端而言 401 是**可预期的日常分支**（提示登录并跳转），不是故障：别把它与「商品暂不可用」那类下游降级混在一个出口里 |
-| 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
+| 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；新手机号与当前手机号相同 `400`（换绑）；账号停用 `USER_DISABLED`（`515`） |
 | 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
 | 资料读口径 | **不单开 `GET /profile`**：资料读合并在 `/auth/me` —— 其出参含**完整资料**（`nickname` / `avatar` / `gender` / `birthday`）。要改资料走 `PUT /profile`（只写） |
 | 资料写口径 | `PUT /profile` 是**整份替换**（四项全传，未传即写为 NULL）；资料页每次全量提交。要「只改一个字段」得先读 `/auth/me` 拿到完整资料再整体回传 |

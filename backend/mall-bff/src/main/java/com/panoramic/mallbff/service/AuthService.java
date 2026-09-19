@@ -8,6 +8,7 @@ import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
+import com.panoramic.mallbff.dto.ChangePhoneDTO;
 import com.panoramic.mallbff.dto.LoginDTO;
 import com.panoramic.mallbff.dto.RegisterDTO;
 import com.panoramic.mallbff.dto.SmsCodeDTO;
@@ -152,6 +153,49 @@ public class AuthService {
      */
     public CurrentUserVO currentUser() {
         return toCurrentUser(UserContext.getLoginUser());
+    }
+
+    /**
+     * 换绑手机号：验旧码 → 验新码 → 同号判断 → 新号查重 → 改库 → <b>即时刷新 Redis 登录态快照</b>
+     * <p><b>为什么必须刷新快照</b>：{@code /auth/me} 的 {@code phone} 直接取快照的 {@code username}、
+     * <b>不查库</b>（见 {@link #toCurrentUser} 的显式注释）。只改库不刷快照 → 「改成功了但 /auth/me 还返回旧号」，
+     * 且要等 token 过期重登才自愈。</p>
+     * <p>⚠ <b>不重签 token</b>：JWT 只含 {@code sub + type}，不含手机号，故换绑后旧 token 照常可用，
+     * 前端无需换 token、也不必重新登录。</p>
+     * <p>⚠ <b>双验证都不可省</b>（spec D6）：短信虽是模拟通道（固定码），流程形态仍要完整，
+     * 接真实通道时自动生效。校验顺序沿用既有「先验码后查库」口径，避免拿业务错误码当"该手机号是否已注册"的探测器。</p>
+     * <p>⚠ <b>为什么加 {@code @Transactional}</b>：本方法只碰本端 {@code mall_user} 一张表（不像注册那样串 Feign），
+     * 注解只兜住<b>一个方向</b>：Redis 写失败（{@code LoginUserCacheService#save} 抛 {@code IllegalStateException}）
+     * 时库改动回滚，不留「库里已改、快照仍旧」。<b>反方向不成立</b>：刷 Redis 在方法体内、事务提交在方法返回之后，
+     * 若提交本身失败，快照已是新号而库仍是旧号——顾客重试换绑（或重新登录）即收敛，不做补偿。</p>
+     *
+     * @param dto 换绑参数（旧码 + 新号 + 新码）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void changePhone(ChangePhoneDTO dto) {
+        LoginUser loginUser = UserContext.getLoginUser();
+        Long userId = loginUser.getId();
+        MallUser user = mallUserService.getById(userId);
+        if (user == null) {
+            throw new ServiceException("账号不存在");
+        }
+        String newPhone = dto.getNewPhone().trim();
+        // 校验顺序：验旧码 → 验新码 → 同号判断 → 查重（与既有 register/login 的「先验码后查库」一致）
+        assertCode(dto.getOldCode());
+        assertCode(dto.getNewCode());
+        if (newPhone.equals(user.getPhone())) {
+            throw new ServiceException("新手机号与当前手机号相同");
+        }
+        if (mallUserService.existsByPhone(newPhone)) {
+            throw new ServiceException("手机号已注册");
+        }
+        user.setPhone(newPhone);
+        // ⚠ 走 MP 基类 updateById → 触发审计字段自动填充（不得手写 updateUser/updateTime）
+        mallUserService.updateById(user);
+
+        // 账号即手机号：快照的 username 就是对外可见的 phone，此处同步刷成新号（见方法注释的「为什么必须刷新」）
+        loginUser.setUsername(newPhone);
+        loginUserCacheService.save(loginUser);
     }
 
     /**
