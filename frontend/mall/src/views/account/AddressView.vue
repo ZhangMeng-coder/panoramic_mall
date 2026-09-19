@@ -45,8 +45,25 @@ const loadFailed = ref(false)
 
 /** 正在确认删除的那一行（同一时刻至多一行：点别行的「删除」或「取消」即恢复） */
 const confirmingId = ref<number | null>(null)
-/** 行内写操作（删除 / 设默认）进行中的行 id：防连点，按钮就地显进行中文案 */
-const busyId = ref<number | null>(null)
+
+/**
+ * 行内写操作（删除 / 设默认）进行中的行 id **集合**：防连点，按钮就地显进行中文案。
+ *
+ * ⚠ 用集合而不是**单一 id**：两行各有一个请求在途是正常场景（A 行「设为默认」还没回来，
+ * B 行已点「确认删除」）。单一 id 会被后发者覆盖，先发者返回时又把后发者的标记清掉——
+ * B 行的按钮提前恢复可点，用户再点一次就是**第二个 DELETE**（后端必然 404，页面上
+ * 「地址已删除」的成功 toast 会紧跟一条「地址不存在」）。集合下每行各记各的，
+ * 谁的请求回来只清谁——也**不是**「整页锁死到最后一个请求结束」，别的行照常可操作。
+ */
+const busyIds = ref<number[]>([])
+
+function busyStart(id: number): void {
+  if (!busyIds.value.includes(id)) busyIds.value = [...busyIds.value, id]
+}
+
+function busyEnd(id: number): void {
+  busyIds.value = busyIds.value.filter((v) => v !== id)
+}
 
 /** 表单是否展开；`editingId` 为 null 时是「新增」，否则是「编辑这一条」 */
 const formOpen = ref(false)
@@ -173,13 +190,16 @@ function cancelRemove(): void {
  * 删除。⚠ 默认地址被删后**服务端不自动递补**（spec D7）：删掉的若是默认地址、且还有别的地址，
  * 只提示用户去设新的默认——**不在前端顺手再调一次 `setDefault`**（「默认位唯一」的维护在服务端，
  * 前端替它挑一条等于把一条业务规则复制到页面里）。删掉最后一条时无事可设，也不必提示。
+ *
+ * ⚠ **失败路径同样要「复位 + 重拉」**（不只是成功路径）：该地址已在别处被删时点「确认删除」会吃
+ * 404，那正是「服务端状态与页面不一致」的证据——不重拉的话那一行会停在「确认删除？」上、
+ * 页面上还留着一条服务端早已不存在的记录，用户再点仍是 404。catch 里**不自己弹提示**（拦截器已弹）。
  */
 async function remove(a: AddressVO): Promise<void> {
   const wasDefault = a.isDefault === 1
-  busyId.value = a.id
+  busyStart(a.id)
   try {
     await addressApi.remove(a.id)
-    confirmingId.value = null
     // 正在编辑的正是被删的这条：收起表单，免得再点「保存」打到一条已不存在的地址
     if (editingId.value === a.id) cancelForm()
     await load(false)
@@ -190,13 +210,18 @@ async function remove(a: AddressVO): Promise<void> {
     }
   } catch {
     // 拦截器已弹后端 msg（地址不存在 / 不属于本人 → 404「地址不存在」）
+    // 先就地复位（不等重拉结束，用户立刻能再操作），再重拉把页面拉回与服务端一致
+    confirmingId.value = null
+    await load(false)
   } finally {
-    busyId.value = null
+    // 成败都复位本行确认态；`busyEnd` 只清**本行**的标记
+    confirmingId.value = null
+    busyEnd(a.id)
   }
 }
 
 async function makeDefault(a: AddressVO): Promise<void> {
-  busyId.value = a.id
+  busyStart(a.id)
   try {
     await addressApi.setDefault(a.id)
     showToast('已设为默认地址', 'success')
@@ -205,7 +230,7 @@ async function makeDefault(a: AddressVO): Promise<void> {
   } catch {
     // 拦截器已弹后端 msg
   } finally {
-    busyId.value = null
+    busyEnd(a.id)
   }
 }
 </script>
@@ -330,10 +355,10 @@ async function makeDefault(a: AddressVO): Promise<void> {
               <button
                 class="acct__link acct__link--danger"
                 type="button"
-                :disabled="busyId === a.id"
+                :disabled="busyIds.includes(a.id)"
                 @click="remove(a)"
               >
-                {{ busyId === a.id ? '删除中…' : '确认删除' }}
+                {{ busyIds.includes(a.id) ? '删除中…' : '确认删除' }}
               </button>
               <button class="acct__link" type="button" @click="cancelRemove">取消</button>
             </template>
@@ -345,10 +370,10 @@ async function makeDefault(a: AddressVO): Promise<void> {
                 v-if="a.isDefault !== 1"
                 class="acct__link"
                 type="button"
-                :disabled="busyId === a.id"
+                :disabled="busyIds.includes(a.id)"
                 @click="makeDefault(a)"
               >
-                {{ busyId === a.id ? '设置中…' : '设为默认' }}
+                {{ busyIds.includes(a.id) ? '设置中…' : '设为默认' }}
               </button>
               <button class="acct__link" type="button" @click="askRemove(a)">删除</button>
             </template>

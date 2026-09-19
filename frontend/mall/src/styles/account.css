@@ -468,7 +468,10 @@
   font-weight: var(--w-medium);
 }
 
-/* 破坏性动作的 hover 不再往主色去（主色是「促销 / 正向」的语气） */
+/* 破坏性动作的 hover：把颜色再压暗一档（`--brand-hover`）。
+   ⚠ 用主色系的 hover 值**不是**笔误：tokens.css 里 `--danger` 与 `--brand` 同为 #e8452c
+   （C 端橙红促销风的底色使然），前台没有一套与主色分得开的破坏色，故 hover 只能往主色
+   的暗档走；要改得先动令牌（会波及全站页面），不在本页范围内。 */
 .acct__link--danger:hover:not(:disabled) {
   color: var(--brand-hover);
 }
