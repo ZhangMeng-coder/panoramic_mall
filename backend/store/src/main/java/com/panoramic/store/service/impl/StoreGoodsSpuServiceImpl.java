@@ -20,9 +20,13 @@ import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsFacetItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSkuVO;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
@@ -30,9 +34,11 @@ import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.store.entity.StoreGoodsSku;
+import com.panoramic.store.entity.StoreGoodsSkuStock;
 import com.panoramic.store.entity.StoreGoodsSpu;
 import com.panoramic.store.mapper.StoreGoodsSpuMapper;
 import com.panoramic.store.service.StoreGoodsSkuService;
+import com.panoramic.store.service.StoreGoodsSkuStockService;
 import com.panoramic.store.service.StoreGoodsSpuService;
 import com.panoramic.store.service.StoreShopService;
 import lombok.RequiredArgsConstructor;
@@ -81,6 +87,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
 
     /** 跨实体：SKU 服务（列表/计数/级联删除/级联下架；不直接持有 SKU Mapper） */
     private final StoreGoodsSkuService skuService;
+    /** 跨实体：SKU 库存服务（库存表读写只走它；不直接持有库存 Mapper / 表名） */
+    private final StoreGoodsSkuStockService skuStockService;
     /** 跨实体：店铺服务（跨店列表/详情回填 storeName，以及按审核状态取店铺 id 做过滤） */
     private final StoreShopService shopService;
     private final ObjectMapper objectMapper;
@@ -173,9 +181,14 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         if (skuService.hasOnShelfSku(id)) {
             throw new ServiceException("商品存在已上架 SKU，请先全部下架后再删除");
         }
+        // SKU id 必须在删 SKU 之前取（删掉就查不到了），随后级联删库存行
+        List<Long> skuIds = skuService.listBySpuId(id).stream()
+                .map(StoreGoodsSku::getId)
+                .collect(Collectors.toList());
         removeById(id);
         // 级联逻辑删除其下全部 SKU（走 SKU service）
         skuService.removeBySpuId(id);
+        skuStockService.removeBySkuIds(skuIds);
     }
 
     @Override
@@ -237,6 +250,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
                 .collect(Collectors.toList());
         if (!removedIds.isEmpty()) {
             skuService.removeByIds(removedIds);
+            // 级联逻辑删库存行（与 SKU 同事务：本方法已带 @Transactional）
+            skuStockService.removeBySkuIds(removedIds);
         }
         // 整单替换可能清空/新增上架行，按最新 SKU 状态重新联动 SPU
         refreshDerived(spu);
@@ -252,6 +267,87 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         skuService.updateById(sku);
         // R2/R3：SKU 上下架反向联动 SPU（上架任一 → SPU 上架；全下架 → SPU 下架）
         refreshDerived(spu);
+    }
+
+    // ---- owner 侧：SKU 库存（读走批量、写落库存表；本类只管归属校验与编排）----
+
+    @Override
+    public PageResult<StoreGoodsStockPageItemVO> pageStock(Long storeId, StoreGoodsStockPageQueryDTO dto) {
+        String kw = dto.getKeyword() == null ? null : dto.getKeyword().trim();
+        LambdaQueryWrapper<StoreGoodsSku> qw = Wrappers.<StoreGoodsSku>lambdaQuery()
+                // 店铺过滤走子查询：避免把全店 SPU id 拉回来拼 IN 列表（子查询是单表过滤、走 idx_store_id）。
+                // ⚠ 用 apply 而非 inSql：MP 3.5.16 的 inSql(R, String) 不接受参数（无 varargs 重载、
+                // 也不认 {0} 占位符），带参子查询只能走 apply——两者的 AND/OR 连接语义一致。
+                .apply("spu_id IN (SELECT id FROM store_goods_spu WHERE store_id = {0} AND is_delete = 0)",
+                        storeId);
+        if (dto.getShelfStatus() != null) {
+            qw.eq(StoreGoodsSku::getShelfStatus, dto.getShelfStatus());
+        }
+        if (StringUtils.hasText(kw)) {
+            String like = "%" + kw + "%";
+            qw.and(w -> w.like(StoreGoodsSku::getSkuCode, kw)
+                    .or()
+                    .apply("spu_id IN (SELECT id FROM store_goods_spu WHERE name LIKE {0} AND is_delete = 0)",
+                            like));
+        }
+        if (Boolean.TRUE.equals(dto.getLowStockOnly())) {
+            // warn_stock 为 NULL 时 `stock <= warn_stock` 结果非真，天然排除未设预警的行
+            qw.inSql(StoreGoodsSku::getId,
+                    "SELECT sku_id FROM store_goods_sku_stock WHERE is_delete = 0 AND stock <= warn_stock");
+        }
+        qw.orderByDesc(StoreGoodsSku::getId);
+
+        IPage<StoreGoodsSku> result = skuService.page(dto.toPage(StoreGoodsSku.class), qw);
+        List<StoreGoodsSku> rows = result.getRecords();
+        if (rows.isEmpty()) {
+            return new PageResult<>(result.getTotal(), Collections.emptyList());
+        }
+
+        List<Long> skuIds = rows.stream().map(StoreGoodsSku::getId).collect(Collectors.toList());
+        List<Long> spuIds = rows.stream().map(StoreGoodsSku::getSpuId).distinct().collect(Collectors.toList());
+        // 一次批量读库存 + 一次批量读 SPU 名（无 N+1，均走快照读不加锁）
+        Map<Long, StoreGoodsSkuStock> stockMap = skuStockService.mapBySkuIds(skuIds);
+        Map<Long, String> spuNameMap = listByIds(spuIds).stream()
+                .collect(Collectors.toMap(StoreGoodsSpu::getId, StoreGoodsSpu::getName));
+
+        List<StoreGoodsStockPageItemVO> items = rows.stream().map(sku -> {
+            StoreGoodsStockPageItemVO vo = new StoreGoodsStockPageItemVO();
+            vo.setSkuId(sku.getId());
+            vo.setSpuId(sku.getSpuId());
+            vo.setSpuName(spuNameMap.get(sku.getSpuId()));
+            vo.setMainImage(sku.getMainImage());
+            vo.setSkuCode(sku.getSkuCode());
+            vo.setPrice(sku.getPrice());
+            vo.setShelfStatus(sku.getShelfStatus());
+            vo.setSpecAttrs(readJsonList(sku.getSpecAttrs(), new TypeReference<List<SpecAttr>>() {}));
+            StoreGoodsSkuStock st = stockMap.get(sku.getId());
+            vo.setStock(st == null || st.getStock() == null ? 0 : st.getStock());
+            vo.setLockedStock(st == null || st.getLockedStock() == null ? 0 : st.getLockedStock());
+            vo.setWarnStock(st == null ? null : st.getWarnStock());
+            return vo;
+        }).collect(Collectors.toList());
+        return new PageResult<>(result.getTotal(), items);
+    }
+
+    @Override
+    public void updateSkuStock(Long storeId, Long skuId, StoreGoodsStockUpdateDTO dto) {
+        Long spuId = getOwnedSpuIdOfSkuOrThrow(storeId, skuId);
+        assertNotLocked(getById(spuId), "修改库存");
+        skuStockService.updateStock(skuId, dto.getStock(), dto.getWarnStock());
+    }
+
+    @Override
+    public void batchUpdateSkuStock(Long storeId, StoreGoodsStockBatchUpdateDTO dto) {
+        List<Long> skuIds = dto.getSkuIds().stream().distinct().collect(Collectors.toList());
+        // 逐个校验归属（不属于本店的直接拒绝，不静默跳过）
+        Set<Long> spuIds = new HashSet<>();
+        for (Long skuId : skuIds) {
+            spuIds.add(getOwnedSpuIdOfSkuOrThrow(storeId, skuId));
+        }
+        for (Long spuId : spuIds) {
+            assertNotLocked(getById(spuId), "修改库存");
+        }
+        skuStockService.batchUpdateStock(skuIds, dto.getStock());
     }
 
     // ---- platform 侧（跨店通用：调用方自设限定条件；详情/锁定仍只服务 admin BFF）----
@@ -441,7 +537,13 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
         vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
         vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
-        vo.setSkus(skuService.listBySpuId(spu.getId()).stream().map(this::toSkuVO).collect(Collectors.toList()));
+        // 可用库存批量回填（一次 IN 查询，非逐 SKU 查；无库存行按 0 计）
+        List<StoreGoodsSku> skuRows = skuService.listBySpuId(spu.getId());
+        Map<Long, Integer> availableMap = skuStockService.availableStockMapBySkuIds(
+                skuRows.stream().map(StoreGoodsSku::getId).collect(Collectors.toList()));
+        vo.setSkus(skuRows.stream()
+                .map(s -> toSkuVO(s, availableMap.get(s.getId())))
+                .collect(Collectors.toList()));
     }
 
     /**
@@ -558,6 +660,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         sku.setPrice(skuDto.getPrice());
         sku.setShelfStatus(StoreGoodsSku.SHELF_OFF);
         skuService.save(sku);
+        // 建 0 行库存（初始库存仅新建行采信；已存在则只补不覆盖）
+        skuStockService.saveIfAbsent(sku.getId(), skuDto.getStock());
     }
 
     /**
@@ -772,14 +876,36 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         return sku;
     }
 
+    /**
+     * 按 store_id 校验 SKU 归属：skuId → SKU.spuId → SPU.store_id 双条件。
+     * <p>不属于本店与不存在同样报「SKU 不存在」，不泄露存在性。</p>
+     *
+     * @return 该 SKU 的 spuId（已确权）
+     */
+    private Long getOwnedSpuIdOfSkuOrThrow(Long storeId, Long skuId) {
+        StoreGoodsSku sku = skuService.getById(skuId);
+        if (sku == null) {
+            throw new ServiceException("SKU 不存在");
+        }
+        getOwnedOrThrow(storeId, sku.getSpuId());
+        return sku.getSpuId();
+    }
+
     private boolean isOnShelf(StoreGoodsSku sku) {
         return sku != null && sku.getShelfStatus() != null && sku.getShelfStatus() == StoreGoodsSku.SHELF_ON;
     }
 
-    private StoreGoodsSkuVO toSkuVO(StoreGoodsSku sku) {
+    /**
+     * SKU 实体 → VO（{@code availableStock} 由调用方批量取好后传入，避免逐行查库存）
+     *
+     * @param sku            SKU 实体
+     * @param availableStock 可用库存（{@code stock − locked_stock}）；null 按 0
+     */
+    private StoreGoodsSkuVO toSkuVO(StoreGoodsSku sku, Integer availableStock) {
         StoreGoodsSkuVO vo = new StoreGoodsSkuVO();
         BeanUtils.copyProperties(sku, vo, "specAttrs");
         vo.setSpecAttrs(readJsonList(sku.getSpecAttrs(), new TypeReference<List<SpecAttr>>() {}));
+        vo.setAvailableStock(availableStock == null ? 0 : availableStock);
         return vo;
     }
 

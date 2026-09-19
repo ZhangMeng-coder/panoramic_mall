@@ -8,7 +8,11 @@ import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
@@ -108,6 +112,39 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @param shelfStatus 0 下架，1 上架
      */
     void updateSkuShelf(Long storeId, Long spuId, Long skuId, Integer shelfStatus);
+
+    // ---- owner 侧：SKU 库存（库存读写落在 store_goods_sku_stock，本类的职责是归属校验与编排）----
+
+    /**
+     * SKU 库存分页（owner 侧，按 SKU 平铺一行一条；仅 storeId 名下）。
+     * <p>筛选：{@code keyword}（商品名 / SKU 编码）、{@code shelfStatus}、{@code lowStockOnly}
+     * （{@code stock <= warn_stock}）。库存列取自库存表，缺失行按 0 计。</p>
+     * <p>读路径无 N+1：店铺过滤走 {@code inSql} 子查询，商品名与库存各一次批量查（R14 第 4 条）。</p>
+     *
+     * @param storeId 店主账号 id（== 店铺主键）
+     * @param dto     分页/筛选参数
+     * @return 分页结果
+     */
+    PageResult<StoreGoodsStockPageItemVO> pageStock(Long storeId, StoreGoodsStockPageQueryDTO dto);
+
+    /**
+     * 改单行 SKU 库存（owner 侧）。{@code warnStock} 传 null = 清除预警。
+     * <p>平台锁定期只读（{@link #pageStock} 之外的 owner 侧写操作同样受 R12 约束）。</p>
+     *
+     * @param storeId 店主账号 id
+     * @param skuId   SKU id（经 {@code skuId → sku.spuId → spu.store_id} 链校验归属）
+     * @param dto     库存与预警值
+     */
+    void updateSkuStock(Long storeId, Long skuId, StoreGoodsStockUpdateDTO dto);
+
+    /**
+     * 批量设置整批 SKU 的总库存（owner 侧，单条 {@code IN} 更新，不循环逐行）。
+     * <p>逐个校验归属：不属于本店的 SKU 直接拒绝，不静默跳过；平台锁定期只读。</p>
+     *
+     * @param storeId 店主账号 id
+     * @param dto     待改 SKU 集合与新总库存
+     */
+    void batchUpdateSkuStock(Long storeId, StoreGoodsStockBatchUpdateDTO dto);
 
     // ---- platform 侧（不带 storeId，跨店通用：分页为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
 
