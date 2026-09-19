@@ -8,8 +8,12 @@ import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.storebff.bff.StoreGoodsBffService;
 import com.panoramic.storebff.vo.StoreGoodsSpuDetailBffVO;
@@ -134,5 +138,32 @@ public class GoodsController {
     public RespData<SpuBySkuCodeVO> centerSpuBySkuCode(@RequestParam("skuCode")
                                                        @NotBlank(message = "SKU编码不能为空") String skuCode) {
         return RespData.success(storeGoodsBffService.centerSpuBySkuCode(skuCode));
+    }
+
+    /**
+     * SKU 库存分页（仅登录店主名下 SKU；按 SKU 平铺一行一条）
+     */
+    @GetMapping("/stock/page")
+    public RespData<PageResult<StoreGoodsStockPageItemVO>> pageStock(@Validated StoreGoodsStockPageQueryDTO dto) {
+        return RespData.success(storeGoodsBffService.pageStock(dto));
+    }
+
+    /**
+     * 改单行 SKU 库存（{@code warnStock} 传 null = 清除预警）
+     */
+    @PutMapping("/stock/{skuId}")
+    public RespData<Void> updateSkuStock(@PathVariable @NotNull(message = "SKU ID不能为空") Long skuId,
+                                         @Validated @RequestBody StoreGoodsStockUpdateDTO dto) {
+        storeGoodsBffService.updateSkuStock(skuId, dto);
+        return RespData.success();
+    }
+
+    /**
+     * 批量设置整批 SKU 的总库存（统一设为同一值）
+     */
+    @PutMapping("/stock/batch")
+    public RespData<Void> batchUpdateSkuStock(@Validated @RequestBody StoreGoodsStockBatchUpdateDTO dto) {
+        storeGoodsBffService.batchUpdateSkuStock(dto);
+        return RespData.success();
     }
 }

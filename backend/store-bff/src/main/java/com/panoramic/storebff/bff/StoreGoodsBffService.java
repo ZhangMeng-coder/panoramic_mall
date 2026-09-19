@@ -14,10 +14,14 @@ import com.panoramic.common.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.storebff.vo.StoreGoodsSpuDetailBffVO;
 import lombok.RequiredArgsConstructor;
@@ -144,6 +148,37 @@ public class StoreGoodsBffService {
         Long storeId = assertShopApprovedAndGetStoreId();
         callStore(() -> {
             storeClient.updateStoreGoodsSkuShelf(spuId, skuId, storeId, dto);
+            return null;
+        });
+    }
+
+    /**
+     * 库存管理分页（仅当前店主名下 SKU）：域分页直出，本层不做聚合。
+     * <p>库存三列（总库存 / 占用 / 预警）由域侧读库存表回填；本层不含任何库存口径计算。</p>
+     */
+    public PageResult<StoreGoodsStockPageItemVO> pageStock(StoreGoodsStockPageQueryDTO dto) {
+        Long storeId = assertShopApprovedAndGetStoreId();
+        return callStore(() -> storeClient.pageSkuStock(storeId, dto));
+    }
+
+    /**
+     * 改单行 SKU 库存（{@code warnStock} 传 null = 清除预警）；平台锁定期由域内拒绝
+     */
+    public void updateSkuStock(Long skuId, StoreGoodsStockUpdateDTO dto) {
+        Long storeId = assertShopApprovedAndGetStoreId();
+        callStore(() -> {
+            storeClient.updateSkuStock(skuId, storeId, dto);
+            return null;
+        });
+    }
+
+    /**
+     * 批量设置整批 SKU 的总库存（统一设为同一值，不动预警阈值）
+     */
+    public void batchUpdateSkuStock(StoreGoodsStockBatchUpdateDTO dto) {
+        Long storeId = assertShopApprovedAndGetStoreId();
+        callStore(() -> {
+            storeClient.batchUpdateSkuStock(storeId, dto);
             return null;
         });
     }

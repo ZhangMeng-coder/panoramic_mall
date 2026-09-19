@@ -24,19 +24,19 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 | GET | /shops/mine | — | — | RespData<ShopVO> | ShopController.java:31 |  |
 | POST | /shops/save | — | ShopSaveDTO | RespData<Void> | ShopController.java:39 |  |
 | POST | /shops/submit | — | ShopSaveDTO | RespData<Void> | ShopController.java:48 |  |
-| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | GoodsController.java:51 |  |
-| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | GoodsController.java:59 |  |
-| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | GoodsController.java:67 |  |
-| PUT | /goods/spu/{id} | — | Long, StoreGoodsSpuUpdateDTO | RespData<Void> | GoodsController.java:75 |  |
-| DELETE | /goods/spu/{id} | — | Long | RespData<Void> | GoodsController.java:85 |  |
-| PUT | /goods/spu/{id}/skus | — | Long, StoreGoodsSkuReplaceDTO | RespData<Void> | GoodsController.java:94 |  |
-| PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | — | Long, Long, StoreGoodsSkuShelfDTO | RespData<Void> | GoodsController.java:104 |  |
-| GET | /goods/categories/tree | — | — | RespData<List<CategoryTreeVO>> | GoodsController.java:115 |  |
-| GET | /goods/brands | — | — | RespData<List<BrandVO>> | GoodsController.java:123 |  |
-| GET | /goods/center/spu-by-sku-code | — | String | RespData<SpuBySkuCodeVO> | GoodsController.java:133 |  |
-| GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | — | 待实现 |
-| PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | — | 待实现 |
-| PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | — | 待实现 |
+| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | GoodsController.java:55 |  |
+| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | GoodsController.java:63 |  |
+| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | GoodsController.java:71 |  |
+| PUT | /goods/spu/{id} | — | Long, StoreGoodsSpuUpdateDTO | RespData<Void> | GoodsController.java:79 |  |
+| DELETE | /goods/spu/{id} | — | Long | RespData<Void> | GoodsController.java:89 |  |
+| PUT | /goods/spu/{id}/skus | — | Long, StoreGoodsSkuReplaceDTO | RespData<Void> | GoodsController.java:98 |  |
+| PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | — | Long, Long, StoreGoodsSkuShelfDTO | RespData<Void> | GoodsController.java:108 |  |
+| GET | /goods/categories/tree | — | — | RespData<List<CategoryTreeVO>> | GoodsController.java:119 |  |
+| GET | /goods/brands | — | — | RespData<List<BrandVO>> | GoodsController.java:127 |  |
+| GET | /goods/center/spu-by-sku-code | — | String | RespData<SpuBySkuCodeVO> | GoodsController.java:137 |  |
+| GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | GoodsController.java:146 |  |
+| PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | GoodsController.java:154 |  |
+| PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | GoodsController.java:164 |  |
 
 > 「路径」列不带网关前缀 `/store`。例：`/goods/spu/page` 对外完整路径是 `/store/goods/spu/page`。
 
@@ -53,7 +53,7 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 
 | 门禁 | 说明 | 位置 |
 |---|---|---|
-| **店铺已审核通过** | `/goods/**` 全部接口在调域**之前**判定店铺状态；未过审返回 **`code=403`** | 域内**不做**该判断（域不查店铺状态） |
+| **店铺已审核通过** | `/goods/**` 全部接口（含 `/goods/stock/**` 库存三接口）在调域**之前**判定店铺状态；未过审返回 **`code=403`** | 域内**不做**该判断（域不查店铺状态） |
 | **分类全路径解析** | 列表 / 详情读时调 goods-center `/categories/paths` 批量补 `categoryPath`；**解析失败只告警、路径留空**，前端回退快照名 | 读时解析，非 N+1；降级不得拖垮主流程 |
 | **中台版本比对** | 详情页的「更新提示 + 同步覆盖」在**本层**组装；域只落库/回读 `center_version`，不调中台、不判版本 | 编排职责 |
 | **锁定商品只读** | 锁定商品在店主端**整行只读**；锁定信息**不含锁定人**（仅平台端展示） | 域内强制，本层透出 |
