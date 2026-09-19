@@ -14,9 +14,9 @@ import java.util.List;
  * 由 {@code CatalogBffService#toMallDetail} 逐字段手工映射裁剪出本形状，域 VO 日后加字段不会自动漏到 C 端。</p>
  * <p><b>可见性口径与列表一致</b>（同一不变量）：上架 + 未被平台锁定 + 店铺已审核通过，否则接口回
  * 404「商品不存在或已下架」。故能拿到本对象的商品，一定也能在列表里被搜到。</p>
- * <p>⚠ {@code description} 是<b>店主自由录入的富文本</b>（库里按 HTML 存），出参前已由
- * {@code CatalogBffService#sanitizeDescription} 按白名单清洗——前端按 HTML 渲染（{@code v-html}）
- * 是安全的，因为消毒点收在本端出口这一处。</p>
+ * <p>⚠ {@code description} 是<b>店主自由录入的富文本</b>（库里按 HTML 存），出参前已在**本端 BFF
+ * 出口**经 common 的 {@code HtmlSanitizer} 按白名单清洗（各端出口共用同一份，admin 端同字段同理）
+ * ——前端按 HTML 渲染（{@code v-html}）是安全的。</p>
  */
 @Data
 public class MallGoodsDetailVO {

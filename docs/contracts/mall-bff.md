@@ -66,7 +66,7 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | 详情可见性 | **与列表同一不变量**（上架 + 未锁定 + 店铺已过审），故详情能打开的商品一定能在列表里搜到、反之亦然。⚠ 与列表**判定位置不同**：列表把三个条件**当查询条件传给域**，详情拿不到查询条件（按 id 取一条），只能取回后**在 BFF 逐条重判**——两处别各写一套口径，改动时一起改 |
 | 详情不可见 | 不存在 / 已下架 / 被平台锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因、也不泄露商品存在性**（区分了就是给外人一个探测商品是否存在的接口）。⚠ **下游故障不是不可见**：只有业务 4xx 走 404，熔断 / 连接失败照抛 500「…暂不可用」 |
 | 详情裁剪 | 域出参 `StoreGoodsSpuPlatformDetailVO` 是**管理端超集**（锁定四列 / `goodsSpuId` / `centerVersion` / `shelfStatus` / 含已下架的全部 SKU / SKU 的 `skuCode` 与 `spuId`）。C 端形状由 `CatalogBffService#toMallDetail` **逐字段手工映射**得出（不用 BeanUtils 拷贝），SKU 只留上架项——域 VO 日后加字段不会自动漏到前台（见 [cross-cutting.md](./cross-cutting.md) 第 19 条） |
-| 详情描述 | `description` 是店主自由录入的**富文本**（store / admin 两端录入框提示语「支持 HTML」、库列注释「商品详情（富文本）」），域侧原样存取、不清洗。**C 端出参是清洗过的 HTML**：`CatalogBffService#sanitizeDescription` 按 `Safelist.relaxed` 剥掉 `script` / `on*` 事件属性 / `style`，`a[href]` 限 ftp/http/https/mailto、`img[src]` 限 http/https（相对地址无协议可取，一并被剥）。⚠ **消毒点是本端出口这一处**，前端 `v-html` 直接渲染、不再自行清洗（前端各自引清洗库，漏一个就是一处 XSS）；没有标签的纯文本描述按换行折 `<br>` 后走同一套清洗，出口形状统一是 HTML（见 [cross-cutting.md](./cross-cutting.md) 第 21 条） |
+| 详情描述 | `description` 是店主自由录入的**富文本**（store / admin 两端录入框提示语「支持 HTML」、库列注释「商品详情（富文本）」），域侧原样存取、不清洗。**C 端出参是清洗过的 HTML**：`CatalogBffService#toMallDetail` 出口调 common 的 `HtmlSanitizer.sanitizeRichText`（`Safelist.relaxed`：剥 `script` / `on*` 事件属性 / `style`，`a[href]` 限 ftp/http/https/mailto、`img[src]` 限 http/https；无标签的纯文本按换行折 `<br>` 后走同一套清洗）。⚠ **白名单只此一份、各端 BFF 出口共用**（admin 端同一字段走同一件），前端 `v-html` 直接渲染、不再自行清洗（前端各自引清洗库，漏一个就是一处 XSS；见 [cross-cutting.md](./cross-cutting.md) 第 21 条） |
 
 ## 三、前端契约的**视觉与结构**基准
 

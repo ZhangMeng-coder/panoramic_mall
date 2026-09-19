@@ -80,7 +80,10 @@
         <span v-else class="muted">未设置轮播图</span>
       </div>
 
-      <!-- 商品详情（富文本，与既有商品预览弹窗口径一致：v-html 直接渲染） -->
+      <!-- 商品详情（富文本，v-html 渲染）：内容是**店主**录入的，安全性由后端出口兜住——
+           admin BFF 的 detailGoods 已用 common 的 HtmlSanitizer 洗过（剥脚本 / 事件属性 / 样式），
+           故这里直接渲染是对的，本页不需要也不得自己再拼一遍 HTML。
+           ⚠ 别改成 {{ }} 插值：店主写的 <p> 会原样露在页面上。见 cross-cutting.md 第 21 条。 -->
       <div class="section-title">商品详情</div>
       <div class="section-body">
         <div v-if="goods.description" class="rich-text" v-html="goods.description"></div>

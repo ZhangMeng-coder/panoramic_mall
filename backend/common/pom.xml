@@ -58,6 +58,12 @@
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
         </dependency>
+        <!-- HTML 清洗（版本由父 POM 管理）：HtmlSanitizer 是各端 BFF 出口共用的**唯一**一份
+             富文本白名单，mall-bff / admin 都经它消毒店主录入的商品详情（cross-cutting.md 第 21 条） -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+        </dependency>
         <!-- BFF 化内部调用通道：Feign 客户端 + LoadBalancer + 熔断。
              公共类型/Feign 接口定义在 common，调用方(端 BFF)经 @EnableFeignClients 扫描启用；
              被调用方(业务域)仅当实现端 HTTP 接口，不扫描 Feign 客户端，仅因依赖 common 而带上依赖，无副作用。

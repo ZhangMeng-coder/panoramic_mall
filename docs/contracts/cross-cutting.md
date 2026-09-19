@@ -267,15 +267,14 @@ layer: cross-cutting
 
 ---
 
-### 21. 富文本字段：写入侧原样存，**消毒在消费端 BFF 的出口**（⚠ **已知风险**：admin 端尚未消毒）
+### 21. 富文本字段：写入侧原样存，**消毒在消费端 BFF 的出口**
 
 | | |
 |---|---|
-| 契约 | store 域的富文本列（当前是 `store_goods_spu.description`）是**店主自由录入的 HTML**（store / admin 两端的录入框提示语就是「支持 HTML」、库列注释是「商品详情（富文本）」）：**域侧原样存取、不清洗，也不做任何内容裁决**。渲染它的消费端 BFF **必须在自己出口按白名单清洗**，出参即「可直接渲染的 HTML」。消毒点为什么在 BFF、不在域也不在前端：域侧不持身份、拿不到「这一份给谁看」；前端各自去引清洗库，漏一个就是一处 XSS。⚠ 店主输入**不可信** —— 原样下发再 `v-html`，等于把渲染它的那个页面交给店主注入 |
-| 定义位置 | 域侧列：`store/src/main/resources/db/*.sql`（`store_goods_spu.description`）；清洗点：mall-bff `CatalogBffService#sanitizeDescription`（`Safelist.relaxed`：剥 `script` / `on*` 事件属性 / `style`，`a[href]` 限 ftp/http/https/mailto、`img[src]` 限 http/https；无标签的纯文本折成 `<br>` 后走同一套清洗，出口形状统一是 HTML） |
-| 消费位置 | ① mall-bff `CatalogBffService#toMallDetail` —— **已洗**；② admin BFF `ShopGoodsBffService#detailGoods`（直接回域 VO）+ `frontend/admin/src/views/shopgoods/ShopGoodsDetail.vue` 的 `v-html` —— **未洗，见下「已知风险」**；③ store 端只作**录入**（textarea），不渲染 |
-| ⚠ 已知风险 | **店主 → 平台管理员的存储型 XSS**：店主在 store 端把 `<img src=x onerror=…>` 当描述存下（域侧原样存），平台管理员打开「店铺商品管理 → 商品详情」即在自己的会话里执行店主脚本 —— admin 的 token 在 localStorage，等同于店主提权到平台账号。修法：admin BFF 出口套同一套清洗（推荐把白名单下沉成 `common` 的共用件，两处共用一份策略，避免口径漂移）。**本次只登记，未修** |
-| 破坏后果 | 去掉清洗 → 渲染该字段的页面被店主注入（见上「已知风险」已在 admin 端发生）；改回 `{{ }}` 纯文本插值 → 店主写的 `<p>` 原样露在页面上（2026-09-19 的一次真实回退）；新增端形态（小程序 / APP）若不在自己的出口自洗一遍，同样中招 —— 域侧不会替它洗 |
+| 契约 | store 域的富文本列（当前是 `store_goods_spu.description`）是**店主自由录入的 HTML**（store / admin 两端的录入框提示语就是「支持 HTML」、库列注释是「商品详情（富文本）」）：**域侧原样存取、不清洗，也不做任何内容裁决**。渲染它的消费端 BFF **必须在自己出口清洗**，出参即「可直接渲染的 HTML」。消毒点为什么在 BFF、不在域也不在前端：域侧不持身份、拿不到「这一份给谁看」；前端各自去引清洗库，漏一个就是一处 XSS。⚠ 店主输入**不可信** —— 原样下发再 `v-html`，等于把渲染它的那个页面交给店主注入 |
+| 定义位置 | 域侧列：`store/src/main/resources/db/*.sql`（`store_goods_spu.description`）。**清洗件只此一份**：`common/src/main/java/com/panoramic/common/util/HtmlSanitizer.java`（`Safelist.relaxed`：剥 `script` / `on*` 事件属性 / `style`，`a[href]` 限 ftp/http/https/mailto、`img[src]` 限 http/https；无标签的纯文本先转义再把换行折 `<br>`，两类汇到同一套清洗，出口形状统一是 HTML）。⚠ **别各端各写一份白名单** —— 那种重复迟早漂移 |
+| 消费位置 | ① mall-bff `CatalogBffService#toMallDetail`（出口调 `HtmlSanitizer`）→ `frontend/mall/src/views/GoodsDetailView.vue` 的 `v-html`；② admin BFF `ShopGoodsBffService#detailGoods`（出口调同一件）→ `frontend/admin/src/views/shopgoods/ShopGoodsDetail.vue` 的 `v-html`；③ store-bff（`StoreGoodsBffService` → `StoreGoodsSpuDetailBffVO` → 店主编辑表单）**不该洗** —— 那条链路是「读出来 → 店主改 → 写回去」，洗了会把库里已存的 HTML 吃掉且静默存回残文；其前端本来也没有 `v-html` sink。⚠ admin 端 `SpuPreviewDialog.vue` 另有一处 `v-html` 渲染的是 `goods_spu.description`（**标准商品模板库**，写路径只有 admin 自己的 `GoodsTemplateBffService`，store-bff / mall-bff 只调读方法），不属本条的店主输入，另有其口径 |
+| 破坏后果 | 去掉清洗 → 渲染该字段的页面被店主注入。**这不是假设**：admin 端 2026-09-19 之前一直如此（`detailGoods` 直接回域 VO + 页面 `v-html`），店主在 store 端存一条 `<img src=x onerror=…>` 即可在平台管理员的会话里执行脚本（admin token 在 localStorage → 等同于店主提权到平台账号），同日修复；改回 `{{ }}` 纯文本插值 → 录入者写的 `<p>` 原样露在页面上（mall 端同日的一次真实回退）；新增端形态（小程序 / APP）若不在自己的出口自洗一遍，同样中招 —— 域侧不会替它洗 |
 | 核对方式 | **人工核对**（白名单策略无法用静态哨兵表达） |
 
 ---

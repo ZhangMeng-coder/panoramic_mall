@@ -153,6 +153,10 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 - ⚠ **锁定人渲染**：库里存 `admin:{id}` 原串；前端渲染为「平台管理员(N)」，**不做 `sys_user` 联查取名**。
 - ⚠ **锁定/解锁走 POST 而非 PUT**（`/shop/goods/{id}/lock`、`/unlock`），与其语义（动作而非幂等更新）一致。
 - ⚠ **身份类型绑定**：本层只接受 `type=admin` 的登录态（`panoramic.auth.user-type: admin`）。跨端 token（`store` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**，**不会**走到 `@PreAuthorize`。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
+- ⚠ **店铺商品描述消毒**：`/shop/goods/{id}` 出参的 `description` 是**店主**录入的富文本（域侧原样存取、
+  不清洗），而页面把它 `v-html` 渲染进**平台管理员**的会话 —— 不洗就是店主对管理员页面的存储型 XSS。
+  故本层在出口用 common 的 `HtmlSanitizer` 洗过再返回，**白名单与 mall-bff 共用同一份**（前端不再
+  各自去引清洗库）。见 [cross-cutting.md](./cross-cutting.md) 第 21 条。
 
 ## 五、类型所在
 

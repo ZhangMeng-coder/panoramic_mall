@@ -13,6 +13,7 @@ import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.util.HtmlSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -81,7 +82,12 @@ public class ShopGoodsBffService {
     }
 
     /**
-     * 店铺商品详情（跨店，只读）：域详情 + 分类全路径
+     * 店铺商品详情（跨店，只读）：域详情 + 分类全路径 + <b>描述消毒</b>
+     *
+     * <p>⚠ {@code description} 是<b>店主</b>自由录入的富文本（域侧原样存取、不清洗），而本页
+     * 把它 {@code v-html} 渲染到<b>平台管理员</b>的会话里 —— 不洗就是店主对管理员页面的存储型
+     * XSS。洗在出口这一处（前端不再各自去引清洗库），用的是 common 的 {@link HtmlSanitizer}，
+     * 与 mall-bff 同一份白名单（见 docs/contracts/cross-cutting.md 第 21 条）。</p>
      *
      * @param id 店铺商品 id
      * @return 详情（含 SKU 列表、锁定信息、storeName）
@@ -89,6 +95,7 @@ public class ShopGoodsBffService {
     public StoreGoodsSpuPlatformDetailVO detailGoods(Long id) {
         StoreGoodsSpuPlatformDetailVO vo = callStore(() -> storeClient.platformStoreGoodsDetail(id));
         vo.setCategoryPath(resolveCategoryPath(vo.getCategoryId()));
+        vo.setDescription(HtmlSanitizer.sanitizeRichText(vo.getDescription()));
         return vo;
     }
 

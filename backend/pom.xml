@@ -43,7 +43,8 @@
         <nacos.password>nacos</nacos.password>
         <!-- JWT 库版本（端 BFF 经 common-auth、gateway 单独引用，统一管理） -->
         <jjwt.version>0.12.6</jjwt.version>
-        <!-- HTML 清洗库版本（mall-bff 消毒店主录入的商品详情富文本，见 cross-cutting.md 第 21 条） -->
+        <!-- HTML 清洗库版本（common 的 HtmlSanitizer 用它消毒店主录入的商品详情富文本，
+             各端 BFF 出口共用，见 cross-cutting.md 第 21 条） -->
         <jsoup.version>1.23.2</jsoup.version>
         <!-- 鉴权统一值（jwt-secret/jwt-expire-seconds/redis-prefix/header-name）已收敛到
              Nacos 共享配置 nacos-config/auth.yml：签发端(admin/store-bff 经 common-auth) 与

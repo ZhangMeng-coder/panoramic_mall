@@ -16,7 +16,7 @@
 
 目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由。trade-center 仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
 
-**模块归属（鉴权装配层已独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/Feign 契约）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类，放 `common-auth`；只被业务代码共用的放 `common`。
+**模块归属（鉴权装配层已独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/Feign 契约/`HtmlSanitizer`——富文本消毒，各端 BFF **出口**共用同一份白名单，见 cross-cutting 第 21 条）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类，放 `common-auth`；只被业务代码共用的放 `common`。
 
 **Feign 内部接口规约（BFF → 域，M0 起一律遵守）**：
 - **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
@@ -86,7 +86,7 @@
 - **结构基准**：首页六区块顺序即基准——顶部用户条 → 万能搜索长框 → 全分类展示 → 大型滚动广告框 → 用户信息展示框 → 热门商品列表；新增页面的顶栏 / 页脚沿用同一套（`src/styles/mall.css` 的 `.topbar` / `.foot`）。
 - **只做宽屏**：容器固定 1280px，**不写媒体查询**，不做手机 / 窄屏适配。
 - **列表页形态（搜索页 / 分类商品页）**：沿用首页骨架——固定 1280px 容器、商品网格 **7 列**、**每页 49 条**（7×7 整行；后端 `BasePageVO.pageSize` 有 `@Max(100)`，不得写更大的「一页塞满」值）。样式在 `src/styles/catalog.css`，同样只消费 `tokens.css` 令牌。
-- **详情页形态（`/goods/:id`）**：同一套骨架 + 面包屑（首页 › 分类 › 商品）→ 左 480px 图位（大图 + 缩略图）/ 右侧信息（名称 / 价格带 / 分类品牌店铺 / 规格选择）→ 下方商品详情正文。⚠ 两条硬口径：**详情正文按 HTML 渲染**（`v-html`）——`description` 是店主自由录入的富文本（两端录入框提示语就是「支持 HTML」），**安全性由后端出口兜住**：mall-bff 下发前按白名单清洗（剥脚本 / 事件属性 / 样式），前端不必也不得自己再拼一遍 HTML，**别改回 `{{ }}` 插值**（那样店主写的 `<p>` 会原样露在页面上）；**不做「加入购物车 / 立即购买」**（后端没有购物车与下单接口，摆了就是点了没反应的按钮）。列表卡进详情走**整卡链接**（`.cat-card__hit` 铺满卡片的透明层），不是把 `<li>` 换成链接。
+- **详情页形态（`/goods/:id`）**：同一套骨架 + 面包屑（首页 › 分类 › 商品）→ 左 480px 图位（大图 + 缩略图）/ 右侧信息（名称 / 价格带 / 分类品牌店铺 / 规格选择）→ 下方商品详情正文。⚠ 两条硬口径：**详情正文按 HTML 渲染**（`v-html`）——`description` 是店主自由录入的富文本（两端录入框提示语就是「支持 HTML」），**安全性由后端出口兜住**：mall-bff 下发前经 common 的 `HtmlSanitizer` 清洗（剥脚本 / 事件属性 / 样式；**白名单只此一份，与 admin 端出口共用**，见 cross-cutting 第 21 条），前端不必也不得自己再拼一遍 HTML，**别改回 `{{ }}` 插值**（那样店主写的 `<p>` 会原样露在页面上）；**不做「加入购物车 / 立即购买」**（后端没有购物车与下单接口，摆了就是点了没反应的按钮）。列表卡进详情走**整卡链接**（`.cat-card__hit` 铺满卡片的透明层），不是把 `<li>` 换成链接。
 - **不做暗色模式**（C 端商城不做，与 admin / store 的 `.dark` 两回事）。
 - **未登录态固定形态**：顶栏左侧「请登录 / 免费注册」文字 link，右侧「**首页** / 购物车 / 我的订单」。⚠ 前两个 link **已接真实路由**（`/login`、`/register`），不要改回 `href="#"`；右侧「购物车 / 我的订单」**仍是死链**（后端没有对应接口）。⚠ 「首页」是全站回首页的**唯一落点**（顶栏在首页 / 列表页 / 账号页 / 详情页都有），不要再各页各写一份。
 - **图片与字体**：**数据驱动**的图片（分类图标等）可由后端 URL 提供、前端照常渲染；**前端源码内**不写死外链、不引外链字体、不接外链图床 / CDN；占位或无图场景用 **CSS 渐变占位**。
