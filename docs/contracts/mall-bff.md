@@ -104,8 +104,10 @@ mall 前台的**页面契约**（长什么样、分哪几块）由前端工程�
 
 ⚠ 该约定约束的是**视觉与结构，不是技术形态**：前端按 BFF 分层走，但**长什么样、分哪几块以 `frontend/mall` 为准**，
 且「基准先行」——新增区块先在该工程里改好、定了，再往外铺。
-⚠ 前端**账号页已接入本表 5 条账号接口**（`/login`、`/register` 两页 + 顶栏登录态 + 守卫的刷新重建，
-接入点见 `frontend/mall/src/api/auth.ts`）；**搜索区与分类展示区已接本表 catalog 的分类树 / 商品分页 / facets 三个接口**
+⚠ 前端**账号、资料与换绑已接入**本表的对应接口（`/login`、`/register` 两页 + 顶栏登录态 + 守卫的刷新重建
++ 个人中心的资料保存与换绑，接入点见 `frontend/mall/src/api/auth.ts` 与 `src/api/profile.ts`；
+⚠ **接了哪些、哪些还没接，以本表「状态」列为准**，本段不另记条数——写死只会在下次改动时失真）；
+**搜索区与分类展示区已接本表 catalog 的分类树 / 商品分页 / facets**
 （接入点 `frontend/mall/src/api/catalog.ts`，页面见 `src/views/GoodsListView.vue`）；
 **商品详情页已接 `/catalog/goods/{id}`**（页面 `src/views/GoodsDetailView.vue`，路由 `/goods/:id`，
 列表卡的整卡链接进入）。
