@@ -64,6 +64,24 @@
             />
           </template>
         </el-table-column>
+        <!-- 初始库存：仅新建行可填（已有行的库存由「库存管理」页维护，此处只读占位） -->
+        <el-table-column width="130">
+          <template #header>
+            <el-tooltip content="仅新建 SKU 可填；已有 SKU 的库存请到「库存管理」页修改" placement="top">
+              <span class="sku-col-tip">初始库存</span>
+            </el-tooltip>
+          </template>
+          <template #default="{ row }">
+            <el-input-number
+              v-model="row.stock"
+              :min="0"
+              :controls="false"
+              :disabled="!isNewRow(row as SkuRow)"
+              placeholder="0"
+              style="width: 100%"
+            />
+          </template>
+        </el-table-column>
         <el-table-column label="SKU 编码" min-width="130">
           <template #default="{ row }">
             <el-input v-model="row.skuCode" maxlength="64" :disabled="isOnShelf(row as SkuRow)" placeholder="可选" />
@@ -142,8 +160,21 @@ interface SkuRow {
   skuCode: string
   mainImage: string
   price: number | null
+  /**
+   * 初始库存：<b>仅新建行可填并提交</b>（已有行的库存由「库存管理」页维护）。
+   * 未填为 null，提交时按 0 落库。
+   */
+  stock: number | null
   /** 0 下架 / 1 上架（上架行整行锁定，改动即时生效） */
   shelfStatus: number
+}
+
+/**
+ * 提交行：在共用的 `StoreGoodsSkuPayload` 上追加「初始库存」。
+ * 后端 `StoreGoodsSkuDTO.stock` 只在新增行（id 为空）被采信，故已有行不带该键。
+ */
+interface SkuSavePayload extends StoreGoodsSkuPayload {
+  stock?: number
 }
 
 const configs = ref<SpecConfigItem[]>([])
@@ -168,6 +199,11 @@ function isOnShelf(row: SkuRow) {
   return row.shelfStatus === 1
 }
 
+/** 新建行（尚未落库）：只有它的「初始库存」可填 */
+function isNewRow(row: SkuRow) {
+  return row.id == null
+}
+
 function init() {
   configs.value = (props.goods?.specConfig || []).map((d) => ({
     spec: d.spec,
@@ -179,6 +215,8 @@ function init() {
     skuCode: s.skuCode || '',
     mainImage: s.mainImage || '',
     price: s.price,
+    // 已有行的库存归「库存管理」页，本弹窗不回填也不提交
+    stock: null,
     shelfStatus: s.shelfStatus
   }))
   // 有规格配置时规范化存量行：丢弃不在配置内的规格、补全缺失维度（取该维度第一个可选项），
@@ -256,7 +294,15 @@ function generateMissing() {
   for (const attrs of combos) {
     const key = rowKey(attrs)
     if (!existingKeys.has(key)) {
-      rows.value.push({ id: null, attrs, skuCode: '', mainImage: '', price: null, shelfStatus: 0 })
+      rows.value.push({
+        id: null,
+        attrs,
+        skuCode: '',
+        mainImage: '',
+        price: null,
+        stock: null,
+        shelfStatus: 0
+      })
       existingKeys.add(key)
       added++
     }
@@ -321,6 +367,7 @@ function syncFromCenter() {
         skuCode: cs.skuCode || '',
         mainImage: cs.mainImage || '',
         price: null,
+        stock: null,
         shelfStatus: 0
       })
       added++
@@ -372,13 +419,20 @@ async function handleSave() {
   // 后端 StoreGoodsSkuDTO 的 id/skuCode/mainImage 都是可空字段，Jackson 下「键缺失」与「显式 null」
   // 等价（id 缺 = 新增行），故省略键与原先传 null 落库结果一致，且不必再用断言硬塞 null。
   // 价格必填：上方已逐行校验（不低于 0.01），`?? undefined` 仅为收窄类型，该分支不可达。
-  const skus: StoreGoodsSkuPayload[] = rows.value.map((r) => ({
-    id: r.id ?? undefined,
-    specAttrs: r.attrs.map((a) => ({ spec: a.spec, value: a.value })),
-    skuCode: r.skuCode || undefined,
-    mainImage: r.mainImage || undefined,
-    price: r.price ?? undefined
-  }))
+  const skus: SkuSavePayload[] = rows.value.map((r) => {
+    const payload: SkuSavePayload = {
+      id: r.id ?? undefined,
+      specAttrs: r.attrs.map((a) => ({ spec: a.spec, value: a.value })),
+      skuCode: r.skuCode || undefined,
+      mainImage: r.mainImage || undefined,
+      price: r.price ?? undefined
+    }
+    // 初始库存只对新增行提交：后端对已有行忽略该键（其库存归「库存管理」页）
+    if (isNewRow(r)) {
+      payload.stock = r.stock ?? 0
+    }
+    return payload
+  })
   loading.value = true
   try {
     // goods 由「规格」入口拉到详情后才打开本弹窗，此处必非空（守卫只为收窄类型；
@@ -413,6 +467,11 @@ async function handleSave() {
   font-size: 12px;
   line-height: 1.6;
   color: var(--el-text-color-secondary);
+}
+
+.sku-col-tip {
+  cursor: help;
+  border-bottom: 1px dashed var(--el-border-color);
 }
 
 .sku-image-cell {

@@ -53,8 +53,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: '/stock',
         name: 'stock',
-        component: () => import('../views/placeholder/PlaceholderView.vue'),
-        meta: { title: '库存管理', description: '库存管理功能开发中，敬请期待。' }
+        component: () => import('../views/stock/StockManage.vue'),
+        meta: { title: '库存管理' }
       }
     ]
   },
