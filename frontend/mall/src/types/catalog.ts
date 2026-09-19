@@ -87,6 +87,12 @@ export interface GoodsDetailSku {
   specAttrs: SpecAttr[]
   price: number
   mainImage: string | null
+  /**
+   * 可用库存（= `stock − locked_stock`，本期 `locked_stock` 恒 0）。**非可空**：后端恒返回 0 或正整数。
+   * 0 表示该规格已售罄——⚠ 售罄**不影响商品可见性**（商品照常可打开），也不禁用规格值点选。
+   * 商户端的低库存预警阈值不在本端（`warn_stock` 不下发）。
+   */
+  availableStock: number
 }
 
 /** 商品详情（对应后端 MallGoodsDetailVO） */

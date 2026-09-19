@@ -133,6 +133,19 @@ const comboMissing = computed(
   () => specs.value.length > 0 && specs.value.every((d) => picked.value[d.spec]) && !activeSku.value
 )
 
+/**
+ * 库存文案：**只在选中 SKU 后出现**——未选定时价格区给的是区间/起价，此时不臆造库存。
+ * >0 给具体件数，0 即售罄（无规格单 SKU 商品同样走这里，`activeSku` 直通那一个）。
+ */
+const stockText = computed<string | null>(() => {
+  const sku = activeSku.value
+  if (!sku) return null
+  return sku.availableStock > 0 ? `库存 ${sku.availableStock} 件` : '已售罄'
+})
+
+/** 售罄态（只用于文案上色）；未选中 SKU 时为 false */
+const soldOut = computed(() => activeSku.value?.availableStock === 0)
+
 /** 展示价：选中 SKU 用它的价，否则用区间最低价 */
 const shownPrice = computed<number | null>(() => activeSku.value?.price ?? minPrice.value)
 
@@ -243,6 +256,12 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               <span v-if="priceSuffix" class="detail__price-suffix">{{ priceSuffix }}</span>
             </div>
 
+            <!-- 库存行：选中 SKU 后才出现（未选中不臆造库存）。售罄只改文案与颜色，
+                 规格值**照样可点选**——顾客仍能逐个切过去比较，售罄不是禁用理由 -->
+            <p v-if="stockText" class="detail__stock" :class="{ 'is-sold-out': soldOut }">
+              {{ stockText }}
+            </p>
+
             <dl class="detail__meta">
               <div class="detail__meta-row">
                 <dt class="detail__meta-key">分类</dt>
@@ -295,3 +314,21 @@ watch(goodsId, (id) => void load(id), { immediate: true })
 
   <SiteFooter />
 </template>
+
+<!--
+  本页唯一的 SFC 内样式块。整站的样式基准仍在 src/styles/catalog.css，
+  这两条规则留在这里只是因为本次改动只允许动本文件（catalog.css 不在改动清单内）。
+  ⚠ 色值 / 间距仍**只消费 tokens.css 的令牌**，不硬编码；不写媒体查询（本工程只做宽屏）。
+-->
+<style scoped>
+.detail__stock {
+  margin-top: var(--s-3);
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.detail__stock.is-sold-out {
+  color: var(--danger);
+  font-weight: var(--w-medium);
+}
+</style>
