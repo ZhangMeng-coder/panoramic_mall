@@ -33,7 +33,12 @@ todo.md
 temp/
 
 # superpowers 工作区（brainstorm 样张、SDD 台账与评审包，属机器本地scratch）
+# ⚠ 两条都要：`.superpowers/`（SDD 台账 progress.md / 派单 brief / 评审包）与
+# `docs/superpowers/`（brainstorm→writing-plans 产出的 spec 与 plan）都在此列。
+# 只写前者是曾经的漏洞：技能默认把 spec/plan 落在 `docs/superpowers/`，那条规则一直没匹配上，
+# 于是执行计划与台账被推到了远端。执行日志（计划 / 台账 / 简报 / 评审包）一律不入库。
 .superpowers/
+docs/superpowers/
 
 # hookify 本地规则（机器本地配置，按 hookify 约定不入库；同 .claude/settings.local.json）
 .claude/*.local.md
