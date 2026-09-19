@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { clearAuth, getToken, getUser } from '../store/auth'
 import { authApi } from '../api/auth'
 import { showToast } from '../composables/useToast'
+
+const route = useRoute()
+
+/**
+ * 是否就在首页。
+ * ⚠ 不能用 vue-router 的 `router-link-active`：目标是 `/`，它是所有路径的前缀，
+ * 高亮会跟着跑到每一页（`router-link-exact-active` 又拿不到类名钩子），故显式判 path。
+ */
+const isHome = computed(() => route.path === '/')
 
 /** 有 token 即视为已登录；用户信息可能还在后台重建（昵称先留空） */
 const loggedIn = computed(() => Boolean(getToken()))
@@ -21,7 +31,7 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <!-- ① 顶部用户条：左「登录信息」，右「购物车 / 我的订单」 -->
+  <!-- ① 顶部用户条：左「登录信息」，右「首页 / 购物车 / 我的订单」 -->
   <header class="topbar">
     <div class="container topbar__inner">
       <div class="topbar__account">
@@ -35,6 +45,21 @@ async function logout(): Promise<void> {
       </div>
 
       <nav class="topbar__nav">
+        <!-- 首页入口：全站每一页的顶栏都有它（首页 / 列表页 / 账号页 / 商品详情页），
+             这是「任何地方都能回首页」的唯一落点，不各页各写一份 -->
+        <router-link class="topbar__link" :class="{ 'is-on': isHome }" to="/">
+          <svg class="topbar__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M4 10.5L12 4l8 6.5V20H4z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linejoin="round"
+            />
+          </svg>
+          首页
+        </router-link>
+        <span class="topbar__divider"></span>
         <a class="topbar__link" href="#">
           <svg class="topbar__icon" viewBox="0 0 24 24" aria-hidden="true">
             <path

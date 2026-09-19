@@ -61,7 +61,7 @@
   color: var(--brand);
 }
 
-/* ---- 右：购物车 / 我的订单 ---- */
+/* ---- 右：首页 / 购物车 / 我的订单 ---- */
 .topbar__nav {
   display: flex;
   align-items: center;
@@ -78,6 +78,12 @@
 
 .topbar__link:hover {
   color: var(--brand);
+}
+
+/* 当前所在页（目前只有「首页」用得着）：与 hover 态区分开，加粗而非只换色 */
+.topbar__link.is-on {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
 }
 
 .topbar__icon {
