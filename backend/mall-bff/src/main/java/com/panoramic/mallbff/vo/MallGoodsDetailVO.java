@@ -47,7 +47,10 @@ public class MallGoodsDetailVO {
     private String description;
 
     /**
-     * 规格属性配置（页面按它渲染规格选择器；SKU 的 specAttrs 与之对应）
+     * 规格属性配置。⚠ 页面**不再按它拼规格按钮**——它是 **SPU 级**配置，含只在已下架 SKU 上
+     * 存在的值，拼出的组合可能在上架 SKU 里根本不存在（那正是旧版要靠「该组合暂未上架」
+     * 兜底的原因）。现在页面改为**一行一个上架 SKU**，本字段只作为**维度顺序的基准**，
+     * 供页面把一个 SKU 的 {@code specAttrs} 重排成稳定文案。
      */
     private List<SpecConfigItem> specConfig;
 

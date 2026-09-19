@@ -496,7 +496,8 @@
 }
 
 /* 库存文案：**只在选中 SKU 后出现**——未选定时价格区给的是区间/起价，此时不臆造库存。
-   售罄只改文案与颜色，规格值**照样可点选**（售罄不是禁用理由）。 */
+   件数只在这里给，规格行不逐行印（印了只是让列表变吵，售罄行更是永远显示不到它）。
+   售罄态实际只会落在「无规格单 SKU 商品」上——有规格的商品里售罄行是 disabled、选不中。 */
 .detail__stock {
   margin-top: var(--s-3);
   color: var(--n600);
@@ -531,63 +532,84 @@
   color: var(--n800);
 }
 
-/* ---- 规格选择 ---- */
+/* ---- 规格：一行一个上架 SKU ---- */
 .detail__specs {
   display: flex;
   flex-direction: column;
-  gap: var(--s-4);
+  gap: var(--s-2);
   margin-top: var(--s-6);
   padding-top: var(--s-5);
   border-top: 1px solid var(--n200);
 }
 
-.detail__spec {
+/* 整行可点：左规格文案、右单价；售罄行尾再挂一个「已售罄」标记 */
+.detail__spec-row {
   display: flex;
-  gap: var(--s-4);
-}
-
-.detail__spec-name {
-  flex: 0 0 48px;
-  padding-top: 5px; /* 与胶囊内文字基线对齐 */
-  color: var(--n500);
-  font-size: var(--t-sm);
-}
-
-.detail__spec-values {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
-}
-
-.detail__spec-value {
-  padding: var(--s-1) var(--s-3);
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: var(--s-3) var(--s-4);
   color: var(--n800);
   font-size: var(--t-sm);
+  text-align: left;
   background: var(--n0);
   border: 1px solid var(--n300);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-md);
+  cursor: pointer;
   transition:
     color var(--dur) var(--ease),
     background var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
 }
 
-.detail__spec-value:hover {
-  color: var(--brand);
+.detail__spec-row:hover:not(:disabled) {
   border-color: var(--brand);
 }
 
-.detail__spec-value.is-on {
+.detail__spec-row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-glow);
+}
+
+.detail__spec-row.is-on {
   color: var(--brand);
   font-weight: var(--w-medium);
   background: var(--brand-soft);
   border-color: var(--brand);
 }
 
-.detail__warn {
-  margin-top: var(--s-3);
-  color: var(--warning);
-  font-size: var(--t-sm);
+/* 售罄：整行置灰 + 不可点（`disabled` 由模板给，这里是它的视觉）。
+   ⚠ 灰化不换主色——换成主色系会跟「选中」态打架，灰底灰字最不容易误读 */
+.detail__spec-row:disabled {
+  color: var(--n500);
+  background: var(--n100);
+  border-color: var(--n200);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+/* 规格文案占满余下宽度，把价格推到行尾 */
+.detail__spec-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail__spec-price {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+/* 售罄行的价格也得灰掉：价格自带的 brand 色会盖过 `:disabled` 继承的 color */
+.detail__spec-row:disabled .detail__spec-price {
+  color: var(--n500);
+}
+
+.detail__spec-out {
+  padding: 0 var(--s-2);
+  color: var(--n600);
+  font-size: var(--t-xs);
+  background: var(--n200);
+  border-radius: var(--r-sm);
 }
 
 .detail__note {

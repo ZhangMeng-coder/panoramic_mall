@@ -22,7 +22,10 @@ public class MallGoodsSkuVO {
     private Long id;
 
     /**
-     * 规格属性组合（如 [{spec:"颜色",value:"曜石黑"}]），页面按它做规格联动
+     * 规格属性组合（如 [{spec:"颜色",value:"曜石黑"}]）。
+     * <p>页面**一行一个 SKU**，用它拼出行内规格文案（如「颜色：曜石黑 / 容量：256G」）；
+     * 维度顺序由详情页的 {@code specConfig} 提供——库里 {@code spec_attrs} 是按提交顺序
+     * 原样存的，各 SKU 未必一致，不重排会出现一行「颜色/容量」另一行「容量/颜色」。</p>
      */
     private List<SpecAttr> specAttrs;
 

@@ -7,7 +7,7 @@ import SiteFooter from '../components/SiteFooter.vue'
 import { catalogApi } from '../api/catalog'
 import type { GoodsDetail, GoodsDetailSku } from '../types/catalog'
 import { grad } from '../utils/gradient'
-import { priceParts } from '../utils/format'
+import { priceParts, trimNum } from '../utils/format'
 
 /**
  * 商品详情页（`/goods/:id`，**需登录态**——路由 meta.requiresAuth 拦，见 router/index.ts）。
@@ -47,8 +47,8 @@ const errorMsg = ref('')
 const activeImage = ref('')
 const stageFailed = ref(false)
 
-/** 已选规格：规格名 → 规格值（未选的维度没有键） */
-const picked = ref<Record<string, string>>({})
+/** 选中的 SKU id（未选中为 null → 价格区回落区间价、库存行不出现） */
+const selectedSkuId = ref<number | null>(null)
 
 /** 并发序号：连点两个详情链接时，后发的请求作废先发的响应（与列表页同一手法） */
 let seq = 0
@@ -58,7 +58,7 @@ async function load(id: number | null): Promise<void> {
   // 换了商品：规格选择、大图、错误态一律重置，避免上一个商品的态粘过来
   goods.value = null
   errorMsg.value = ''
-  picked.value = {}
+  selectedSkuId.value = null
   activeImage.value = ''
   stageFailed.value = false
 
@@ -102,7 +102,11 @@ const stageSrc = computed(() => (stageFailed.value ? '' : activeImage.value))
 const label = computed(() => goods.value?.name.trim().charAt(0) || '商')
 const hue = computed(() => (goods.value?.id ?? 0) % 360)
 
-/** 规格维度（空数组 = 无规格商品，不渲染选择器） */
+/**
+ * 规格维度配置（空数组 = 无规格商品，不渲染规格块）。
+ * ⚠ 它**不再用来拼规格按钮**（那样能拼出上架 SKU 里不存在的组合，见 `skuRows`），
+ * 只为**维度顺序**提供基准——库里 `spec_attrs` 是按提交顺序原样存的，各 SKU 未必一致。
+ */
 const specs = computed(() => goods.value?.specConfig ?? [])
 
 const prices = computed(() => goods.value?.skus.map((s) => s.price) ?? [])
@@ -110,28 +114,51 @@ const minPrice = computed(() => (prices.value.length ? Math.min(...prices.value)
 const maxPrice = computed(() => (prices.value.length ? Math.max(...prices.value) : null))
 
 /**
- * 选中规格组合对应的 SKU：**所有维度都选了**且存在匹配项时才有值，否则 null。
- * 无规格商品（单 SKU）直接就是那一个。
+ * 当前选中的 SKU：未选中时为 null（价格区回落区间价、库存行不出现）。
+ * 无规格商品（单 SKU）直接就是那一个——没有行可选，也就没有「未选中」态。
  */
 const activeSku = computed<GoodsDetailSku | null>(() => {
   const g = goods.value
   if (!g) return null
-  const dims = specs.value
-  if (!dims.length) return g.skus.length === 1 ? g.skus[0] : null
-  if (dims.some((d) => !picked.value[d.spec])) return null
-  return (
-    g.skus.find((sku) =>
-      dims.every((d) =>
-        sku.specAttrs.some((a) => a.spec === d.spec && a.value === picked.value[d.spec])
-      )
-    ) ?? null
-  )
+  if (!specs.value.length) return g.skus.length === 1 ? g.skus[0] : null
+  return g.skus.find((sku) => sku.id === selectedSkuId.value) ?? null
 })
 
-/** 规格都选齐了却配不出 SKU（店主删过规格组合）——提示一句，别让价格区静默停在区间价 */
-const comboMissing = computed(
-  () => specs.value.length > 0 && specs.value.every((d) => picked.value[d.spec]) && !activeSku.value
-)
+/** 规格行的展示形状（页面私有，不外移） */
+interface SkuRow {
+  /** SKU 主键：选中态与点击都以它为准 */
+  id: number
+  /** 规格文案，如「颜色：曜石黑 / 容量：256G」 */
+  text: string
+  /** 该 SKU 单价 */
+  price: number
+  /** 售罄（availableStock ≤ 0）：整行置灰且不可选 */
+  soldOut: boolean
+}
+
+/**
+ * 规格行列表：**一行一个上架 SKU**（下架的由 mall-bff 出口滤掉，这里不重判）。
+ * ⚠ 之所以不按 `specConfig` 拼维度矩阵：那是 **SPU 级**配置，含只在**已下架 SKU** 上存在的值，
+ * 矩阵能拼出「配置里有、上架 SKU 里没有」的组合，就得再补一句「该组合暂未上架」兜底。
+ * 行列表让这类死路结构上不存在——每行必然对应一个真实在卖的规格。
+ * ⚠ 维度顺序按 `specConfig` 重排（见 `specs` 注释），否则会出现一行「颜色/容量」、
+ * 另一行「容量/颜色」。`specConfig` 里没有的维度排最后且保持原序（sort 稳定，同键不乱序）。
+ */
+const skuRows = computed<SkuRow[]>(() => {
+  const g = goods.value
+  if (!g) return []
+  const order = new Map(specs.value.map((d, i) => [d.spec, i]))
+  const rank = (spec: string): number => order.get(spec) ?? Number.MAX_SAFE_INTEGER
+  return g.skus.map((sku) => ({
+    id: sku.id,
+    text: [...sku.specAttrs]
+      .sort((a, b) => rank(a.spec) - rank(b.spec))
+      .map((a) => `${a.spec}：${a.value}`)
+      .join(' / '),
+    price: sku.price,
+    soldOut: sku.availableStock <= 0
+  }))
+})
 
 /**
  * 库存文案：**只在选中 SKU 后出现**——未选定时价格区给的是区间/起价，此时不臆造库存。
@@ -165,12 +192,13 @@ const priceSuffix = computed(() =>
   activeSku.value || minPrice.value === null || minPrice.value === maxPrice.value ? '' : ' 起'
 )
 
-/** 点规格值：再点一次同一个值 = 取消该维度（价格回到区间展示） */
-function pick(spec: string, value: string): void {
-  const next: Record<string, string> = { ...picked.value }
-  if (next[spec] === value) delete next[spec]
-  else next[spec] = value
-  picked.value = next
+/**
+ * 点规格行：选中它（价格区换成该行单价、库存行显示件数）。
+ * 再点一次已选中的行 = 取消选择，价格落回区间价——这是回到区间展示的唯一途径。
+ * 售罄行在模板上 `disabled`，压根进不来，此处不再判一次。
+ */
+function selectSku(id: number): void {
+  selectedSkuId.value = selectedSkuId.value === id ? null : id
 }
 
 /** 换图重试一次：上一张图的加载失败态不该粘到新图上（与 CatalogCard 同款处理） */
@@ -263,8 +291,8 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               <span v-if="priceSuffix" class="detail__price-suffix">{{ priceSuffix }}</span>
             </div>
 
-            <!-- 库存行：选中 SKU 后才出现（未选中不臆造库存）。售罄只改文案与颜色，
-                 规格值**照样可点选**——顾客仍能逐个切过去比较，售罄不是禁用理由 -->
+            <!-- 库存行：选中 SKU 后才出现（未选中不臆造库存）。件数只在这里给，不逐行印——
+                 行里印了也只是让列表变吵，售罄行更是永远没机会显示它 -->
             <p v-if="stockText" class="detail__stock" :class="{ 'is-sold-out': soldOut }">
               {{ stockText }}
             </p>
@@ -284,26 +312,24 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               </div>
             </dl>
 
-            <!-- 规格选择：无规格配置的商品没有这一块 -->
+            <!-- 规格：一行一个上架 SKU（构造与「为什么不拼维度矩阵」见 skuRows 注释）。
+                 售罄行置灰且不可选——顾客不会选中一个买不了的规格，价格区也就不会停在售罄价上。
+                 无规格配置的商品没有这一块（那种商品的单价由价格区直接给） -->
             <div v-if="specs.length" class="detail__specs">
-              <div v-for="d in specs" :key="d.spec" class="detail__spec">
-                <span class="detail__spec-name">{{ d.spec }}</span>
-                <div class="detail__spec-values">
-                  <button
-                    v-for="v in d.values"
-                    :key="v"
-                    class="detail__spec-value"
-                    :class="{ 'is-on': picked[d.spec] === v }"
-                    type="button"
-                    @click="pick(d.spec, v)"
-                  >
-                    {{ v }}
-                  </button>
-                </div>
-              </div>
+              <button
+                v-for="row in skuRows"
+                :key="row.id"
+                class="detail__spec-row"
+                :class="{ 'is-on': selectedSkuId === row.id }"
+                type="button"
+                :disabled="row.soldOut"
+                @click="selectSku(row.id)"
+              >
+                <span class="detail__spec-text">{{ row.text }}</span>
+                <span class="detail__spec-price tnum">¥{{ trimNum(row.price) }}</span>
+                <span v-if="row.soldOut" class="detail__spec-out">已售罄</span>
+              </button>
             </div>
-
-            <p v-if="comboMissing" class="detail__warn">该规格组合暂未上架，换一个组合看看</p>
 
             <p class="detail__note">演示环境：购物车与下单接口尚未开放，本页只展示商品信息。</p>
           </div>
