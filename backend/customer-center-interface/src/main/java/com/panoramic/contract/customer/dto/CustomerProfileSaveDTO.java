@@ -1,5 +1,7 @@
 package com.panoramic.contract.customer.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -32,7 +34,12 @@ public class CustomerProfileSaveDTO {
 
     /**
      * 性别：0未知，1男，2女
+     * <p>⚠ 取值范围必须在此收口：DB 列是 {@code TINYINT}，{@code 9} 这类越界枚举会**静默入库**，
+     * 前端拿不到任何已知分支；{@code 999} 则触发 MySQL 严格模式报错，经域兜底变成 HTTP 500
+     * （5xx 会计入端 BFF 的熔断失败率，见 cross-cutting 第 13 条）。</p>
      */
+    @Min(value = 0, message = "性别取值不正确")
+    @Max(value = 2, message = "性别取值不正确")
     private Integer gender;
 
     /**

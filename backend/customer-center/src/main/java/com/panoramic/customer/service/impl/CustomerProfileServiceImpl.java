@@ -58,6 +58,15 @@ public class CustomerProfileServiceImpl extends ServiceImpl<CustomerProfileMappe
         }
         // ⚠ 用 lambdaUpdate().set(...) 而非 updateById：updateById 跳过 null 列，
         //    会把「清空昵称/头像」静默丢掉（与 store 域 refreshMinPrice 同一坑）
+        //
+        // ⚠ 已知取舍：`ChainUpdate#update()` 走的是 `update(null)`，**不触发审计自动填充**，
+        //    故本支路不会刷新 update_user（update_time 由 DDL 的 ON UPDATE CURRENT_TIMESTAMP 推进）。
+        //    当前无可观测影响——唯一写者就是顾客本人，值与 insert 时相同。
+        //    而**不能**改成 `update(entity, wrapper)` 换回自动填充：TableFieldInfo#getSqlSet 对业务列
+        //    默认套 `convertIf(..., updateStrategy)`（NOT_NULL），那样四列里的 null 会被跳过，
+        //    「清空」语义直接丢——即两者在 MP 里互斥，本处选择保清空。（审计列 withUpdateFill=true，
+        //    恰是唯一不被 if 包裹的，这也是 `update(entity, wrapper)` 能刷新审计的原因。）
+        //    store 域 8 处写 null 的场景用的是同一写法，本处与仓库既有口径一致。
         lambdaUpdate()
                 .eq(CustomerProfile::getId, customerId)
                 .set(CustomerProfile::getNickname, dto.getNickname())

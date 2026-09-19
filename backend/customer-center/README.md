@@ -4,9 +4,10 @@
 
 本域持**顾客资料 `customer_profile`** 与**收货地址 `customer_address`**，不带顾客登录、不带页面编排。
 
-> ⚠ **当前状态：模块骨架**（本批次第 2 个任务）。域实现与 8 条内部接口均**尚未写**——
-> 契约见 [`docs/contracts/customer-center.md`](../../docs/contracts/customer-center.md)，其 8 条状态均为 `待实现`，
-> 按行分批摘标记（摘标记 + Feign 声明 + 域实现同一提交）。下表第三条的落库口径是本批次的实现口径。
+> 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/customer-center.md`](../../docs/contracts/customer-center.md)：
+> 那张表由 `docs/contracts/drift-check.mjs` 与代码**双向核对**，始终反映真实进度（本 README 里写死条数只会随每次实现失真）。
+> 契约按行分批落地：摘掉某行的 `待实现` 标记 + 声明 Feign 方法 + 补域实现，**三者同一提交**。
+> 下表第三条的落库口径是本批次的实现口径。
 
 ## 一、架构位置
 
