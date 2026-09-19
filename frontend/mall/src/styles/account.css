@@ -392,6 +392,46 @@
   font-weight: var(--w-semibold);
 }
 
+/* 降级块：资料读不到时**不渲染表单**（空表单既会诱人误保存，也让人以为资料真是空的），
+   只给一句「暂不可用」+ 重试（按钮照 .field__code 那套次级胶囊） */
+.acct__fallback {
+  margin-top: var(--s-6);
+  padding: var(--s-6) var(--s-5);
+  background: var(--n50);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.acct__fallback-text {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+.acct__retry {
+  height: 36px;
+  margin-top: var(--s-4);
+  padding: 0 var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-medium);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.acct__retry:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+.acct__retry:disabled {
+  background: var(--n100);
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
 /* ============================================================================
    轻提示条 —— 顶部居中、可堆叠、自动消失（逻辑在 composables/useToast.ts）
    ========================================================================== */
