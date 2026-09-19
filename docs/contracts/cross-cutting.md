@@ -84,7 +84,7 @@ layer: cross-cutting
 | 契约 | 网关验签后注入身份头，端 BFF 经 Feign **原样透传**，域直取填 `UserContext`；**仅用于审计填充与 `audit_by` 留痕，读 ≠ 判断** |
 | 定义位置 | `X-User-Type` 有常量 `LoginUser.HEADER_USER_TYPE`（:35）；⚠ `X-User-Id` **无 Java 常量**，头名只由 Nacos `auth.yml` 的 `panoramic.auth.header-name` 提供，且默认值散落在 5 处 `@Value` |
 | 注入位置（唯一） | `gateway/filter/AuthGlobalFilter.java:89-90` |
-| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59`、`customer-center-interface/.../contract/customer/api/CustomerFeignConfiguration.java:30-62` |
+| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59`、`customer-center-interface/.../contract/customer/api/CustomerFeignConfiguration.java:31-58` |
 | 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`customer-center/config/CustomerUserIdentityFilter.java:36,56`、`common-auth/AuthTokenFilter.java:71` |
 | ⚠ 已知风险 | **三个**同职责的 Feign 配置**行为不对称**，是**三种**行为：`GoodsFeignConfiguration:55` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57` **不做回退**；`CustomerFeignConfiguration:56-59` **不做回退，且 `userType` 为空时干脆不发该头**——这是有意的选择（理由写在代码里：C 端身份一旦被盖成 `admin`，域内审计留痕就失真），**新域照哪个抄要自己判，别默认跟 goods 那份**。⚠ 新增域时**必须**同步登记本枚举（漏登记等于把这个刻意选择埋掉） |
 | 破坏后果 | 头名不一致 → 域取不到身份 → 审计字段静默留空（不报错，最难发现的一类） |
