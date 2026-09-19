@@ -34,6 +34,7 @@
 | `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段） |
 | `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
+| `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `locked_stock` / `warn_stock`；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：审计列形状、平台锁定四列 + `idx_lock_status` 的**最终形状**都已写进该文件，不再保留中间迁移脚本。
@@ -90,11 +91,20 @@
 | R11 | owner 侧方法入口以「id + store_id」限定作用域（platform 侧方法不带 store_id、跨店全量） |
 | R12 | **平台锁定**（2026-09-12 新增）：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；仅平台可解锁，解锁不自动恢复上架 |
 | R13 | **最低价推导**（2026-09-17 新增）：`min_price` = 名下**上架且未删** SKU 的最低价；SKU 全下架时清空为 NULL。由 `refreshDerived` → `refreshMinPrice` 推导，不手写 |
+| R14 | **库存锁隔离**（2026-09-19 新增）：库存单独成表 `store_goods_sku_stock`，读写**只碰本表**；不用 `SELECT ... FOR UPDATE`；批量走**单条** `UPDATE ... WHERE sku_id IN (...)`，不循环逐行；读路径一次 `IN` 批量查、无 N+1 不加锁；库存独立写操作**不加外层 `@Transactional`** |
 
 > ⚠ `refreshDerived` 是**推导量统一刷新入口**，内含两个不变量写者：`refreshShelfStatus`（「SPU 上架 ⟺ ≥1 SKU 上架」）与
 > `refreshMinPrice`（「`min_price` = 名下上架未删 SKU 最低价」）。任何时候都不要绕过它直接改 `shelf_status` / `min_price`——包括锁定时的级联下架。
 > ⚠ 两者**各自独立比较**（下架高价 SKU 后上下架不变、最低价却变了），且 `min_price` 可被清成 NULL，
 > 回写只能用 `lambdaUpdate().set(...)`：`updateById` 跳过 null 列，会把「SKU 全下架 → 清空 `min_price`」静默丢掉。
+
+**库存口径（R14，2026-09-19 新增）**：
+
+- **可用库存 = `stock − locked_stock`**，**C 端展示的一律是可用库存**（`locked_stock` 本期恒 0，待交易域接入后由域写入）；`warn_stock` 仅商户端低库存预警用（NULL = 不预警），**不进 C 端**
+- **库存不参与**「SPU 上架 ⟺ ≥1 SKU 上架」**不变量**（归零不触发任何下架），**也不参与 C 端可见性**（下架 / 平台锁定 / 店铺未过审那三条不变；售罄商品照常可打开，C 端标售罄）
+- **平台锁定期库存同样只读**：owner 侧整行只读由 `assertNotLocked` 域内强制，改库存也在其中
+- **库存独立写不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**唯一例外**是 `replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行）
+- 写入点五处：库存页单行改、库存页批量改、新建 SKU 带初始库存、SKU 删除级联删、SPU 删除级联删；**归属校验**（`sku_id → sku.spu_id → spu.store_id`）与「仅新建行采信初始库存」的判定都在 owner 侧编排里做，库存 service 不认识 `store_id`
 
 **跨店通用查询口径（2026-09-17）**：`/goods/cross-shop/spu/page`（分页）与 `/goods/facets`（筛选聚合）**无数据权限锚点**，
 限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**——admin BFF 与 mall-bff 共用，域内不判身份、不做端别分流；
