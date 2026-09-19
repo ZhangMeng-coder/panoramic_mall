@@ -33,7 +33,7 @@
 | 在售商品分页 / 筛选聚合 | store 域（**已接入**，`/goods/cross-shop/spu/page` + `/goods/facets`，跨店通用；C 端展示口径由本层固定传参） |
 | 购物车 / 订单 / 评价 | 未来的 `trade-center`（不存在） |
 
-> 📋 对外接口清单（8 条）见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
+> 📋 对外接口清单（9 条）见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记

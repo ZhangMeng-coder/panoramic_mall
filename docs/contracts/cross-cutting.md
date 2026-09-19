@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 19 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 20 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -148,6 +148,7 @@ layer: cross-cutting
 | 定义位置 | 网关 `gateway/application.yml:66`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/categories,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/categories`） |
 | ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401。⚠ **C 端登记的是精确路径 `/catalog/categories`（首页宫格的分类树），不是 `/catalog/**` 前缀**：mall 的分级是「**首页免登录，一涉及商品查询与详情就鉴权**」，写成前缀会把商品分页 / 筛选 / 详情一并放开到公网（前台裸奔）。改这一行必须两侧同一改动内一起改，且不要把精确路径换回前缀 |
 | ⚠ 分级配套 | 白名单收窄只挡得住**直连**：C 端前端还有一层「需登录页」路由级拦截（`/search`、`/category/:id`、`/goods/:id` 的 `meta.requiresAuth`，未登录即带 `redirect` 跳登录页），以及拦截器 401 兜底（清本地态 + 提示 + 带 `redirect` 跳登录页）。**唯一静默的 401 是守卫刷新重建登录态的 `/auth/me`**——公开首页上的重建失败不该把游客弹走，见 [mall-bff.md](./mall-bff.md) |
+| ⚠ 静默 401 由守卫自己收口 | `/auth/me` 的静默分支会**先清掉本地 token**，随后同一导航内的业务接口再吃 401 时，拦截器的「本来有登录态吗」判据（`getToken()`）已为假 → 既不提示也不跳转，需登录页会渲染成「商品暂不可用」（把**未登录**报成**下游故障**）。故守卫在重建失败时若当前页是 `requiresAuth`，**自己**落登录页（`loginLocation`），**不能把交接推给拦截器**。⚠ 判据必须是 `!getToken()`（会话真没了）而**非**只看 `requiresAuth`：清态只有 401 分支会做，`me()` 因网络 / 5xx 失败时 token 未动，此时若也跳登录页会**成环**——token 还在 → 登录页命中「已登录不该待在登录页」又被弹回原页 → 再 `me()`…直到 vue-router 无限重定向保护中止导航。删掉这个分支不会编译报错，只会在「token 过期后刷新需登录页」这条路径上静默退化 |
 | 消费位置 | 网关 `AuthGlobalFilter` 与服务侧 `AuthTokenFilter` |
 | 破坏后果 | 只改一处 → 登录接口被拦（登不进去）或本应鉴权的接口裸露 |
 | 核对方式 | 检查器 gateway 专项：两侧白名单去前缀后应互为子集关系 |

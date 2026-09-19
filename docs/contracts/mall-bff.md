@@ -54,7 +54,7 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | 账号形态 | **账号即手机号**：`phone` 为登录账号（`mall_user` 唯一键 `uk_phone`）；`username` 不是独立列，导出到快照与 `CurrentUserVO` 时与 `phone` 同值 |
 | 验证方式 | 手机号 + **短信验证码**，无密码。⚠ 短信为**模拟实现**：取码只打日志、不放真实短信、不落库、不落 Redis；校验与固定码 `panoramic.mall.sms-fixed-code`（默认 `888888`）比对 |
 | 免鉴权路径 | `/auth/sms-code`、`/auth/register`、`/auth/login`、`/catalog/categories`（**两处各写一份**，见 [gateway.md](./gateway.md) 第三节）。⚠ `sms-code` 在登录**之前**被调用，漏登记则「获取验证码」直接 401；`/catalog/categories` 是**首页宫格分类树的精确路径**，不是 `/catalog/**` 前缀——写成前缀会把商品查询与详情一起放开到公网 |
-| 鉴权分级 | **首页公开、一涉及商品查询与详情就要登录态**：免鉴权只有上一条那 4 条，`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` 一律需顾客登录态。前端配套三层：① 需登录页（`/search`、`/category/:id`、`/goods/:id`）由路由守卫拦，未登录带 `redirect` 跳 `/login`，登录后回原页；② 登录态**中途失效**由拦截器 401 兜底：清本地态 + 提示「请先登录」+ 带 `redirect` 跳登录页；③ **唯一静默的 401** 是路由守卫刷新重建用户态的 `/auth/me`（`silent401`）——公开首页上的重建失败不该把游客弹走 |
+| 鉴权分级 | **首页公开、一涉及商品查询与详情就要登录态**：免鉴权只有上一条那 4 条，`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` 一律需顾客登录态。前端配套三层：① 需登录页（`/search`、`/category/:id`、`/goods/:id`）由路由守卫拦，未登录带 `redirect` 跳 `/login`，登录后回原页；② 登录态**中途失效**由拦截器 401 兜底：清本地态 + 提示「请先登录」+ 带 `redirect` 跳登录页；③ **唯一静默的 401** 是路由守卫刷新重建用户态的 `/auth/me`（`silent401`）——公开首页上的重建失败不该把游客弹走。⚠ 静默分支**会先清掉本地 token**，所以同一导航里后续接口再吃 401 时，拦截器已判不出「本来有登录态」（既不提示、也不跳转）；**需登录页上「会话真没了」（`!getToken()`）必须由守卫自己收口**（跳登录页），不能推给拦截器，否则页面会渲染成「商品暂不可用」——把未登录报成下游故障。⚠ 判据带 `!getToken()` 是必要的：`me()` 因网络 / 5xx 失败时 token 未动，那种情况**不跳**（跳了会与「已登录不该待在登录页」来回弹成环） |
 | 未认证响应 | HTTP **401** + `{code:401,msg}`（`common-auth` 的 `AuthenticationEntryPoint` 写出，网关侧同形）。⚠ 对本端前端而言 401 是**可预期的日常分支**（提示登录并跳转），不是故障：别把它与「商品暂不可用」那类下游降级混在一个出口里 |
 | 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
 | 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
@@ -77,7 +77,7 @@ mall 前台的**页面契约**（长什么样、分哪几块）由前端工程�
 ⚠ 该约定约束的是**视觉与结构，不是技术形态**：前端按 BFF 分层走，但**长什么样、分哪几块以 `frontend/mall` 为准**，
 且「基准先行」——新增区块先在该工程里改好、定了，再往外铺。
 ⚠ 前端**账号页已接入本表 5 条账号接口**（`/login`、`/register` 两页 + 顶栏登录态 + 守卫的刷新重建，
-接入点见 `frontend/mall/src/api/auth.ts`）；**搜索区与分类展示区已接本表 catalog 三接口**
+接入点见 `frontend/mall/src/api/auth.ts`）；**搜索区与分类展示区已接本表 catalog 的分类树 / 商品分页 / facets 三个接口**
 （接入点 `frontend/mall/src/api/catalog.ts`，页面见 `src/views/GoodsListView.vue`）；
 **商品详情页已接 `/catalog/goods/{id}`**（页面 `src/views/GoodsDetailView.vue`，路由 `/goods/:id`，
 列表卡的整卡链接进入）。

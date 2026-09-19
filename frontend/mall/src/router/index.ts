@@ -64,6 +64,15 @@ const router = createRouter({
 })
 
 /**
+ * 去登录页，并把原页塞进 `redirect`（登录后由 `LoginView.redirectTarget()` 回跳）。
+ * 两处分支共用同一形状：本地根本没 token、以及有 token 但服务端不认了（重建失败）。
+ */
+function loginLocation(fullPath: string) {
+  showToast(LOGIN_REQUIRED_MSG, 'info')
+  return { path: '/login', query: { redirect: fullPath } }
+}
+
+/**
  * 全局守卫三条规则 —— 分级是「**首页公开，商品查询 / 详情需登录**」：
  *
  * 1) `requiresAuth` 页且本地无 token → 带去登录页并把原页塞进 `redirect`（登录后回原页，见
@@ -72,7 +81,8 @@ const router = createRouter({
  * 2) 已登录（有 token）还去登录 / 注册页 → 回来源页，没有则回首页；
  * 3) 有 token 但内存里没有用户态（**刷新场景**）→ 拉 /auth/me 重建。
  *    这次调用带 `silent401`（见 `authApi.me()`），失败**只清本地态、不提示不跳转**——
- *    公开首页上的重建失败不该把游客弹去登录页，「未登录」对 mall 本就是合法状态。
+ *    公开首页上的重建失败不该把游客弹去登录页，「未登录」对 mall 本就是合法状态；
+ *    **需登录页上「会话真没了」时由这里自己跳登录页**（见下方 catch 的两类分述）。
  *
  * ⚠ 两条分支的先后不能换：先判 `requiresAuth` 才能让无 token 的游客**立刻**落到登录页；
  *    换成先重建用户态，会先白打一次 /auth/me 再跳。
@@ -81,8 +91,7 @@ router.beforeEach(async (to) => {
   const token = getToken()
 
   if (to.meta.requiresAuth === true && !token) {
-    showToast(LOGIN_REQUIRED_MSG, 'info')
-    return { path: '/login', query: { redirect: to.fullPath } }
+    return loginLocation(to.fullPath)
   }
 
   if (token && AUTH_PATHS.includes(to.path)) {
@@ -93,8 +102,21 @@ router.beforeEach(async (to) => {
     try {
       setUser(await authApi.me())
     } catch {
-      // 静默：本次按未登录继续（公开页照常打开，顶栏自己会显示「请登录」；
-      // 需登录页的后续接口会再吃一次 401，由拦截器接管提示与跳转）
+      // 重建失败分两类，**处理必须分开**：
+      //
+      // ① **会话真的没了**（`/auth/me` 401）——`me()` 带 `silent401`：本地态已清、不提示不跳转。
+      //    **需登录页必须在这里拦下**，不能指望「后续接口再吃一次 401，由拦截器接管」：到那时
+      //    本地 token 已被 401 分支清掉，拦截器判不出「本来有登录态」（`sessionExpired` 靠
+      //    `getToken()` 分辨），于是既不提示也不跳转，页面只会渲染成「商品暂不可用」
+      //    —— 把「未登录」报成了「下游故障」。判据用 `!getToken()` 认这件事：**清态只有 401 分支会做**。
+      // ② **网络 / 5xx / 超时等**（token 未被动过）——**不跳**，落回页面自己的降级（「…暂不可用」）。
+      //    ⚠ 这里若也跳登录页会成环：token 还在 → 登录页命中下面规则 2 又被弹回本页 → 再 `me()`…
+      //    直到 vue-router 的无限重定向保护中止导航，期间连打数次 `/auth/me`、连弹两个提示。
+      //
+      // 公开页两类都直接放行（游客是合法状态，顶栏自己会变「请登录」）。
+      if (to.meta.requiresAuth === true && !getToken()) {
+        return loginLocation(to.fullPath)
+      }
     }
   }
 

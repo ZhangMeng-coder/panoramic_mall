@@ -35,7 +35,7 @@
 | [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 17 | ① |
 | [goods-center.md](./goods-center.md) | 标准商品域内部接口 | 19 | ② |
 | [store.md](./store.md) | 店铺域内部接口 | 19 | ② |
-| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 8 | ① |
+| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 9 | ① |
 | [trade-center.md](./trade-center.md) | 交易域 | 待建 | ② |
 
 ## 契约表格式（硬约定，检查器依赖）
