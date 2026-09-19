@@ -41,22 +41,22 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:38 | |
-| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:47 | |
-| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:55 | |
-| POST | /auth/logout | — | — | `Void` | AuthController.java:63 | |
-| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:75 | |
+| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:39 | |
+| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:48 | |
+| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:56 | |
+| POST | /auth/logout | — | — | `Void` | AuthController.java:64 | |
+| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:76 | |
 | GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:46 | |
 | POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:61 | |
 | POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:69 | |
 | GET | /catalog/goods/{id} | — | `Long` | `MallGoodsDetailVO` | CatalogController.java:80 | |
 | PUT | /profile | — | `ProfileSaveDTO` | `Void` | ProfileController.java:36 | |
-| GET | /addresses | — | — | `List<AddressVO>` | — | 待实现 |
-| POST | /addresses | — | `AddressSaveDTO` | `Long` | — | 待实现 |
-| PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | — | 待实现 |
-| DELETE | /addresses/{id} | — | `Long` | `Void` | — | 待实现 |
-| POST | /addresses/{id}/default | — | `Long` | `Void` | — | 待实现 |
-| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:85 | |
+| GET | /addresses | — | — | `List<AddressVO>` | AddressController.java:46 | |
+| POST | /addresses | — | `AddressSaveDTO` | `Long` | AddressController.java:54 | |
+| PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | AddressController.java:62 | |
+| DELETE | /addresses/{id} | — | `Long` | `Void` | AddressController.java:71 | |
+| POST | /addresses/{id}/default | — | `Long` | `Void` | AddressController.java:80 | |
+| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:86 | |
 
 ⚠ **本表按行分批实现**（契约先行）：**某一行是否已落地，以上表的「状态」列为准**
 （留空 = 已实现，`待实现` = 已定契约、代码未写）——本文件正文不另记进度与条数，写死只会在下次改动时失真。
