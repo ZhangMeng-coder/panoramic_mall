@@ -165,14 +165,14 @@ layer: cross-cutting
 
 **加载矩阵**：
 
-| data-id | 网关 | admin | store-bff | mall-bff | goods-center | store |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — |
-| `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — |
-| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — |
+| data-id | 网关 | admin | store-bff | mall-bff | goods-center | store | customer-center |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — |
+| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — | — |
 
-> 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务（goods-center / store）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
+> 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务（goods-center / store / customer-center）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
 >
 > ⚠ mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），其 `feign-circuitbreaker.yml` **不再是空转**——三端 BFF 都已在调域，「端 BFF 一律加载四个」的规律不变。
 

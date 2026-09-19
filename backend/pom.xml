@@ -31,6 +31,8 @@
         <!-- 域内部契约包：Feign 客户端 + 同源 DTO/VO，被「域 + 调用它的端 BFF」共用（包根 com.panoramic.contract.<域>） -->
         <module>goods-center-interface</module>
         <module>store-interface</module>
+        <module>customer-center</module>
+        <module>customer-center-interface</module>
     </modules>
 
     <properties>
