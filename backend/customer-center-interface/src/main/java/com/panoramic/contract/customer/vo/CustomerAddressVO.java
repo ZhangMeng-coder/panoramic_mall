@@ -36,7 +36,11 @@ public class CustomerAddressVO {
     private String detailAddress;
 
     /**
-     * 默认地址：0否，1是（同一顾客至多一条为 1，由应用层事务保证）
+     * 默认地址：0否，1是
+     * <p>「同一顾客至多一条为 1」由应用层在同一事务内**先清位再置位**保证（设默认路径另先对该顾客名下行加锁）。
+     * ⚠ **已知窗口（未关）**：地址簿为空时（新注册，或把地址全删光）两笔并发新增会双双成为默认——
+     * 空地址簿无行可锁、间隙锁彼此兼容，应用层关不上；彻底解法是 DB 层部分唯一索引，属表结构设计，
+     * 当前未采纳。详见 {@code backend/customer-center/README.md} 的落库口径 C3。</p>
      */
     private Integer isDefault;
 }
