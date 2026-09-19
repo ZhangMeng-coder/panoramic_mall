@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS customer_address (
   receiver_phone VARCHAR(20)     NOT NULL COMMENT '收件人手机号',
   region         VARCHAR(100)    DEFAULT NULL COMMENT '省市区（自由文本，如「广东省 深圳市 南山区」）',
   detail_address VARCHAR(255)    NOT NULL COMMENT '详细地址',
-  is_default     TINYINT         NOT NULL DEFAULT 0 COMMENT '默认地址：0否，1是（同一顾客至多一条为 1，由应用层事务保证）',
+  is_default     TINYINT         NOT NULL DEFAULT 0 COMMENT '默认地址：0否，1是（同一顾客至多一条为 1：setDefaultAddress 在同事务内先清位再置位、并先对该顾客行加锁串行化；⚠已知窗口：地址簿为空时两笔并发新增会双双为 1，应用层关不上，见 README C3）',
   create_user    VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user    VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
