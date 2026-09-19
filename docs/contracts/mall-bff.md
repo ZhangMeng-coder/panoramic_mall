@@ -10,8 +10,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 > 商城**前台（C 端顾客）**的端 BFF，端口 **8085**，网关前缀 `/mall/**`（`StripPrefix=1`）。
 > 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff），签发**第三套身份** `type=user`。
-> 服务范围 = **顾客账号骨架**（取码/注册/登录/登出/me）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）。
+> 服务范围 = **顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料与收货地址**
+> （资料保存 / 地址增删改查 / 设默认）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）。
 > 已接 **goods-center**（分类树）与 **store**（商品分页 / 筛选聚合 / 详情）两个业务域；
+> **顾客侧 7 条**（资料 1 + 地址 5 + 换绑 1）已登记为 `待实现`，实现后经内部 Feign 接 **customer-center**
+> （见 [customer-center.md](./customer-center.md)）；
 > 首页「热门商品列表」区块仍是静态 mock。
 
 ## 一、接口形态
@@ -22,15 +25,17 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 类型 | 所在包 |
 |---|---|
 | `SmsCodeDTO` / `RegisterDTO` / `LoginDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
+| `ProfileSaveDTO` / `AddressSaveDTO` / `ChangePhoneDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/`（⚠ 待实现，见下表 7 行） |
 | `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
 | `CurrentUserVO` / `LoginResultVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
+| `AddressVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/`（⚠ 待实现，见下表 7 行） |
 | `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
 | `CategoryTreeVO` | `backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/vo/` |
 | `SpecConfigItem` / `SpecAttr` | `backend/store-interface/src/main/java/com/panoramic/contract/store/dto/`（详情页的规格配置与 SKU 规格属性）⚠ 数据**来自 store 域**（域 SKU/详情 VO 里就是这一份），故本端 VO 用的是 **store** 那份；`contract.goods.dto` 下另有一份同形同名的孪生类，**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；本模块用的是 **store** 那个 |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-## 二、接口清单（9 条）
+## 二、接口清单（16 条）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
@@ -43,6 +48,17 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:61 | |
 | POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:69 | |
 | GET | /catalog/goods/{id} | — | `Long` | `MallGoodsDetailVO` | CatalogController.java:80 | |
+| PUT | /profile | — | `ProfileSaveDTO` | `Void` | — | 待实现 |
+| GET | /addresses | — | — | `List<AddressVO>` | — | 待实现 |
+| POST | /addresses | — | `AddressSaveDTO` | `Long` | — | 待实现 |
+| PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | — | 待实现 |
+| DELETE | /addresses/{id} | — | `Long` | `Void` | — | 待实现 |
+| POST | /addresses/{id}/default | — | `Long` | `Void` | — | 待实现 |
+| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | — | 待实现 |
+
+⚠ **上表后 7 条状态为 `待实现`**（契约先行）：路径 / 方法 / 权限串已定，代码尚未写，故 `声明位置` 填 `—`
+——代码不存在，写计划落点只会变成新的漂移点。实现完成后须在**同一改动内**把「状态」摘回留空
+（检查器的反向哨兵会强制，见 [README.md](./README.md)）。前端可照这几行先把页面写起来。
 
 ⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
 登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
@@ -58,6 +74,9 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 未认证响应 | HTTP **401** + `{code:401,msg}`（`common-auth` 的 `AuthenticationEntryPoint` 写出，网关侧同形）。⚠ 对本端前端而言 401 是**可预期的日常分支**（提示登录并跳转），不是故障：别把它与「商品暂不可用」那类下游降级混在一个出口里 |
 | 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
 | 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
+| 资料读口径 | **不单开 `GET /profile`**：资料读合并在 `/auth/me` —— 其出参含**完整资料**（`nickname` / `avatar` / `gender` / `birthday`）。要改资料走 `PUT /profile`（只写） |
+| 昵称兜底 | 资料为空（或 customer-center 不可用）时 `nickname` **回退为手机号**，其余资料字段留空、**不阻断** `/auth/me`。⚠ **只在 `/auth/me` 一处兜底**，别在别处再写一份 |
+| 换绑口径 | `POST /auth/phone` **双验证**（旧号码验证码 + 新号码验证码）；成功后**服务器登录态快照即时更新**，⚠ **不重签 token**（前端无需换 token、也不重新登录） |
 | 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
 | 身份类型绑定 | 本端只接受 `type=user` 的登录态（`panoramic.auth.user-type: user`）；跨端 token（`admin` / `store`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**（见 [cross-cutting.md](./cross-cutting.md) 第 9 条） |
 | 登出 | 删除 Redis 快照即服务端下线；本地 token 由前端清除 |
