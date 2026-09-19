@@ -11,7 +11,7 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 > 店主端页面接口（8084），经网关 `/store/**` 对外（`StripPrefix=1` 后落到本服务的 `/auth/**`、`/shops/**`、`/goods/**`）。
 > 签发 `type=store` 的登录令牌，经内部 Feign 编排 store 域与 goods-center。
 
-**共 17 个接口**。
+**共 20 个接口**。
 
 ## 一、接口清单
 
@@ -34,13 +34,16 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 | GET | /goods/categories/tree | — | — | RespData<List<CategoryTreeVO>> | GoodsController.java:115 |  |
 | GET | /goods/brands | — | — | RespData<List<BrandVO>> | GoodsController.java:123 |  |
 | GET | /goods/center/spu-by-sku-code | — | String | RespData<SpuBySkuCodeVO> | GoodsController.java:133 |  |
+| GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | — | 待实现 |
+| PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | — | 待实现 |
+| PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | — | 待实现 |
 
 > 「路径」列不带网关前缀 `/store`。例：`/goods/spu/page` 对外完整路径是 `/store/goods/spu/page`。
 
 ## 二、形状规则
 
 - ✅ **必包 `RespData`**（唯一例外见第三节的 403 门禁，也是 `RespData` 形状的）。
-- ⚠ **全 17 个接口都没有 `@PreAuthorize`** —— 店主端**不接 RBAC**。
+- ⚠ **全 20 个接口都没有 `@PreAuthorize`** —— 店主端**不接 RBAC**。
   登录态是唯一门槛：`/auth/login`、`/auth/register` 在网关与服务两处白名单内免鉴权，**其余全部要求已登录**。
   所以「权限串」列整列为 `—` 是**预期状态**，不是漏登记。
 - ⚠ **身份类型绑定**：本层只接受 `type=store` 的登录态（`panoramic.auth.user-type: store`）。跨端 token（`admin` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**。
@@ -59,7 +62,7 @@ typeDirs: backend/common/src/main/java, backend/store-bff/src/main/java
 
 | 来源 | 类型 |
 |---|---|
-| `common`（`com.panoramic.common.store.vo` / `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
+| `common`（`com.panoramic.common.store.vo` / `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsStockPageItemVO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
 | **store-bff 私有**（不在 `common`，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO` |
 
 ⚠ `StoreGoodsSpuDetailBffVO` 是 **BFF 独有**的详情出参（在 owner 侧 `StoreGoodsSpuDetailVO` 基础上扩展），

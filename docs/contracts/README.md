@@ -32,9 +32,9 @@
 | [cross-cutting.md](./cross-cutting.md) | 跨服务隐式契约 | 21 条 | ③ |
 | [gateway.md](./gateway.md) | 网关路由 / 白名单 / 守卫 | 3 条路由 | 基础设施 |
 | [admin.md](./admin.md) | admin 端 BFF 对外接口 | 55 | ① |
-| [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 17 | ① |
+| [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 20 | ① |
 | [goods-center.md](./goods-center.md) | 标准商品域内部接口 | 19 | ② |
-| [store.md](./store.md) | 店铺域内部接口 | 19 | ② |
+| [store.md](./store.md) | 店铺域内部接口 | 22 | ② |
 | [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 9 | ① |
 | [trade-center.md](./trade-center.md) | 交易域 | 待建 | ② |
 
