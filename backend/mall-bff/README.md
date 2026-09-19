@@ -6,8 +6,9 @@
 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff）：只持**顾客账号 `mall_user`**，
 签发**第三套身份** `type=user`，Redis 登录态键 `panoramic:login:user:{userId}`。
 
-> ⚠ **服务范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合）。
-> 已接 **goods-center**（分类树）与 **store**（商品分页 / 筛选聚合）两个业务域；首页「**热门商品列表**」区块仍是**静态 mock**。
+> ⚠ **服务范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me）+ **顾客资料**（读合并进 me、写走 `PUT /profile`）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合）。
+> 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合）与 **customer-center**（顾客资料）三个业务域；
+> 首页「**热门商品列表**」区块仍是**静态 mock**。
 
 ## 一、架构位置
 
@@ -16,11 +17,12 @@
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调 | 前台前端，经网关 `/mall/**`（`StripPrefix=1`） | HTTP，返回 `RespData` |
-| 本层调谁 | **goods-center**（分类树，8081）与 **store**（商品分页 / 筛选聚合，8083） | Feign + 熔断降级（`BffFeignCall`） |
+| 本层调谁 | **goods-center**（分类树，8081）、**store**（商品分页 / 筛选聚合，8083）与 **customer-center**（顾客资料，8086） | Feign + 熔断降级（`BffFeignCall`） |
 | 与谁**互不调用** | admin / store-bff | 三端身份空间彼此隔离 |
 
-`@EnableFeignClients` 扫两个包：`com.panoramic.contract.goods`（`GoodsCenterClient`）与 `com.panoramic.contract.store`（`StoreClient`），
-编排集中在 `service/CatalogBffService`；Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`contract.goods.*` / `contract.store.*`），本模块不复制一份。
+`@EnableFeignClients` 扫三个包：`com.panoramic.contract.store`（`StoreClient`）、`com.panoramic.contract.goods`（`GoodsCenterClient`）
+与 `com.panoramic.contract.customer`（`CustomerCenterClient`），编排集中在 `service/CatalogBffService`（商品浏览）与 `service/CustomerProfileBffService`（顾客资料）；
+Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`contract.store.*` / `contract.goods.*` / `contract.customer.*`），本模块不复制一份。
 
 本层依赖 `common-auth`（`JwtService` / `LoginUserCacheService` / `SecurityConfig` / `AuthTokenFilter`）做鉴权——业务域只依赖 `common`，结构上拿不到这条链。
 
@@ -33,7 +35,7 @@
 | 在售商品分页 / 筛选聚合 | store 域（**已接入**，`/goods/cross-shop/spu/page` + `/goods/facets`，跨店通用；C 端展示口径由本层固定传参） |
 | 购物车 / 订单 / 评价 | 未来的 `trade-center`（不存在） |
 
-> 📋 对外接口清单（9 条）见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)。
+> 📋 对外接口清单见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)（**条数与落地状态以该表为准**——本 README 不另记进度，写死条数只会在下次改动时失真）。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记
@@ -43,6 +45,11 @@
 | 表 | 说明 |
 |---|---|
 | `mall_user` | 顾客账号（phone / password 占位 / nickname / status）；**phone 即登录账号**，唯一键 `uk_phone` |
+
+> ⚠ **`mall_user.nickname` 正在迁出本表**：昵称（及头像 / 性别 / 生日）已改由 customer-center 的
+> `customer_profile` 承载（见 [`docs/contracts/customer-center.md`](../../docs/contracts/customer-center.md)），
+> **本模块实体已摘掉该字段**——字段留着会在列删除后让查询带上一个不存在的列（运行时报 `Unknown column`，
+> 而编译与契约检查都看不见）。⚠ **列本身尚未删除**（`db/schema.sql` 仍声明），将在迁移时移除，届时本行同步删掉。
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。⚠ 建库只有一个入口，不保留中间迁移脚本。
 
@@ -74,7 +81,7 @@
 ### 3. 边界（本层不做什么）
 
 - **不持业务域实体、不落域表**：本层只有 `mall_user` 一张表
-- **只做编排、不持域数据**：调域走 `store-interface` 的 `StoreClient` 与 `goods-center-interface` 的 `GoodsCenterClient`，编排集中在 `CatalogBffService`；
+- **只做编排、不持域数据**：调域走 `store-interface` 的 `StoreClient`、`goods-center-interface` 的 `GoodsCenterClient` 与 `customer-center-interface` 的 `CustomerCenterClient`，编排集中在 `CatalogBffService` / `CustomerProfileBffService`；
   降级统一走 `common` 的 `BffFeignCall`（下游故障 → 「…暂不可用」，业务 4xx 原样透传给页面）；
   分类树对分页 / facets 只是**增强**（子树展开、筛选名解析），拿不到就降级为「无树」，不拖垮主流程
 - **不做身份类型判断**：`type` claim 由签发端携带、全链路透传；网关只验签 + 查登录态

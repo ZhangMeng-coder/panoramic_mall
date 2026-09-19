@@ -67,10 +67,26 @@ public class AuthService {
 
     /**
      * 注册（注册即登录）：验码 → 手机号查重 → 建账号 → 播种顾客资料 → 下发登录态
-     * <p>⚠ <b>整方法一个事务</b>：账户插入（本模块）与资料写入（customer-center，跨服务）必须同生同死。
-     * 资料写走 {@code CustomerProfileBffService#saveProfile}，那是<b>不可降级</b>的写路径——
-     * 下游故障会抛出降级异常；若无事务，{@code mall_user} 已插入而资料没写，
-     * 用户重试时会撞「手机号已注册」，账号被永久锁死。这就是本方法加 {@code @Transactional} 的唯一理由。</p>
+     * <p><b>为什么加 {@code @Transactional}</b>（本方法加注解的唯一理由，且<b>只有一个方向成立</b>）：
+     * 资料写走 {@code CustomerProfileBffService#saveProfile}，那是<b>不可降级</b>的写路径，
+     * 下游故障会抛出降级异常。此时若账号已插入，用户重试会撞「手机号已注册」、账号被永久锁死；
+     * 加事务后<b>域写失败 → 账号回滚 → 重试可用</b>。该注解确实生效：本方法只被
+     * {@code AuthController} 调用（无自调用绕代理），{@code AuthService} 是类而非接口，
+     * 故走 CGLIB 代理。</p>
+     * <p>⚠ <b>反方向不成立，不要读成「同生同死」</b>：域侧 {@code customer_profile} 有它<b>自己的</b>事务，
+     * 在 {@code saveProfile} 返回时就<b>已提交</b>。此后本地事务若失败（{@code issueLogin} 里的
+     * Redis / JWT 环节抛异常，或域其实已提交而 BFF 只看到超时），回滚掉的只有 {@code mall_user}，
+     * 那一行资料<b>不参与回滚</b>（跨服务、无分布式事务）→ 留下<b>孤儿资料行</b>
+     * （{@code customer_profile.id} 指向一个不存在的账号 id）。<b>这是已知取舍，不是「不可能发生」</b>：
+     * 账号侧可自愈（重试即可），孤儿资料行对顾客不可见、对现有读路径也无害。</p>
+     * <p>⚠ <b>代价（如实记）</b>：事务内串了<b>两次</b> Feign —— {@code saveProfile} 一次，
+     * {@code issueLogin → toCurrentUser → loadProfile} 再一次；按 {@code feign-circuitbreaker.yml}
+     * 的 TimeLimiter 10s，最坏情形<b>持有一个 DB 连接约 20s</b>。并发注册撞上域变慢时可能占满连接池
+     * （未配 {@code maximum-pool-size}，即 Hikari 默认 10），此后<b>登录</b>（{@code getByPhone} 要连接）
+     * 会排队——爆炸半径限于本端 auth 路径。</p>
+     * <p>⚠ <b>为什么不改成 best-effort / afterCommit</b>（即「账号先落库、资料失败只记日志」）：
+     * spec §6.2 明确要求写资料「<b>不可降级</b>：调了却写失败 → 注册整体失败（不能『注册成功但昵称丢了』）」
+     * ——改它属<b>设计决策</b>，归用户，不在实现侧擅自处理；故此处不引入事务同步等新机制。</p>
      *
      * @param dto 注册参数
      * @return token + 当前用户信息
