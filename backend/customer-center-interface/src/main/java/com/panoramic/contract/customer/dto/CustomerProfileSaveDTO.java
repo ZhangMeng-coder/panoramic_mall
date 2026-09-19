@@ -7,8 +7,13 @@ import java.time.LocalDate;
 
 /**
  * 顾客资料保存请求参数（customer-center 域内部接口与 mall-bff 同源共享）。
- * <p>全字段选填：资料页保存时不传的字段即不覆盖（域侧按「非 null 才更新」处理），
- * 故本 DTO 不带 {@code @NotNull} / {@code @NotBlank}。</p>
+ * <p>四个字段全部选填（本 DTO 不带 {@code @NotNull} / {@code @NotBlank}），
+ * 但<b>语义是整份覆盖而非增量更新</b>：域侧对四列**无条件**写入，未传的字段会被写成 {@code NULL}。</p>
+ * <p>⚠ 这是刻意的，与入口一致：页面侧是 {@code PUT /profile}（PUT 语义即整份替换），
+ * 前端 `/account/profile` 是「昵称 / 头像 / 性别 / 生日」四项的整表单，每次都全量提交。
+ * <b>调用方不得只传要改的字段</b>——那样会把其余字段清空。
+ * （域侧用 {@code lambdaUpdate().set(...)} 写入而非 {@code updateById}，理由是后者会跳过 null 列，
+ * 把「清空昵称 / 头像」静默丢掉；一旦发现某处需要「非 null 才更新」，那是新的接口，不是改这里。）</p>
  */
 @Data
 public class CustomerProfileSaveDTO {
