@@ -559,7 +559,7 @@ public class CatalogBffService {
 
     /**
      * 域 SKU → C 端 SKU（丢掉 {@code skuCode} 店主内部编码、{@code spuId} 内部归属、
-     * {@code shelfStatus} 内部上下架状态）
+     * {@code shelfStatus} 内部上下架状态；库存只出可用量，不出阈值的 {@code warnStock}）
      *
      * @param src 域 SKU
      * @return C 端 SKU
@@ -570,6 +570,8 @@ public class CatalogBffService {
         vo.setSpecAttrs(src.getSpecAttrs());
         vo.setPrice(src.getPrice());
         vo.setMainImage(src.getMainImage());
+        // 域侧理论恒非空（组装详情时批量填，null 按 0），兜底仍按 0：本端出参契约是非可空的整数
+        vo.setAvailableStock(src.getAvailableStock() == null ? 0 : src.getAvailableStock());
         return vo;
     }
 
