@@ -11,6 +11,9 @@ import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.ShopOptionVO;
 import com.panoramic.common.store.vo.ShopVO;
@@ -19,6 +22,7 @@ import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -142,6 +146,31 @@ public interface StoreClient {
     void updateStoreGoodsSkuShelf(@PathVariable("spuId") Long spuId, @PathVariable("skuId") Long skuId,
                                   @RequestParam("storeId") Long storeId,
                                   @RequestBody StoreGoodsSkuShelfDTO dto);
+
+    /**
+     * SKU 库存分页（owner 侧，仅 store_id 名下；按 SKU 平铺一行一条，
+     * 支持商品名 / SKU 编码关键字、上下架筛选、仅看低库存）。
+     * <p>出参的 {@code stock} 是库存表里的总库存；可用库存 = {@code stock - lockedStock}。</p>
+     */
+    @GetMapping("/goods/stock/page")
+    PageResult<StoreGoodsStockPageItemVO> pageSkuStock(@RequestParam("storeId") Long storeId,
+                                                       @SpringQueryMap StoreGoodsStockPageQueryDTO dto);
+
+    /**
+     * 改单行 SKU 库存（owner 侧，仅 store_id 名下）；{@code warnStock} 传 null = 清除预警。
+     * <p>平台锁定期 owner 侧只读（域内强制拒绝），库存行不存在时按 0 行处理。</p>
+     */
+    @PutMapping("/goods/stock/{skuId}")
+    void updateSkuStock(@PathVariable("skuId") Long skuId, @RequestParam("storeId") Long storeId,
+                        @RequestBody StoreGoodsStockUpdateDTO dto);
+
+    /**
+     * 批量设置整批 SKU 的总库存（owner 侧，单条 IN 更新、不逐行）；平台锁定期只读。
+     * <p>不属于本店的 SKU 直接拒绝（不静默跳过）。</p>
+     */
+    @PutMapping("/goods/stock/batch")
+    void batchUpdateSkuStock(@RequestParam("storeId") Long storeId,
+                             @RequestBody StoreGoodsStockBatchUpdateDTO dto);
 
     // ---- platform：店铺在售商品（跨店通用 + 管理端专有的详情/锁定；admin BFF 与 mall-bff 调用）----
     // 分页（/goods/cross-shop/spu/page）**跨店通用**：不传 store_id 锚点，调用方自设限定条件

@@ -22,7 +22,7 @@
 - 本域只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链与 Redis
 - ⚠ 域端口只在内网可达是**安全前提**：本域不做鉴权，防线在网络层，不在应用层
 
-> 📋 对外接口清单（19 条，owner / platform / 跨店通用 三侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)。
+> 📋 对外接口清单（owner / platform / 跨店通用 三侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记

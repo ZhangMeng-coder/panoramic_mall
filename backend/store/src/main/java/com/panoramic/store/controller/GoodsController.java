@@ -8,12 +8,16 @@ import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.common.store.vo.PageResult;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.store.service.StoreGoodsSpuService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -112,6 +116,36 @@ public class GoodsController {
                                @RequestParam("storeId") Long storeId,
                                @Validated @RequestBody StoreGoodsSkuShelfDTO dto) {
         storeGoodsSpuService.updateSkuShelf(storeId, spuId, skuId, dto.getShelfStatus());
+    }
+
+    // ---- owner：SKU 库存（店铺端「库存管理」页；库存独立成表，读写只碰库存表）----
+
+    /**
+     * SKU 库存分页（仅 storeId 名下商品的 SKU；按 SKU 平铺一行一条，
+     * 支持商品名 / SKU 编码关键字、上下架筛选、仅看低库存）
+     */
+    @GetMapping("/stock/page")
+    public PageResult<StoreGoodsStockPageItemVO> pageSkuStock(@RequestParam("storeId") Long storeId,
+                                                              @Validated StoreGoodsStockPageQueryDTO dto) {
+        return storeGoodsSpuService.pageStock(storeId, dto);
+    }
+
+    /**
+     * 改单行 SKU 库存（仅 storeId 名下）；{@code warnStock} 传 null = 清除预警。平台锁定期只读。
+     */
+    @PutMapping("/stock/{skuId}")
+    public void updateSkuStock(@PathVariable("skuId") Long skuId, @RequestParam("storeId") Long storeId,
+                               @Validated @RequestBody StoreGoodsStockUpdateDTO dto) {
+        storeGoodsSpuService.updateSkuStock(storeId, skuId, dto);
+    }
+
+    /**
+     * 批量设置整批 SKU 的总库存（仅 storeId 名下，单条 IN 更新）；平台锁定期只读。
+     */
+    @PutMapping("/stock/batch")
+    public void batchUpdateSkuStock(@RequestParam("storeId") Long storeId,
+                                    @Validated @RequestBody StoreGoodsStockBatchUpdateDTO dto) {
+        storeGoodsSpuService.batchUpdateSkuStock(storeId, dto);
     }
 
     // ---- platform（不带 storeId，跨店通用；分页/聚合为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
