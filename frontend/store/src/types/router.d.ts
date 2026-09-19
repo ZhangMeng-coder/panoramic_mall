@@ -10,7 +10,7 @@ declare module 'vue-router' {
   interface RouteMeta {
     /** 页面标题（Layout 顶部显示 / 占位页大标题） */
     title?: string
-    /** 占位页说明文案（仅 /orders、/stock 这类占位入口用） */
+    /** 占位页说明文案（仅 /orders 这类占位入口用） */
     description?: string
   }
 }

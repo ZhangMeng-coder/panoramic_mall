@@ -135,7 +135,7 @@ const comboMissing = computed(
 
 /**
  * 库存文案：**只在选中 SKU 后出现**——未选定时价格区给的是区间/起价，此时不臆造库存。
- * >0 给具体件数，0 即售罄（无规格单 SKU 商品同样走这里，`activeSku` 直通那一个）。
+ * >0 给具体件数，≤0 即售罄（无规格单 SKU 商品同样走这里，`activeSku` 直通那一个）。
  */
 const stockText = computed<string | null>(() => {
   const sku = activeSku.value
@@ -143,8 +143,15 @@ const stockText = computed<string | null>(() => {
   return sku.availableStock > 0 ? `库存 ${sku.availableStock} 件` : '已售罄'
 })
 
-/** 售罄态（只用于文案上色）；未选中 SKU 时为 false */
-const soldOut = computed(() => activeSku.value?.availableStock === 0)
+/**
+ * 售罄态（只用于文案上色）；未选中 SKU 时为 false。
+ * ⚠ 判据必须与 `stockText` 同为「≤0」：写成 `=== 0` 时，若出现 `locked_stock > stock`
+ * （本期 locked 恒 0，交易域接入后可能），文案会显示「已售罄」却不上色。
+ */
+const soldOut = computed(() => {
+  const sku = activeSku.value
+  return sku != null && sku.availableStock <= 0
+})
 
 /** 展示价：选中 SKU 用它的价，否则用区间最低价 */
 const shownPrice = computed<number | null>(() => activeSku.value?.price ?? minPrice.value)
