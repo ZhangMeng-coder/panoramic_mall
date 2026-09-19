@@ -1,5 +1,6 @@
 package com.panoramic.customer.service.impl;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.contract.customer.dto.CustomerAddressSaveDTO;
@@ -102,7 +103,15 @@ public class CustomerAddressServiceImpl extends ServiceImpl<CustomerAddressMappe
         // ⚠ 锚点**写进删除语句本身**（而非只靠上面的 requireOwned）：域内不做鉴权，锚点是唯一防线，
         //    这是本 service 六个方法里唯一「归属只在先验语句里」的形状——将来的「转移地址归属 / 平台代删」
         //    会把它变成越权删除，而编译期与检查器都拦不住这种退化。语义与 removeById(id) 相同（重复删除幂等）。
-        remove(lambdaQuery()
+        //
+        // ⚠ 必须写成 `Wrappers.<CustomerAddress>lambdaQuery()`，**不要「顺手整洁化」成裸的 `lambdaQuery()`**：
+        //    `remove(...)` 收的是 `Wrapper`，而本类的 `lambdaQuery()`（ServiceImpl 的链式包装器
+        //    `LambdaQueryChainWrapper`）不是 Wrapper——它的 `getSqlSegment()` 在 MP 3.5.16 里**直接抛异常**
+        //    （`AbstractChainWrapper` 无条件 `throw ExceptionUtils.mpe(...)`），而逻辑删除语句的
+        //    `<bind name="_sgEs_" value="ew.sqlSegment ...">` 恰好会取该属性 → 运行时 `MybatisPlusException`
+        //    → 域兜底回 500。即「地址存在且归属正确」这条最正常路径必失败，且编译期与 drift-check 都看不见。
+        //    链式包装器只允许以终端方法出现（`.one()/.list()/.update()/.count()`…），见本类其余五个方法。
+        remove(Wrappers.<CustomerAddress>lambdaQuery()
                 .eq(CustomerAddress::getId, id)
                 .eq(CustomerAddress::getCustomerId, customerId));
     }
