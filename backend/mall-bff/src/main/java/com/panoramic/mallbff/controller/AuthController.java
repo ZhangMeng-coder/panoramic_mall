@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * C 端顾客认证接口
- * <p>取码/注册/登录在网关与服务两侧均为白名单，登出与 me 需登录态。
+ * <p>取码/注册/登录在网关与服务两侧均为白名单，登出 / me / 换绑手机号需登录态
+ * （不在此处穷举：完整清单与「新增端点时同步登记」的提醒在 `application.yml` 的「需登录态端点」注）。
  * <p>⚠ **C 端不接 RBAC**：本类（及本模块全部 controller）没有、也不应有任何 {@code @PreAuthorize}——
  * 顾客登录后对自己的数据全权限，这是预期状态，不是漏登记。</p>
  */

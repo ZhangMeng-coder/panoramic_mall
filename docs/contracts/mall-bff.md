@@ -14,7 +14,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > （资料保存 / 地址增删改查 / 设默认）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）。
 > 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情）与 **customer-center**（顾客资料）
 > 三个业务域；顾客侧**哪些行尚未落地，以下表「状态」列为准**（本文件正文不另记进度与条数），
-> 地址与换绑实现后经内部 Feign 接 **customer-center**（见 [customer-center.md](./customer-center.md)）；
+> 地址经内部 Feign 接 **customer-center**（见 [customer-center.md](./customer-center.md)）；
+> ⚠ 换绑手机号**不经任何域**——手机号是 `mall_user` 的列（本端独有），`customer_profile` 没有该字段；
 > 首页「热门商品列表」区块仍是静态 mock。
 
 ## 一、接口形态
@@ -76,7 +77,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 鉴权分级 | **首页公开、一涉及商品查询与详情就要登录态**：免鉴权只有上一条那 4 条，`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` 一律需顾客登录态。前端配套三层：① 需登录页（`/search`、`/category/:id`、`/goods/:id`）由路由守卫拦，未登录带 `redirect` 跳 `/login`，登录后回原页；② 登录态**中途失效**由拦截器 401 兜底：清本地态 + 提示「请先登录」+ 带 `redirect` 跳登录页；③ **唯一静默的 401** 是路由守卫刷新重建用户态的 `/auth/me`（`silent401`）——公开首页上的重建失败不该把游客弹走。⚠ 静默分支**会先清掉本地 token**，所以同一导航里后续接口再吃 401 时，拦截器已判不出「本来有登录态」（既不提示、也不跳转）；**需登录页上「会话真没了」（`!getToken()`）必须由守卫自己收口**（跳登录页），不能推给拦截器，否则页面会渲染成「商品暂不可用」——把未登录报成下游故障。⚠ 判据带 `!getToken()` 是必要的：`me()` 因网络 / 5xx 失败时 token 未动，那种情况**不跳**（跳了会与「已登录不该待在登录页」来回弹成环） |
 | 未认证响应 | HTTP **401** + `{code:401,msg}`（`common-auth` 的 `AuthenticationEntryPoint` 写出，网关侧同形）。⚠ 对本端前端而言 401 是**可预期的日常分支**（提示登录并跳转），不是故障：别把它与「商品暂不可用」那类下游降级混在一个出口里 |
 | 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；新手机号与当前手机号相同 `400`（换绑）；账号停用 `USER_DISABLED`（`515`） |
-| 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
+| 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态；换绑：验旧码 → 验新码 → **拒绝同号 → 新号查重** |
+| | ⚠ 换绑的「拒绝同号」必须**先于**「新号查重」：反过来的话新号 == 旧号会先被查重命中、报「手机号已注册」，刚登记的「新手机号与当前手机号相同」400 **永不可达**（spec §6.3 原写的顺序即反例，已订正） |
 | 资料读口径 | **不单开 `GET /profile`**：资料读合并在 `/auth/me` —— 其出参含**完整资料**（`nickname` / `avatar` / `gender` / `birthday`）。要改资料走 `PUT /profile`（只写） |
 | 资料写口径 | `PUT /profile` 是**整份替换**（四项全传，未传即写为 NULL）；资料页每次全量提交。要「只改一个字段」得先读 `/auth/me` 拿到完整资料再整体回传 |
 | 昵称兜底 | 资料为空（或 customer-center 不可用）时 `nickname` **回退为手机号**，其余资料字段留空、**不阻断** `/auth/me`。⚠ **只在 `/auth/me` 一处兜底**，别在别处再写一份 |
