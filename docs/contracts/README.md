@@ -16,7 +16,7 @@
 | 层 | 含义 | 载体文件 | 消费者 | 公网可达 |
 |---|---|---|---|---|
 | **① 页面级** | 端 BFF 对外暴露的 HTTP 面，**前端唯一可见的接口** | `admin.md` / `store-bff.md` / `mall-bff.md` | 前端 | ✅ 经网关 |
-| **② 内部 Feign** | BFF → 纯域的内部调用，不开放公网路由 | `goods-center.md` / `store.md` / `trade-center.md` | 端 BFF | ❌ 仅内网 |
+| **② 内部 Feign** | BFF → 纯域的内部调用，不开放公网路由 | `goods-center.md` / `store.md` / `customer-center.md` / `trade-center.md` | 端 BFF | ❌ 仅内网 |
 | **③ 跨服务隐式** | 不属于任何单个服务、却由多方共守的约定 | `cross-cutting.md` | 全部服务 | — |
 | **— 基础设施** | 网关路由 / 白名单 / 守卫顺序 | `gateway.md` | 全部流量 | — |
 
@@ -56,7 +56,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 ```
 
 - `scanDirs`：扫这个服务的 Controller 源码，用来和表比对端点（逗号分隔多个目录）。
-- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要同时给**两个接口模块**（`backend/goods-center-interface/src/main/java`、`backend/store-interface/src/main/java`）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
+- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要给**它表里用到的**接口模块（现有 `goods-center-interface` / `store-interface` / `customer-center-interface` 三个模块，**各端按需**——表里出现哪个模块的类型就列哪个）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
 
 **内部 Feign**（两端都要登记，所以既扫 Feign 声明也扫域实现）：
 

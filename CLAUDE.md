@@ -14,9 +14,9 @@
 
 ## 分层与内部服务调用（BFF 化，进行中）
 
-目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由。trade-center 仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
+目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**（store 域已拆出 store-bff 下沉纯域、不再对外）；goods-center 同样已下沉纯域、不开放公网路由；customer-center（顾客域）同样已下沉纯域、不开放公网路由。trade-center 仍属后续待建项（todo.md）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。
 
-**模块归属（鉴权装配层与域契约层已各自独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/`InternalApiErrorDecoder`/`BffFeignCall`/`HtmlSanitizer`——富文本消毒，各端 BFF **出口**共用同一份白名单，见 cross-cutting 第 21 条）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）；`<域>-interface`=**域内部契约包**（当前 `goods-center-interface` / `store-interface`，包根 `com.panoramic.contract.<域>`：该域的 Feign 客户端 + 同源 DTO/VO，**被「域本体 + 调用它的端 BFF」共用同一份**）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store）只依赖 `common` 与**自己的** `<域>-interface`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类放 `common-auth`；只被业务代码共用的基座放 `common`；**某个域的契约类型一律放该域的 `<域>-interface`**，`common` 里不放任何域契约类型。**新建业务域时同步建一个 `<域>-interface` 模块**（照 `goods-center-interface` 的 pom 抄，`spring-boot-maven-plugin` 置 `<skip>true</skip>`），不要图省事把契约塞回 `common`。
+**模块归属（鉴权装配层与域契约层已各自独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/`InternalApiErrorDecoder`/`BffFeignCall`/`HtmlSanitizer`——富文本消毒，各端 BFF **出口**共用同一份白名单，见 cross-cutting 第 21 条）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）；`<域>-interface`=**域内部契约包**（当前 `goods-center-interface` / `store-interface` / `customer-center-interface`，包根 `com.panoramic.contract.<域>`：该域的 Feign 客户端 + 同源 DTO/VO，**被「域本体 + 调用它的端 BFF」共用同一份**）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store / customer-center）只依赖 `common` 与**自己的** `<域>-interface`，结构上拿不到认证链与 Redis，因此不装配鉴权、不需要 `datasource-redis.yml` / `auth.yml`。新增需要鉴权/Redis 的公共类放 `common-auth`；只被业务代码共用的基座放 `common`；**某个域的契约类型一律放该域的 `<域>-interface`**，`common` 里不放任何域契约类型。**新建业务域时同步建一个 `<域>-interface` 模块**（照 `goods-center-interface` 的 pom 抄，`spring-boot-maven-plugin` 置 `<skip>true</skip>`），不要图省事把契约塞回 `common`。**customer-center**（顾客域）承担顾客资料与收货地址；**账号凭据（`mall_user` 的手机号与状态）不下沉到域**，仍由 **mall-bff** 直连本端库。
 
 **Feign 内部接口规约（BFF → 域，M0 起一律遵守）**：
 - **熔断**：经 Feign 调业务域必须配熔断器，下游故障不得拖垮调用方（编排接口降级/快速失败）。
@@ -46,13 +46,13 @@
 - 网关只做「验签 + 查登录态 + 注入 `X-User-Id`/`X-User-Type`」，不做身份类型判断；身份类型由签发的 `type` claim 携带、全链路透传。
 - 域服务不参与登录态（无 Redis），见上「信任与防线」。
 
-**术语防呆（避免跨域加错表）**：`goods-center`=标准商品模板库（标准商品平台）；"店铺在售商品/库存/信誉"属 store 域；"顾客/购物车/订单/评价"属未来 trade 域。别把别域实体塞进 goods-center。
+**术语防呆（避免跨域加错表）**：`goods-center`=标准商品模板库（标准商品平台）；"店铺在售商品/库存/信誉"属 store 域；"顾客资料/收货地址"属 **customer-center** 顾客域；"购物车/订单/评价"属 **trade-center** 交易域。别把别域实体塞进 goods-center。
 
 **该约定已由模块结构强制**：各域只依赖自己的 `<域>-interface`，`common` 里没有契约类型 —— 想引用别域类型会直接编译失败（2026-09-19 拆分后实测拦下两处跨域误引）。故「别域实体」不只写在文档里，编译期就会拦。
 
 ## 对外契约清单（docs/contracts）
 
-**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `trade-center.md`，后两者中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 21 条），外加基础设施（`gateway.md`）。
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `customer-center.md` / `trade-center.md`，其中 `trade-center.md` 待建）③ 跨服务隐式（`cross-cutting.md`，共 21 条），外加基础设施（`gateway.md`）。
 
 ⚠ **检查器的端 BFF 名单不硬编码**：`drift-check.mjs` 从网关 `bff-services` 的值推导服务名单、从路由（`uri: lb://<svc>` ↔ `Path=/<前缀>/**`）推导前缀，进而逐个核对「两侧白名单互为子集」；某个端 BFF 推不出唯一前缀即**直接失败**（不降级为警告）。新增端 BFF 时不要回头去改检查器的名单。
 
@@ -81,7 +81,7 @@
 
 ## mall 前台（用户端）视觉与结构约定
 
-`frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175）：**账号功能已接入端 BFF `mall-bff`**（取码 / 注册 / 登录 / 退出 / 当前顾客），**搜索区、分类展示区、商品列表页与商品详情页已接真实数据**（分类树 / 商品分页 / 筛选聚合 / 商品详情四个 catalog 接口，契约见 `docs/contracts/mall-bff.md`），**首页「热门商品列表」区块仍是静态写死的**（在 `src/mock/`，故首页不链详情页——mock 商品没有真实 id）。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
+`frontend/mall` 是 mall 前台的**正式前端工程**（Vue 3 + Vite + **TypeScript**，端口 5175）：**账号功能已接入端 BFF `mall-bff`**（**具体接了哪些以 `docs/contracts/mall-bff.md` 的「状态」列为准**，本句不逐项记账），**搜索区、分类展示区、商品列表页与商品详情页已接真实数据**（分类树 / 商品分页 / 筛选聚合 / 商品详情四个 catalog 接口，契约见 `docs/contracts/mall-bff.md`），**首页「热门商品列表」区块仍是静态写死的**（在 `src/mock/`，故首页不链详情页——mock 商品没有真实 id）。⚠ 它约束的是**视觉与结构，不是技术形态**——技术形态按上面的目标分层走，但**长什么样、分哪几块，以该工程为准**。生成/修改 mall 前台任何页面时一律遵守：
 
 - **色板唯一来源**：只消费 `frontend/mall/src/styles/tokens.css` 的令牌，**禁止硬编码**色值 / 圆角 / 阴影；换肤只改这一个文件。
 - **风格不混用**：前台是 **C 端促销风（橙红主色）**，与 admin / store 的靛蓝后台令牌**刻意不同源**；不要把后台那套 `tokens.css` 引进来，也不要把橙色板反向引回后台。**前台是单独一套风格，不做样式变换**——`element-plus` 虽在依赖里，但只作后续页面（表单 / 弹窗 / 分页）的备用能力：**不注册 EP、不引 EP 样式、页面里不出现 EP 组件**；将来某页要用，在那一页按需引入并把 EP 变量重映射到前台令牌，不全局引 `element-plus/dist/index.css`。
