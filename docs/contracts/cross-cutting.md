@@ -45,9 +45,9 @@ layer: cross-cutting
 | 契约 | 分页查询入参 `extends BasePageVO`，出参 `PageResult<T>` |
 | 定义位置 | `common/.../common/vo/BasePageVO.java` |
 | 消费位置 | 所有分页接口 |
-| ⚠ 已知风险 | `PageResult` 存在**三个同名独立类型**：`common.goods.vo.PageResult`、`common.store.vo.PageResult` 与 admin 自己的 `admin.vo.PageResult`（不同包）。跨域复用时类型不兼容，需显式转换 |
-| 破坏后果 | 误用另一域的 `PageResult` → 编译期即报错（属"会炸得明显"的一类，风险较低） |
-| 核对方式 | 检查器第 5 项（入出参类型名可在 `common` 找到） |
+| ⚠ 已知风险 | `PageResult` 存在**三个同名独立类型**：`contract.goods.vo.PageResult`、`contract.store.vo.PageResult` 与 admin 自己的 `admin.vo.PageResult`（不同包）。跨域复用时类型不兼容，需显式转换。⚠ 同类还有一对**规格值对象** `SpecAttr` / `SpecConfigItem`：`contract.goods.dto` 与 `contract.store.dto` 各一份，形状逐字相同（2026-09-19 拆分前 store 契约与 store 域直接引 goods 那份，拆分时切成各域自持）。**这一对没有编译期以外的保护 —— 改一份忘改另一份不会报错**，只会在两端 JSON 形状上悄悄分叉 |
+| 破坏后果 | 误用另一域的 `PageResult` → 编译期即报错（属"会炸得明显"的一类，风险较低）；`SpecAttr` / `SpecConfigItem` 两份漂移 → **不报错**，静默分叉 |
+| 核对方式 | 检查器第 5 项（入出参类型名可在该服务的 `typeDirs` 找到）；规格值对象两份是否仍逐字一致**靠人工核对**（2026-09-19 裁决：只登记风险，不给检查器加逐字比对规则） |
 
 ---
 
@@ -84,7 +84,7 @@ layer: cross-cutting
 | 契约 | 网关验签后注入身份头，端 BFF 经 Feign **原样透传**，域直取填 `UserContext`；**仅用于审计填充与 `audit_by` 留痕，读 ≠ 判断** |
 | 定义位置 | `X-User-Type` 有常量 `LoginUser.HEADER_USER_TYPE`（:35）；⚠ `X-User-Id` **无 Java 常量**，头名只由 Nacos `auth.yml` 的 `panoramic.auth.header-name` 提供，且默认值散落在 5 处 `@Value` |
 | 注入位置（唯一） | `gateway/filter/AuthGlobalFilter.java:89-90` |
-| 透传位置 | `common/goods/api/GoodsFeignConfiguration.java:30-56`、`common/store/api/StoreFeignConfiguration.java:32-59` |
+| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59` |
 | 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`common-auth/AuthTokenFilter.java:71` |
 | ⚠ 已知风险 | 两个同职责的 Feign 配置**行为不对称**：`GoodsFeignConfiguration:55` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57` **不做回退** |
 | 破坏后果 | 头名不一致 → 域取不到身份 → 审计字段静默留空（不报错，最难发现的一类） |
@@ -187,15 +187,16 @@ layer: cross-cutting
 | 破坏后果 | 5xx 也还原成 `ServiceException` → 熔断**永远打不开**，下游故障直接拖垮调用方；反之若 4xx 计入 → 店主连续几次操作失误就把熔断打开，后续**正常**请求被降级成 500 |
 | 核对方式 | 哨兵 `ignore-exceptions`、`ServiceException`、`InternalApiErrorDecoder` |
 
-### 14. Feign 入出参类型必须**同源于 `common`**
+### 14. Feign 入出参类型必须**同源于该域的接口模块**
 
 | | |
 |---|---|
-| 契约 | Feign interface 的入参/出参 DTO 在 `common` 维护，调用方与被调用方引用**同一份类型**，禁止各自复制 |
+| 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
 | 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 公共类型」 |
-| 消费位置 | `common/.../goods/api/GoodsCenterClient.java`、`common/.../store/api/StoreClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
+| 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
-| 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在 `common` 找到对应 `.java` |
+| 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在该服务 `contract-meta` 的 `typeDirs` 里找到对应 `.java` |
+| 结构保障 | 各域模块只依赖**自己那个** `-interface`（`common` 里没有契约类型），跨域引用会**当场编译失败**；新建域时必须同步建 `<域>-interface` 模块 |
 
 ### 15. 域端口只在内网可达（**安全前提，非代码约束**）
 
@@ -246,7 +247,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | store 域 `POST /goods/cross-shop/spu/page`（与 `POST /goods/facets`）是**跨店通用**接口：**无数据权限锚点，限定条件由调用方自设**——`pageStoreGoodsCrossShop` 由 admin BFF 与 mall-bff 共用、`crossShopFacets` 目前只有 mall-bff 消费；域内不判身份、不做端别分流。⚠ 域返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` / `goodsSpuId` 等），**C 端输出前必须由端 BFF 逐字段裁剪** |
-| 定义位置 | `common/.../store/api/StoreClient.java#pageStoreGoodsCrossShop` / `#crossShopFacets`；域实现 `store/controller/GoodsController.java` + `StoreGoodsSpuServiceImpl#crossShopPage` / `#facets` |
+| 定义位置 | `store-interface/.../contract/store/api/StoreClient.java#pageStoreGoodsCrossShop` / `#crossShopFacets`；域实现 `store/controller/GoodsController.java` + `StoreGoodsSpuServiceImpl#crossShopPage` / `#facets` |
 | 消费位置 | admin BFF `ShopGoodsBffService`（管理端：不传 C 端三条件、走全量）；mall-bff `CatalogBffService#toMallItem`（C 端：**手工逐字段映射，刻意不用 `BeanUtils.copyProperties`**） |
 | 破坏后果 | 改成整对象拷贝 → 域 VO 日后加字段会**自动漏到 C 端**（锁定原因、锁定人一并外泄） |
 | 核对方式 | **人工核对**（字段级裁剪无法用静态哨兵表达） |
@@ -258,7 +259,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | C 端「商品可见」只有**一个口径**：店铺 `status=2`（已审核通过）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。⚠ **列表与详情的判定位置不同**：列表把这三个条件**当查询参数传给域**（跨店通用接口，域只做等值/IN 过滤）；详情按 id 取一条（域侧 `platformStoreGoodsDetail`，**本身不含任何可见性约束**），必须取回后**在端 BFF 逐条重判**。两处是同一不变量的两个落点，**单边改动不会编译报错**，只会让「列表搜得到、点进去说下架」或反之 |
-| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）与 `#detail` → `#shopApproved`（取回后重判）；域侧 `common/.../store/api/StoreClient.java#platformStoreGoodsDetail` + `store/controller/GoodsController.java` |
+| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）与 `#detail` → `#shopApproved`（取回后重判）；域侧 `store-interface/.../contract/store/api/StoreClient.java#platformStoreGoodsDetail` + `store/controller/GoodsController.java` |
 | 消费位置 | mall-bff `CatalogController` 的 `/catalog/goods`、`/catalog/goods/{id}`；同一个域方法另有 admin BFF 消费（管理端不走 C 端口径） |
 | 不可见响应 | 不存在 / 已下架 / 被锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因**（区分了就等于给外人一个探测商品是否存在 / 是否被锁的接口） |
 | 4xx/5xx 分野 | **只有业务 4xx**（400/403/404）才转成 404；`BffFeignCall` 的熔断/连接降级是 `ServiceException(500, …)`，**照抛**——否则下游一抖，「商品服务挂了」会被伪装成「商品已下架」（第 13 条在本场景的延伸） |
@@ -299,7 +300,7 @@ layer: cross-cutting
     { "literal": "CLAIM_USER_TYPE", "in": ["backend/common/src/main/java/com/panoramic/common/security/LoginUser.java"], "why": "JWT type claim 常量定义处（第 4 条）" },
     { "literal": "panoramic:login", "in": ["backend/nacos-config", "backend/gateway", "backend/common-auth"], "why": "Redis 登录态键前缀，网关↔端 BFF 共享（第 5 条）" },
     { "literal": "X-User-Id", "in": ["backend/nacos-config"], "why": "X-User-Id 头名的唯一权威源（第 6 条）" },
-    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/common/src/main/java/com/panoramic/common/goods/api", "backend/common/src/main/java/com/panoramic/common/store/api"], "why": "身份头注入与透传（第 6 条）" },
+    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api", "backend/store-interface/src/main/java/com/panoramic/contract/store/api"], "why": "身份头注入与透传（第 6 条）" },
     { "literal": "bff-services", "in": ["backend/gateway"], "why": "网关 BFF 白名单键（第 10 条）" },
     { "literal": "${panoramic.auth.user-type}", "in": ["backend/common-auth"], "why": "端 BFF 身份类型绑定的消费处（第 9 条）；⚠ 必须带 ${} 占位符形式——裸属性名会被类注释里的散文假性满足" },
     { "literal": "user-type:", "in": ["backend/admin", "backend/store-bff", "backend/mall-bff"], "why": "三端 BFF 各须显式声明本端身份类型（第 9 条）" },

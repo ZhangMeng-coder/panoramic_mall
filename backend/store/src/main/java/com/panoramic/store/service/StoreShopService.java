@@ -1,12 +1,12 @@
 package com.panoramic.store.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.panoramic.common.store.dto.ShopAuditDTO;
-import com.panoramic.common.store.dto.ShopPageQueryDTO;
-import com.panoramic.common.store.dto.ShopSaveDTO;
-import com.panoramic.common.store.vo.PageResult;
-import com.panoramic.common.store.vo.ShopOptionVO;
-import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.contract.store.dto.ShopAuditDTO;
+import com.panoramic.contract.store.dto.ShopPageQueryDTO;
+import com.panoramic.contract.store.dto.ShopSaveDTO;
+import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.contract.store.vo.ShopOptionVO;
+import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.store.entity.StoreShop;
 
 import java.util.Collection;

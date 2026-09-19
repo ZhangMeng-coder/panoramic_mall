@@ -2,9 +2,9 @@
 service: store
 layer: internal
 basePath: /internal/store
-feignClient: backend/common/src/main/java/com/panoramic/common/store/api/StoreClient.java
+feignClient: backend/store-interface/src/main/java/com/panoramic/contract/store/api/StoreClient.java
 implScanDirs: backend/store/src/main/java/com/panoramic/store/controller
-typeDirs: backend/common/src/main/java
+typeDirs: backend/store-interface/src/main/java
 -->
 
 # 店铺域（store）内部契约 · 第 ② 层
@@ -29,7 +29,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 ## 二、接口清单
 
-| Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(common) | 域实现 | 调用方 | 状态 |
+| Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | mineShop | GET | /shops/mine | Long | ShopVO | StoreClient.java:62 | ShopController.java:40 | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff) |  |
 | saveShop | POST | /shops/{storeId}/save | Long, ShopSaveDTO | void | StoreClient.java:68 | ShopController.java:48 | StoreShopBffService(store-bff) |  |
@@ -90,14 +90,19 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
   品牌维度不受**已选品牌**影响（`facetBy` 只在另一维度施加筛选），故选中某项后同维度选项不会消失。
 - ⚠ 缺失行**不抛异常**：`mine` / 详情类接口查不到时的行为见模块 README 的边界说明。
 
-## 五、类型所在包（全部在 `common`，两端引用同一份）
+## 五、类型所在包（全部在 `store-interface`，两端引用同一份）
 
-包根：`backend/common/src/main/java/com/panoramic/common/store/`
+包根：`backend/store-interface/src/main/java/com/panoramic/contract/store/`
 
 | 包 | 类型 |
 |---|---|
 | `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO |
 | `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO |
+
+> ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem` 一份（不在上表清单里，因为它们是**跨域共享形状**）：
+> 2026-09-19 拆分前，本包 6 个类 + store 域实现直接引 `contract.goods.dto` 的那一份；拆分时切成
+> 各域自持，store 侧用**本包这份**。`contract.goods.dto` 下有同形同名的孪生类，由 store-bff / mall-bff
+> 逐字段映射时**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
 
 > 「子类扩字段」先例：`StoreGoodsSpuPlatformDetailVO extends StoreGoodsSpuDetailVO`（platform 侧追加 `storeName` / `categoryPath`），
 > 避免为平台侧污染 owner 侧 VO。
@@ -106,7 +111,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 
 | 类 | 职责 | 位置 |
 |---|---|---|
-| `StoreFeignConfiguration` | 透传身份头（⚠ **不做** `X-User-Type` 缺省回退，与 `GoodsFeignConfiguration` 行为不对称） | `common/.../store/api/StoreFeignConfiguration.java:32-59` |
+| `StoreFeignConfiguration` | 透传身份头（⚠ **不做** `X-User-Type` 缺省回退，与 `GoodsFeignConfiguration` 行为不对称） | `store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59` |
 
 ## 七、业务规则去哪看
 

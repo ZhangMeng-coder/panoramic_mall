@@ -1,6 +1,6 @@
 package com.panoramic.mallbff.vo;
 
-import com.panoramic.common.goods.dto.SpecAttr;
+import com.panoramic.contract.store.dto.SpecAttr;
 import lombok.Data;
 
 import java.math.BigDecimal;

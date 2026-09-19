@@ -19,7 +19,7 @@
 | 本层调谁 | **goods-center**（分类树，8081）与 **store**（商品分页 / 筛选聚合，8083） | Feign + 熔断降级（`BffFeignCall`） |
 | 与谁**互不调用** | admin / store-bff | 三端身份空间彼此隔离 |
 
-`@EnableFeignClients` 扫两个包：`com.panoramic.common.goods`（`GoodsCenterClient`）与 `com.panoramic.common.store`（`StoreClient`），
+`@EnableFeignClients` 扫两个包：`com.panoramic.contract.goods`（`GoodsCenterClient`）与 `com.panoramic.contract.store`（`StoreClient`），
 编排集中在 `service/CatalogBffService`；Feign 出参 DTO 与域侧**同源于 `common`**，本模块不复制一份。
 
 本层依赖 `common-auth`（`JwtService` / `LoginUserCacheService` / `SecurityConfig` / `AuthTokenFilter`）做鉴权——业务域只依赖 `common`，结构上拿不到这条链。

@@ -1,8 +1,8 @@
 package com.panoramic.goods.controller;
 
-import com.panoramic.common.goods.dto.CategorySaveDTO;
-import com.panoramic.common.goods.dto.CategoryUpdateDTO;
-import com.panoramic.common.goods.vo.CategoryTreeVO;
+import com.panoramic.contract.goods.dto.CategorySaveDTO;
+import com.panoramic.contract.goods.dto.CategoryUpdateDTO;
+import com.panoramic.contract.goods.vo.CategoryTreeVO;
 import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.goods.service.CategoryService;
 import lombok.RequiredArgsConstructor;

@@ -1,11 +1,11 @@
 package com.panoramic.admin.bff;
 
 import com.panoramic.common.feign.BffFeignCall;
-import com.panoramic.common.store.api.StoreClient;
-import com.panoramic.common.store.dto.ShopAuditDTO;
-import com.panoramic.common.store.dto.ShopPageQueryDTO;
-import com.panoramic.common.store.vo.PageResult;
-import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.contract.store.api.StoreClient;
+import com.panoramic.contract.store.dto.ShopAuditDTO;
+import com.panoramic.contract.store.dto.ShopPageQueryDTO;
+import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.contract.store.vo.ShopVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,7 +15,7 @@ import java.util.function.Supplier;
 /**
  * admin 端 BFF · 店铺管理编排。
  * <p>只做页面编排与聚合，不持有/复制 store 域任何实体与表；全部经内部 Feign 调 store 域
- * platform 接口（不传 store_id → 全量），共享 DTO/VO 同源在 common（com.panoramic.common.store），
+ * platform 接口（不传 store_id → 全量），共享 DTO/VO 同源在 common（com.panoramic.contract.store），
  * 并按 Feign 规约熔断：下游业务异常（400 参数/业务）原样透传由统一异常处理还原 RespData 给页面；
  * 连接失败 / 熔断开启等降级为友好提示。不读店主账号（D6：admin 只管理店铺数据，不显示店主登录账号）。</p>
  */

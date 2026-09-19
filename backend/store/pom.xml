@@ -21,6 +21,12 @@
             <artifactId>common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- 本域内部契约（Feign 客户端 + 同源 DTO/VO）：域侧只用 dto/vo，不扫描 api/ 里的 Feign 客户端 -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>store-interface</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

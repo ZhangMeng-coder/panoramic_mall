@@ -1,23 +1,23 @@
 package com.panoramic.store.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.panoramic.common.store.dto.StoreGoodsLockDTO;
-import com.panoramic.common.store.dto.StoreGoodsSkuReplaceDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuSaveDTO;
-import com.panoramic.common.store.dto.StoreGoodsSpuUpdateDTO;
-import com.panoramic.common.store.dto.StoreGoodsStockBatchUpdateDTO;
-import com.panoramic.common.store.dto.StoreGoodsStockPageQueryDTO;
-import com.panoramic.common.store.dto.StoreGoodsStockUpdateDTO;
-import com.panoramic.common.store.vo.PageResult;
-import com.panoramic.common.store.vo.StoreGoodsStockPageItemVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPageItemVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuSaveDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
+import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
+import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
 
 /**

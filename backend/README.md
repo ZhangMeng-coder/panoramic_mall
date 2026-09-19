@@ -6,8 +6,10 @@
 
 | 模块 | 类型 | 端口 | 说明 |
 |---|---|---|---|
-| [common](common/) | 工具包（非服务） | — | 公共基座：通用返回结构、异常处理、实体基类（`BaseEntity`）、审计自动填充（`MyMetaObjectHandler`）、登录用户模型与 `UserContext`、各域 Feign 客户端与同源 DTO/VO（`com.panoramic.common.goods` / `com.panoramic.common.store`）。**所有服务都依赖**（业务域不鉴权，故不依赖 `common-auth`） |
+| [common](common/) | 工具包（非服务） | — | 公共基座：通用返回结构、异常处理、实体基类（`BaseEntity`）、审计自动填充（`MyMetaObjectHandler`）、登录用户模型与 `UserContext`、Feign 错误解码与降级包装（`InternalApiErrorDecoder` / `BffFeignCall`）、`HtmlSanitizer`。**所有服务都依赖**（业务域不鉴权，故不依赖 `common-auth`）；⚠ **不含任何域契约类型** |
 | [common-auth](common-auth/) | 工具包（非服务） | — | 鉴权装配层：`SecurityConfig` / `AuthTokenFilter` / `JwtService` / `LoginUserCacheService`（Redis 登录态 + JJWT）。**只被端 BFF（admin / store-bff / mall-bff）依赖**——业务域只依赖 `common`，结构上拿不到认证链与 Redis |
+| [goods-center-interface](goods-center-interface/) | 工具包（非服务） | — | 标准商品域**内部契约包**：`GoodsCenterClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.goods`）。**被 goods-center 与调用它的端 BFF 共用同一份**（不各抄一份，避免漂移） |
+| [store-interface](store-interface/) | 工具包（非服务） | — | 店铺域**内部契约包**：`StoreClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.store`）。**被 store 与调用它的端 BFF 共用同一份** |
 | [gateway](gateway/) | 网关服务 | 8080 | Spring Cloud Gateway 响应式网关，统一入口、路由转发与鉴权透传；公网只路由到端 BFF（`/admin`、`/store`、`/mall`），域服务一律 403 |
 | [goods-center](goods-center/) | 业务服务（下沉纯域） | 8081 | 标准商品平台：分类 / 品牌 / 标准 SPU-SKU 模板；不暴露公网路由，仅被 admin 等 BFF 内部 Feign 调用 |
 | [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核、**店铺商品管理**（跨店查询/详情/锁定解锁，内部 Feign → goods-center / store） |
@@ -42,9 +44,10 @@
 ```bash
 cd backend
 
-# 安装父 POM 与 common / common-auth 到本地仓库（新增/修改了父 POM 或这两个模块后需重跑）
+# 安装父 POM 与四个工具包（common / common-auth / 两个 -interface）到本地仓库
+# （新增/修改了父 POM 或这几个模块后需重跑）
 mvn -N install
-mvn -pl common,common-auth install
+mvn -pl common,common-auth,goods-center-interface,store-interface install
 
 # 全量编译打包
 mvn clean package
@@ -101,7 +104,7 @@ mall  前台(5175) ──/mall───────────────┤
 
 - 页面/BFF 对外接口统一返回 `RespData{code,msg,data}`，成功 `code=200`；业务失败 `code=400` 携带中文提示；系统异常 `code=500`。**下沉域内部接口不包 RespData**，直接返回业务类型，错误转真实 HTTP 状态 + `{code,msg}`（Feign ErrorDecoder 还原为 `ServiceException`）
 - 实体继承 `common` 的 `BaseEntity`（自动填充创建/更新时间与操作人、逻辑删除 `is_delete`），分页查询参数继承 `BasePageVO`。**操作人列为 `VARCHAR(32)`，值 `UserType:UserId`**（如 `admin:1` / `store:7` / `user:42`），类型前缀用于消歧多端身份空间
-- 页面只经网关路由到**端 BFF**（`/admin` → admin、`/store` → store-bff、`/mall` → mall-bff）；**业务域服务不暴露公网路由**，只被 BFF 经注册中心内部 Feign 调用（DTO 同源放 common、只透传身份头 `X-User-Id`/`X-User-Type` + 熔断降级，详见 CLAUDE.md「Feign 内部接口规约」与 [goods-center/README.md](goods-center/README.md) / [store/README.md](store/README.md)）
+- 页面只经网关路由到**端 BFF**（`/admin` → admin、`/store` → store-bff、`/mall` → mall-bff）；**业务域服务不暴露公网路由**，只被 BFF 经注册中心内部 Feign 调用（DTO 同源放**各域的 `<域>-interface` 模块**、只透传身份头 `X-User-Id`/`X-User-Type` + 熔断降级，详见 CLAUDE.md「Feign 内部接口规约」与 [goods-center/README.md](goods-center/README.md) / [store/README.md](store/README.md)）
 - **鉴权只到端 BFF**：`common-auth`（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`）只被 admin / store-bff / mall-bff 依赖，业务域只依赖 `common` → 域服务不装配认证链、不碰 Redis、不做任何权限判断（内部令牌 `X-Internal-Token` 已删除）。⚠ 域端口只在内网可达是前提
 - 服务内跨实体只走对方 owner service
 - 店主端接口（`/store/auth`、`/store/shops`、`/store/goods`）由 store-bff 登录鉴权后编排到 store 域（owner，store_id=账号 id）；`/store/goods/**` 额外由 BFF 校验「店铺已审核通过」（未过审 `code=403`，域内不做该判断）。平台店铺管理接口（admin 端 `/admin/shop/shops/**`）以 `@PreAuthorize` + 权限串（`store:shop:list/audit`）控制，权限种子见 `admin/db/schema.sql`；admin 不读店主账号

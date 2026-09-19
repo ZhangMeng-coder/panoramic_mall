@@ -3,7 +3,7 @@ service: admin
 layer: page
 baseUrl: /admin
 scanDirs: backend/admin/src/main/java/com/panoramic/admin/controller
-typeDirs: backend/common/src/main/java, backend/admin/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/admin/src/main/java
 -->
 
 # 平台管理端 BFF（admin）对外契约 · 第 ① 层
@@ -163,10 +163,10 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 | 来源 | 类型 |
 |---|---|
 | **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO |
-| `common`（`com.panoramic.common.goods.*` / `.store.*`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺：ShopPageQueryDTO, ShopAuditDTO, ShopVO, ShopOptionVO, StoreGoodsLockDTO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuPlatformDetailVO |
+| 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺：ShopPageQueryDTO, ShopAuditDTO, ShopVO, ShopOptionVO, StoreGoodsLockDTO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuPlatformDetailVO |
 
 > admin 与 store-bff **各持一份自己的** `LoginResultVO` / `CurrentUserVO`（不共享）—— 两端身份空间不同，属预期。
-> ⚠ `ShopPageQueryDTO` / `ShopAuditDTO` / `ShopVO` 在 `common.store`（域与 admin 共用同一份），
+> ⚠ `ShopPageQueryDTO` / `ShopAuditDTO` / `ShopVO` 在 `contract.store`（域与 admin 共用同一份），
 > 而 `ShopGoodsPageQueryDTO` 是 **admin 本地**的编排查询对象。
 
 ## 六、下游依赖（本层调谁）

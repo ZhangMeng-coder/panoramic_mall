@@ -3,7 +3,7 @@ service: mall-bff
 layer: page
 baseUrl: /mall
 scanDirs: backend/mall-bff/src/main/java/com/panoramic/mallbff/controller
-typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/mall-bff/src/main/java
 -->
 
 # 商城前台 BFF（mall-bff）· 第 ① 层
@@ -25,9 +25,9 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | `MallGoodsPageQueryDTO` / `MallFacetQueryDTO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/dto/` |
 | `CurrentUserVO` / `LoginResultVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
 | `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO` | `backend/mall-bff/src/main/java/com/panoramic/mallbff/vo/` |
-| `CategoryTreeVO` | `backend/common/src/main/java/com/panoramic/common/goods/vo/` |
-| `SpecConfigItem` / `SpecAttr` | `backend/common/src/main/java/com/panoramic/common/goods/dto/`（详情页的规格配置与 SKU 规格属性，与 store 端**同一份**类型） |
-| `PageResult` | `backend/common/src/main/java/com/panoramic/common/store/vo/` ⚠ 与 `common.goods.vo.PageResult` 同名不同包（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；本模块用的是 **store** 那个 |
+| `CategoryTreeVO` | `backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/vo/` |
+| `SpecConfigItem` / `SpecAttr` | `backend/store-interface/src/main/java/com/panoramic/contract/store/dto/`（详情页的规格配置与 SKU 规格属性）⚠ 数据**来自 store 域**（域 SKU/详情 VO 里就是这一份），故本端 VO 用的是 **store** 那份；`contract.goods.dto` 下另有一份同形同名的孪生类，**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
+| `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；本模块用的是 **store** 那个 |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
 ## 二、接口清单（9 条）
@@ -61,7 +61,7 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 | 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
 | 身份类型绑定 | 本端只接受 `type=user` 的登录态（`panoramic.auth.user-type: user`）；跨端 token（`admin` / `store`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**（见 [cross-cutting.md](./cross-cutting.md) 第 9 条） |
 | 登出 | 删除 Redis 快照即服务端下线；本地 token 由前端清除 |
-| 内部依赖 | **已启用** `@EnableFeignClients(basePackages = {"com.panoramic.common.goods", "com.panoramic.common.store"})`；分类树经 `GoodsCenterClient` 调 goods-center，商品分页 / 筛选聚合 / 详情经 `StoreClient` 调 store。编排集中在 `CatalogBffService`，统一走 `common` 的 `BffFeignCall`（下游故障降级为「…暂不可用」，业务 4xx 原样透传）。⚠ 详情走的是 store 的 **platform 侧** `platformStoreGoodsDetail`（不带 `storeId`，与 admin BFF 同一个方法）——域侧照旧不做 C 端裁决，见 [store.md](./store.md) 第三节 |
+| 内部依赖 | **已启用** `@EnableFeignClients(basePackages = {"com.panoramic.contract.goods", "com.panoramic.contract.store"})`；分类树经 `GoodsCenterClient` 调 goods-center，商品分页 / 筛选聚合 / 详情经 `StoreClient` 调 store。编排集中在 `CatalogBffService`，统一走 `common` 的 `BffFeignCall`（下游故障降级为「…暂不可用」，业务 4xx 原样透传）。⚠ 详情走的是 store 的 **platform 侧** `platformStoreGoodsDetail`（不带 `storeId`，与 admin BFF 同一个方法）——域侧照旧不做 C 端裁决，见 [store.md](./store.md) 第三节 |
 | C 端商品展示口径 | **固定在端 BFF，不在域**：调 store 的商品分页与 facets 时固定传 `shopStatus=2`（已审核通过店铺）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。域侧跨店通用接口**不含任何 C 端隐含约束**，漏传即把未过审店铺 / 平台锁定商品漏到前台（见 [cross-cutting.md](./cross-cutting.md) 第 17 条） |
 | 详情可见性 | **与列表同一不变量**（上架 + 未锁定 + 店铺已过审），故详情能打开的商品一定能在列表里搜到、反之亦然。⚠ 与列表**判定位置不同**：列表把三个条件**当查询条件传给域**，详情拿不到查询条件（按 id 取一条），只能取回后**在 BFF 逐条重判**——两处别各写一套口径，改动时一起改 |
 | 详情不可见 | 不存在 / 已下架 / 被平台锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因、也不泄露商品存在性**（区分了就是给外人一个探测商品是否存在的接口）。⚠ **下游故障不是不可见**：只有业务 4xx 走 404，熔断 / 连接失败照抛 500「…暂不可用」 |

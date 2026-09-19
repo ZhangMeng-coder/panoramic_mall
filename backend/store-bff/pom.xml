@@ -28,6 +28,17 @@
             <artifactId>common-auth</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- 内部契约：两个域的 Feign 客户端 + 同源 DTO/VO（store 域为主，goods 域取分类/品牌下拉） -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>goods-center-interface</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>store-interface</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

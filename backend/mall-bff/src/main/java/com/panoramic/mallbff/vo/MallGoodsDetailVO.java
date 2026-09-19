@@ -1,6 +1,6 @@
 package com.panoramic.mallbff.vo;
 
-import com.panoramic.common.goods.dto.SpecConfigItem;
+import com.panoramic.contract.store.dto.SpecConfigItem;
 import lombok.Data;
 
 import java.util.List;

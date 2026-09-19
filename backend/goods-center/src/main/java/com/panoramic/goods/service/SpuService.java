@@ -1,16 +1,16 @@
 package com.panoramic.goods.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.panoramic.common.goods.dto.SpuPageQueryDTO;
-import com.panoramic.common.goods.dto.SpuSaveDTO;
-import com.panoramic.common.goods.dto.SpuSkuReplaceDTO;
-import com.panoramic.common.goods.dto.SpuStatusDTO;
-import com.panoramic.common.goods.dto.SpuUpdateDTO;
+import com.panoramic.contract.goods.dto.SpuPageQueryDTO;
+import com.panoramic.contract.goods.dto.SpuSaveDTO;
+import com.panoramic.contract.goods.dto.SpuSkuReplaceDTO;
+import com.panoramic.contract.goods.dto.SpuStatusDTO;
+import com.panoramic.contract.goods.dto.SpuUpdateDTO;
 import com.panoramic.goods.entity.GoodsSpu;
-import com.panoramic.common.goods.vo.PageResult;
-import com.panoramic.common.goods.vo.SpuBySkuCodeVO;
-import com.panoramic.common.goods.vo.SpuDetailVO;
-import com.panoramic.common.goods.vo.SpuPageItemVO;
+import com.panoramic.contract.goods.vo.PageResult;
+import com.panoramic.contract.goods.vo.SpuBySkuCodeVO;
+import com.panoramic.contract.goods.vo.SpuDetailVO;
+import com.panoramic.contract.goods.vo.SpuPageItemVO;
 
 /**
  * 商品（SPU）服务

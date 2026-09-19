@@ -1,11 +1,11 @@
 package com.panoramic.admin.controller.goods;
 
 import com.panoramic.admin.bff.GoodsTemplateBffService;
-import com.panoramic.common.goods.dto.BrandPageQueryDTO;
-import com.panoramic.common.goods.dto.BrandSaveDTO;
-import com.panoramic.common.goods.dto.BrandUpdateDTO;
-import com.panoramic.common.goods.vo.BrandVO;
-import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.contract.goods.dto.BrandPageQueryDTO;
+import com.panoramic.contract.goods.dto.BrandSaveDTO;
+import com.panoramic.contract.goods.dto.BrandUpdateDTO;
+import com.panoramic.contract.goods.vo.BrandVO;
+import com.panoramic.contract.goods.vo.PageResult;
 import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.constraints.NotNull;

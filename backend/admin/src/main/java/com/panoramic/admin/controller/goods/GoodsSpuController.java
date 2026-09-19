@@ -1,14 +1,14 @@
 package com.panoramic.admin.controller.goods;
 
 import com.panoramic.admin.bff.GoodsTemplateBffService;
-import com.panoramic.common.goods.dto.SpuPageQueryDTO;
-import com.panoramic.common.goods.dto.SpuSaveDTO;
-import com.panoramic.common.goods.dto.SpuSkuReplaceDTO;
-import com.panoramic.common.goods.dto.SpuStatusDTO;
-import com.panoramic.common.goods.dto.SpuUpdateDTO;
-import com.panoramic.common.goods.vo.PageResult;
-import com.panoramic.common.goods.vo.SpuDetailVO;
-import com.panoramic.common.goods.vo.SpuPageItemVO;
+import com.panoramic.contract.goods.dto.SpuPageQueryDTO;
+import com.panoramic.contract.goods.dto.SpuSaveDTO;
+import com.panoramic.contract.goods.dto.SpuSkuReplaceDTO;
+import com.panoramic.contract.goods.dto.SpuStatusDTO;
+import com.panoramic.contract.goods.dto.SpuUpdateDTO;
+import com.panoramic.contract.goods.vo.PageResult;
+import com.panoramic.contract.goods.vo.SpuDetailVO;
+import com.panoramic.contract.goods.vo.SpuPageItemVO;
 import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.constraints.NotNull;

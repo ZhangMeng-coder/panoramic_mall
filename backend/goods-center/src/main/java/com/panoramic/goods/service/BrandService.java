@@ -1,12 +1,12 @@
 package com.panoramic.goods.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
-import com.panoramic.common.goods.dto.BrandPageQueryDTO;
-import com.panoramic.common.goods.dto.BrandSaveDTO;
-import com.panoramic.common.goods.dto.BrandUpdateDTO;
+import com.panoramic.contract.goods.dto.BrandPageQueryDTO;
+import com.panoramic.contract.goods.dto.BrandSaveDTO;
+import com.panoramic.contract.goods.dto.BrandUpdateDTO;
 import com.panoramic.goods.entity.GoodsBrand;
-import com.panoramic.common.goods.vo.BrandVO;
-import com.panoramic.common.goods.vo.PageResult;
+import com.panoramic.contract.goods.vo.BrandVO;
+import com.panoramic.contract.goods.vo.PageResult;
 
 import java.util.Collection;
 import java.util.List;

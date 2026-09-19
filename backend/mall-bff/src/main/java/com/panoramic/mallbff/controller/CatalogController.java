@@ -1,7 +1,7 @@
 package com.panoramic.mallbff.controller;
 
-import com.panoramic.common.goods.vo.CategoryTreeVO;
-import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.contract.goods.vo.CategoryTreeVO;
+import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.mallbff.dto.MallFacetQueryDTO;
 import com.panoramic.mallbff.dto.MallGoodsPageQueryDTO;

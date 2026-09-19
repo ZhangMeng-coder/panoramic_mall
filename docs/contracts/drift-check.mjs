@@ -389,7 +389,7 @@ for (const file of contractFiles) {
 
   // ── 页面级 / 内部 Feign
   const isInternal = meta.layer === 'internal';
-  const internalCols = ['Feign 方法', '方法', '路径', '入参', '出参', '契约声明(common)', '域实现', '调用方', '状态'];
+  const internalCols = ['Feign 方法', '方法', '路径', '入参', '出参', '契约声明(接口模块)', '域实现', '调用方', '状态'];
 
   // 收集该文件里所有符合列名的表
   const tables = [];

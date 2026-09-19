@@ -2,9 +2,9 @@
 service: goods-center
 layer: internal
 basePath: /internal/goods
-feignClient: backend/common/src/main/java/com/panoramic/common/goods/api/GoodsCenterClient.java
+feignClient: backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api/GoodsCenterClient.java
 implScanDirs: backend/goods-center/src/main/java/com/panoramic/goods/controller
-typeDirs: backend/common/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java
 -->
 
 # 标准商品域（goods-center）内部契约 · 第 ② 层
@@ -34,7 +34,7 @@ goods-center 的 `application.yml` 里**没有** context-path（只有 `server.p
 
 ## 二、接口清单
 
-| Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(common) | 域实现 | 调用方 | 状态 |
+| Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
 | pageBrands | GET | /brands/page | BrandPageQueryDTO | PageResult<BrandVO> | GoodsCenterClient.java:48 | BrandController.java:40 | GoodsTemplateBffService |  |
 | listBrands | GET | /brands/list | — | List<BrandVO> | GoodsCenterClient.java:51 | BrandController.java:48 | GoodsTemplateBffService, ShopGoodsBffService |  |
@@ -66,22 +66,23 @@ goods-center 的 `application.yml` 里**没有** context-path（只有 `server.p
 - ✅ 错误返回真实 HTTP 状态 + `{code,msg}`，由 `common` 的 `InternalApiErrorDecoder` → `ServiceException` 还原。
   **4xx 不计熔断失败率、5xx 计入**（[cross-cutting.md](./cross-cutting.md) 第 13 条）。
 
-## 四、类型所在包（全部在 `common`，两端引用同一份）
+## 四、类型所在包（全部在 `goods-center-interface`，两端引用同一份）
 
-包根：`backend/common/src/main/java/com/panoramic/common/goods/`
+包根：`backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/`
 
 | 包 | 类型 |
 |---|---|
 | `dto` | BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, CategorySaveDTO, CategoryUpdateDTO, SkuDTO, SpecAttr, SpecConfigItem, SpuPageQueryDTO, SpuSaveDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuUpdateDTO |
 | `vo` | BrandVO, CategoryTreeVO, PageResult, SkuVO, SpuBySkuCodeVO, SpuDetailVO, SpuPageItemVO |
 
-⚠ `common.goods.vo.PageResult` 与 `common.store.vo.PageResult` 是**两个同名独立类型**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
+⚠ `contract.goods.vo.PageResult` 与 `contract.store.vo.PageResult` 是**两个同名独立类型**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；
+本包 `dto` 里的 `SpecAttr` / `SpecConfigItem` 在 `contract.store.dto` 下另有**一份同形同名的孪生类**（2026-09-19 拆分时切成各域自持）。
 
 ## 五、Feign 客户端配套类
 
 | 类 | 职责 | 位置 |
 |---|---|---|
-| `GoodsFeignConfiguration` | 透传身份头 `X-User-Id` / `X-User-Type`（⚠ 缺 `X-User-Type` 时**回退 `admin`**） | `common/.../goods/api/GoodsFeignConfiguration.java:30-56` |
+| `GoodsFeignConfiguration` | 透传身份头 `X-User-Id` / `X-User-Type`（⚠ 缺 `X-User-Type` 时**回退 `admin`**） | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56` |
 | `InternalApiErrorDecoder` | 非 2xx `{code,msg}` → `ServiceException`（按状态码分野 4xx/5xx） | `common/.../feign/InternalApiErrorDecoder.java` |
 | `BffFeignCall` | BFF 侧统一「剥 cause 链 + 降级文案」包装 | `common/.../feign/BffFeignCall.java` |
 

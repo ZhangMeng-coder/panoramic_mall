@@ -1,10 +1,10 @@
 package com.panoramic.admin.controller.shop;
 
 import com.panoramic.admin.bff.StoreShopBffService;
-import com.panoramic.common.store.dto.ShopAuditDTO;
-import com.panoramic.common.store.dto.ShopPageQueryDTO;
-import com.panoramic.common.store.vo.PageResult;
-import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.contract.store.dto.ShopAuditDTO;
+import com.panoramic.contract.store.dto.ShopPageQueryDTO;
+import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;

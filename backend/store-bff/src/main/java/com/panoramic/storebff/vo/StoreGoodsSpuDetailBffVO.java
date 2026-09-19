@@ -1,7 +1,7 @@
 package com.panoramic.storebff.vo;
 
-import com.panoramic.common.goods.vo.SpuDetailVO;
-import com.panoramic.common.store.vo.StoreGoodsSpuDetailVO;
+import com.panoramic.contract.goods.vo.SpuDetailVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuDetailVO;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 

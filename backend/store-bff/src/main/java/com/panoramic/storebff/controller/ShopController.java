@@ -1,7 +1,7 @@
 package com.panoramic.storebff.controller;
 
-import com.panoramic.common.store.dto.ShopSaveDTO;
-import com.panoramic.common.store.vo.ShopVO;
+import com.panoramic.contract.store.dto.ShopSaveDTO;
+import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.storebff.bff.StoreShopBffService;
 import jakarta.validation.Valid;

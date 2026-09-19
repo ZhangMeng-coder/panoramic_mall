@@ -50,12 +50,12 @@ service: admin
 layer: page
 baseUrl: /admin
 scanDirs: backend/admin/src/main/java/com/panoramic/admin/controller
-typeDirs: backend/common/src/main/java, backend/admin/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/admin/src/main/java
 -->
 ```
 
 - `scanDirs`：扫这个服务的 Controller 源码，用来和表比对端点（逗号分隔多个目录）。
-- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要同时给 `common` 和**本服务自己的** dto/vo 目录（BFF 私有类型不在 `common`）。
+- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要同时给**两个接口模块**（`backend/goods-center-interface/src/main/java`、`backend/store-interface/src/main/java`）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
 
 **内部 Feign**（两端都要登记，所以既扫 Feign 声明也扫域实现）：
 
@@ -64,7 +64,7 @@ typeDirs: backend/common/src/main/java, backend/admin/src/main/java
 service: goods-center
 layer: internal
 basePath: /internal/goods
-feignClient: backend/common/src/main/java/com/panoramic/common/goods/api/GoodsCenterClient.java
+feignClient: backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api/GoodsCenterClient.java
 implScanDirs: backend/goods-center/src/main/java/com/panoramic/goods/controller
 -->
 ```
@@ -84,7 +84,7 @@ config: backend/gateway/src/main/resources/application.yml
 | 层 | 列 |
 |---|---|
 | 页面级 | `方法` `路径` `权限串` `入参` `出参` `声明位置` `状态` |
-| 内部 Feign | `Feign 方法` `方法` `路径` `入参` `出参` `契约声明(common)` `域实现` `调用方` `状态` |
+| 内部 Feign | `Feign 方法` `方法` `路径` `入参` `出参` `契约声明(接口模块)` `域实现` `调用方` `状态` |
 
 填写口径：
 
@@ -93,7 +93,7 @@ config: backend/gateway/src/main/resources/application.yml
 - **入参 / 出参**：**只要类型名**，不写 `@RequestBody` 之类的注解；泛型原样保留；无参填 `—`。
 - **状态**：**留空 = 已实现**；契约先行、代码还没写时才填 `待实现`（见下节）。只认这两个写法 + 留空，
   写别的字（`TODO`、`待实线`）会被检查器判错——打错字若被当成"已实现"，这条契约就静默消失了。
-- ⚠ **不要把 DTO 的字段抄进表里**。字段的唯一源是 `common` 里的 DTO 类；抄一份就是制造第二个会漂移的地方
+- ⚠ **不要把 DTO 的字段抄进表里**。字段的唯一源是各域接口模块（`<域>-interface`）里的 DTO 类；抄一份就是制造第二个会漂移的地方
   （违反仓库既有的「禁止各自复制一份导致漂移」）。表只登记**有哪些接口、形状是什么、类型在哪、谁在调**。
 
 > 「状态」列只适用于**页面级与内部 Feign** 两张表。网关页（`gateway.md`）的表格由检查器的**网关专项**核对
@@ -116,7 +116,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 `待实现` 行**只校验路径 / 方法 / 权限串的写法**（防手滑打错），**不查**入出参类型是否存在、
 权限串是否已在 `sys_permission` 种子里 —— 契约先行时这些本来也还没写，查了必然报错，那契约就落不了盘。
-待实现行的 `声明位置` / `契约声明(common)` / `域实现` 填 `—`（代码不存在，写计划落点只会变成新的漂移点）。
+待实现行的 `声明位置` / `契约声明(接口模块)` / `域实现` 填 `—`（代码不存在，写计划落点只会变成新的漂移点）。
 
 ## 维护规则（三条硬性）
 

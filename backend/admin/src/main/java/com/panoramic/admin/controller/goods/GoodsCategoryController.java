@@ -1,9 +1,9 @@
 package com.panoramic.admin.controller.goods;
 
 import com.panoramic.admin.bff.GoodsTemplateBffService;
-import com.panoramic.common.goods.dto.CategorySaveDTO;
-import com.panoramic.common.goods.dto.CategoryUpdateDTO;
-import com.panoramic.common.goods.vo.CategoryTreeVO;
+import com.panoramic.contract.goods.dto.CategorySaveDTO;
+import com.panoramic.contract.goods.dto.CategoryUpdateDTO;
+import com.panoramic.contract.goods.vo.CategoryTreeVO;
 import com.panoramic.common.valid.ValidationGroups;
 import com.panoramic.common.vo.RespData;
 import jakarta.validation.constraints.NotNull;

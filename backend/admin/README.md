@@ -96,6 +96,6 @@
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - **熔断**：`resilience4j.circuitbreaker.configs.default.ignore-exceptions` 必须含 `com.panoramic.common.exception.ServiceException`（业务 4xx 不计失败率），否则店主/管理员连续几次操作失误就会打开熔断、把后续**正常**请求降级成 500。语义见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 13 条
-- `@EnableFeignClients` 扫描 `com.panoramic.common.goods` 与 `com.panoramic.common.store`
+- `@EnableFeignClients` 扫描 `com.panoramic.contract.goods` 与 `com.panoramic.contract.store`
 - 响应结构：成功 `code=200`；业务失败 `code=400` 携带中文提示；系统异常 / 下游不可用 `code=500`
 - 前端 `frontend/admin`（5173）经 Vite dev proxy 走网关
