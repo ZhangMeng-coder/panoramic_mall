@@ -495,6 +495,19 @@
   font-size: var(--t-md);
 }
 
+/* 库存文案：**只在选中 SKU 后出现**——未选定时价格区给的是区间/起价，此时不臆造库存。
+   售罄只改文案与颜色，规格值**照样可点选**（售罄不是禁用理由）。 */
+.detail__stock {
+  margin-top: var(--s-3);
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.detail__stock.is-sold-out {
+  color: var(--danger);
+  font-weight: var(--w-medium);
+}
+
 .detail__meta {
   display: flex;
   flex-direction: column;

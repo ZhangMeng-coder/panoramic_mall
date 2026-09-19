@@ -314,21 +314,3 @@ watch(goodsId, (id) => void load(id), { immediate: true })
 
   <SiteFooter />
 </template>
-
-<!--
-  本页唯一的 SFC 内样式块。整站的样式基准仍在 src/styles/catalog.css，
-  这两条规则留在这里只是因为本次改动只允许动本文件（catalog.css 不在改动清单内）。
-  ⚠ 色值 / 间距仍**只消费 tokens.css 的令牌**，不硬编码；不写媒体查询（本工程只做宽屏）。
--->
-<style scoped>
-.detail__stock {
-  margin-top: var(--s-3);
-  color: var(--n600);
-  font-size: var(--t-sm);
-}
-
-.detail__stock.is-sold-out {
-  color: var(--danger);
-  font-weight: var(--w-medium);
-}
-</style>
