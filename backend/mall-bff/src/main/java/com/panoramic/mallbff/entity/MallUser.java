@@ -14,6 +14,10 @@ import lombok.EqualsAndHashCode;
  * userType（admin/store/user）经 Redis 键与 JWT type claim 隔离，不产生 id 冲突。
  * 「账号即手机号」：phone 是登录账号（唯一），username 不是独立列——导出到 LoginUser 快照与
  * CurrentUserVO 时 username 与 phone 同值（见 AuthService）。</p>
+ * <p>⚠ <b>本表不再持昵称</b>：{@code nickname} 列已迁至 customer-center 的 {@code customer_profile}
+ * （本类对应的字段同步摘除——列删掉后实体若仍留字段，MyBatis-Plus 生成的 {@code SELECT} 仍会带上它，
+ * 登录/注册会在运行时报「Unknown column」，而编译与契约检查都看不见）。
+ * 昵称/头像/性别/生日一律经 {@code CustomerProfileBffService} 读写，见 docs/contracts/customer-center.md。</p>
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -38,11 +42,6 @@ public class MallUser extends BaseEntity {
      */
     @TableField(select = false)
     private String password;
-
-    /**
-     * 昵称
-     */
-    private String nickname;
 
     /**
      * 状态：1 启用，0 停用
