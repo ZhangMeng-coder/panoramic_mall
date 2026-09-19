@@ -9,9 +9,16 @@ export interface CurrentUser {
   id: number
   /** 账号即手机号：后端把手机号同时填进 username 与 phone，两者同值 */
   username: string
+  /** 昵称；资料为空时后端**回退为手机号**（兜底只在 /auth/me 一处，前端不再判一次） */
   nickname: string
+  /** 头像 URL；资料不可用时为空 */
+  avatar: string | null
+  /** 性别：0 未知 / 1 男 / 2 女；资料不可用时为空 */
+  gender: number | null
+  /** 生日；资料不可用时为空。后端是 LocalDate，本端 JSON 里就是 `YYYY-MM-DD` 或 null */
+  birthday: string | null
   phone: string
-  /** C 端不接 RBAC，恒为空数组（字段保留是为了与另两端同构） */
+  /** 顾客账号无 RBAC 权限维度，恒为空数组（C 端不接 RBAC） */
   perms: string[]
 }
 
@@ -32,4 +39,18 @@ export interface RegisterPayload {
   phone: string
   code: string
   nickname?: string
+}
+
+/**
+ * 换绑手机号请求体（对齐 ChangePhoneDTO）—— **双验证**：旧号码与新号码各一个验证码。
+ * 字段名逐字如此（`oldCode` / `newPhone` / `newCode`），别改名也别加「旧手机号」入参：
+ * 旧号由服务端从登录态取，前端传不了、也不需要传。
+ */
+export interface ChangePhonePayload {
+  /** 当前手机号收到的验证码 */
+  oldCode: string
+  /** 要换绑到的新手机号 */
+  newPhone: string
+  /** 新手机号收到的验证码 */
+  newCode: string
 }

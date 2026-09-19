@@ -22,7 +22,7 @@ export const LOGIN_REQUIRED_MSG = '请先登录'
  * 调用面允许的额外配置：`silent401` 让**指定的**请求在 401 时既不提示也不跳登录页。
  * 不用 axios 的模块增强（那要写 `<D = any>`），而是自家 interface 继承 + 拦截器里一次收窄转换。
  */
-interface ApiRequestConfig extends AxiosRequestConfig {
+export interface ApiRequestConfig extends AxiosRequestConfig {
   /** 401 静默：只清本地登录态，不弹提示、不跳登录页（唯一使用者见 sessionExpired 注释） */
   silent401?: boolean
 }
@@ -118,11 +118,13 @@ instance.interceptors.response.use(
 
 /**
  * 解包后的调用面：`request.get<T>()` 直接拿到业务数据 `T`，`RespData` 外壳由拦截器校验、这里剥掉。
- * 当前 5 条账号接口只用到 get / post；将来加 put / delete 时在这里补一个方法即可。
+ * 四个方法形状一致（`put` / `delete` 同样剥 `res.data.data`），调用方拿到的就是 `data` 本身。
  */
 interface ApiClient {
   get<T>(url: string, config?: ApiRequestConfig): Promise<T>
   post<T>(url: string, data?: unknown, config?: ApiRequestConfig): Promise<T>
+  put<T>(url: string, data?: unknown, config?: ApiRequestConfig): Promise<T>
+  delete<T>(url: string, config?: ApiRequestConfig): Promise<T>
 }
 
 export const request: ApiClient = {
@@ -132,6 +134,14 @@ export const request: ApiClient = {
   },
   async post<T>(url: string, data?: unknown, config?: ApiRequestConfig): Promise<T> {
     const res = await instance.post<RespData<T>>(url, data, config)
+    return res.data.data
+  },
+  async put<T>(url: string, data?: unknown, config?: ApiRequestConfig): Promise<T> {
+    const res = await instance.put<RespData<T>>(url, data, config)
+    return res.data.data
+  },
+  async delete<T>(url: string, config?: ApiRequestConfig): Promise<T> {
+    const res = await instance.delete<RespData<T>>(url, config)
     return res.data.data
   }
 }

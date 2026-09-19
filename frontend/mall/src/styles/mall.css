@@ -52,13 +52,18 @@
   text-decoration: underline;
 }
 
-.topbar__logout {
+/* 「个人中心 / 退出」是一对账号操作：都压成次要灰、hover 才起主色，
+   与左侧「请登录 / 免费注册」（常驻主色）区分开——否则 34px 的高度里挤三种颜色 */
+.topbar__logout,
+.topbar__center {
   color: var(--n600);
   font-weight: var(--w-regular);
 }
 
-.topbar__logout:hover {
+.topbar__logout:hover,
+.topbar__center:hover {
   color: var(--brand);
+  text-decoration: underline;
 }
 
 /* ---- 右：首页 / 购物车 / 我的订单 ---- */
@@ -479,17 +484,24 @@
   box-shadow: var(--sh-sm);
 }
 
+/* 头像位：有真实 `avatar` 时铺满圆形；无头像（或未登录）时只剩这层 CSS 渐变占位，不塞替代图形 */
 .usercard__avatar {
   flex: none;
   display: grid;
   place-items: center;
   width: 64px;
   height: 64px;
+  overflow: hidden;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--brand-soft-2), var(--brand-soft));
-  font-size: 30px;
-  line-height: 1;
   box-shadow: inset 0 0 0 3px var(--n0), var(--sh-sm);
+}
+
+/* 裁成圆形靠父级 overflow（图片自身不写 border-radius，方图才不会在圆外露角） */
+.usercard__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .usercard__main {

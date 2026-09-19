@@ -54,6 +54,25 @@ const routes = [
     component: () => import('../views/GoodsDetailView.vue'),
     meta: { title: '商品详情', requiresAuth: true }
   },
+  // 个人中心：**二级结构**——父路由挂「左菜单 + 右内容」的外壳，内容各页是它的 children。
+  // 顾客自己的数据一律要登录态（与「一涉及顾客数据就要登录」一致），故父子两级都标 requiresAuth。
+  {
+    path: '/account',
+    component: () => import('../views/account/AccountLayout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      // 只写 `/account` 时落到默认页，免得右栏空着（菜单里没有指向父路径的项）
+      { path: '', redirect: '/account/profile' },
+      {
+        path: 'profile',
+        name: 'account-profile',
+        component: () => import('../views/account/ProfileView.vue'),
+        meta: { title: '个人资料', requiresAuth: true }
+      }
+      // ⚠ 收货地址（`addresses`）是同一批的另一条任务落的 child，届时加在这里；
+      // AccountLayout 的菜单已按最终路径给出入口
+    ]
+  },
   // 兜底：未匹配路径回首页
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
@@ -80,7 +99,7 @@ function loginLocation(fullPath: string) {
  *    提示一并在这里弹：用户点了分类却被弹走，得知道为什么。
  * 2) 已登录（有 token）还去登录 / 注册页 → 回来源页，没有则回首页；
  * 3) 有 token 但内存里没有用户态（**刷新场景**）→ 拉 /auth/me 重建。
- *    这次调用带 `silent401`（见 `authApi.me()`），失败**只清本地态、不提示不跳转**——
+ *    这次调用带 `silent401`（见下方调用处），失败**只清本地态、不提示不跳转**——
  *    公开首页上的重建失败不该把游客弹去登录页，「未登录」对 mall 本就是合法状态；
  *    **需登录页上「会话真没了」时由这里自己跳登录页**（见下方 catch 的两类分述）。
  *
@@ -100,7 +119,9 @@ router.beforeEach(async (to) => {
 
   if (token && !getUser()) {
     try {
-      setUser(await authApi.me())
+      // ⚠ `silent401` 只在**这一处**传：这里是「刷新时顺手重建」，失败不该有副作用。
+      // 别处（资料保存后刷新 store 等）走不带 silent401 的普通调用。
+      setUser(await authApi.me({ silent401: true }))
     } catch {
       // 重建失败分两类，**处理必须分开**：
       //

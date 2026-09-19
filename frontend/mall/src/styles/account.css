@@ -1,5 +1,5 @@
 /* ============================================================================
-   Account — 账号页（登录 / 注册）+ 全局轻提示条
+   Account — 账号页（登录 / 注册）+ 个人中心（二级结构）+ 全局轻提示条
    ----------------------------------------------------------------------------
    只消费 tokens.css 的令牌：**禁止硬编码色值 / 圆角 / 阴影**。
    视觉语言沿用首页既有区块：输入框照 .search__box、主按钮照 .search__btn、
@@ -93,6 +93,14 @@
   color: var(--n400);
 }
 
+/* 保留控件自带外观的输入（目前只有生日的 `<input type="date">`）：
+   上面那句 `appearance: none` 会把日期控件自带的日历按钮一起去掉，这里显式恢复，
+   免得生日只能手打 `YYYY-MM-DD`。 */
+.field__input--native {
+  -webkit-appearance: auto;
+  appearance: auto;
+}
+
 /* 取码按钮：贴在输入框右侧的次级按钮（主按钮留给提交） */
 .field__code {
   flex: none;
@@ -176,6 +184,212 @@
 .account__switch a:hover {
   color: var(--brand-hover);
   text-decoration: underline;
+}
+
+/* ============================================================================
+   个人中心 —— 左菜单 + 右内容的**二级结构**（新增视觉区块）
+   ----------------------------------------------------------------------------
+   版面：1280 容器 = 侧栏 200 + 间隔 24 + 右面板 1056。
+   区块内只用既有视觉语言，不新造一套：面板 = 白底 + n200 细边 + r-lg（照 .usercard）；
+   输入框复用上面的 .field*；当前所在页的**主色条**沿用首页 .section-head__title 的手法
+   （全页只有这一处强调，其余保持安静）。
+   收货地址页复用同一份，不要各页各写一套。
+   ========================================================================== */
+
+.acct {
+  padding: var(--s-8) 0 var(--s-16);
+  background: var(--n50);
+}
+
+.acct__grid {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-6);
+}
+
+/* 两侧都是同一张卡：白底 + 细边 + 大圆角（照首页 .usercard），不新造面板样式 */
+.acct__side,
+.acct__main {
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+/* ---- 左：菜单 ---- */
+
+.acct__side {
+  flex: none;
+  width: 200px;
+  padding: var(--s-3);
+}
+
+.acct__menu-item {
+  position: relative;
+  display: block;
+  padding: 10px var(--s-4) 10px var(--s-5);
+  border-radius: var(--r-md);
+  color: var(--n700);
+  font-size: var(--t-base);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.acct__menu-item:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+/* 当前所在页：柔色底 + 主色字 + 左侧主色条（整页唯一一处强调） */
+.acct__menu-item.is-on {
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+.acct__menu-item.is-on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: var(--r-sm);
+  background: var(--brand);
+  transform: translateY(-50%);
+}
+
+/* ---- 右：内容面板 ---- */
+
+.acct__main {
+  flex: 1;
+  min-width: 0;
+  padding: var(--s-8);
+}
+
+/* 页标题与账号页（登录 / 注册）同级：整块账号区只有一个「页标题」字号 */
+.acct__title {
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  color: var(--n900);
+}
+
+.acct__desc {
+  margin-top: var(--s-1);
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 面板内的分组：细线分隔 + 组标题，不装进第二层卡片（面板本身已是卡片） */
+.acct__section {
+  margin-top: var(--s-8);
+  padding-top: var(--s-6);
+  border-top: 1px solid var(--n200);
+}
+
+.acct__section-title {
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+/* 表单列：面板很宽，输入行不跟着铺满（一行字太长反而难读），固定一列窄栏 */
+.acct__form {
+  max-width: 420px;
+  margin-top: var(--s-5);
+}
+
+/* 头像：预览圆 + 右侧字段（无图时就是这层渐变圆，不引外部图片 / 字体） */
+.acct__avatar-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-5);
+}
+
+.acct__avatar {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-soft-2), var(--brand-soft));
+  box-shadow: inset 0 0 0 3px var(--n0), var(--sh-sm);
+}
+
+.acct__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.acct__avatar-side {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 字段下的灰字说明（如「留空则…」）：比 .account__tip 更贴字段，不参与表单流 */
+.field__hint {
+  margin-top: var(--s-2);
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+/* 性别三选一：单行分段控件（原生 radio 藏在 .sr-only 里，焦点环画在可见的胶囊上） */
+.seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--n100);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+}
+
+.seg__item {
+  cursor: pointer;
+}
+
+.seg__opt {
+  display: block;
+  min-width: 76px;
+  height: 34px;
+  line-height: 34px;
+  border-radius: var(--r-sm);
+  color: var(--n600);
+  font-size: var(--t-base);
+  text-align: center;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.seg__item:hover .seg__opt {
+  color: var(--brand);
+}
+
+/* 选中态：白底浮起（嵌在灰槽里），与首页卡片的「浮起」观感同源 */
+.seg__item :checked + .seg__opt {
+  background: var(--n0);
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+  box-shadow: var(--sh-sm);
+}
+
+.seg__item:focus-within .seg__opt {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* 换绑区顶部的「当前手机号」只读行 */
+.acct__current {
+  margin-bottom: var(--s-4);
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.acct__current b {
+  color: var(--n900);
+  font-weight: var(--w-semibold);
 }
 
 /* ============================================================================

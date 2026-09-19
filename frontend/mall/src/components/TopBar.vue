@@ -40,6 +40,10 @@ async function logout(): Promise<void> {
           <template v-else>你好，<router-link class="topbar__login" to="/login">请登录</router-link></template>
         </span>
         <span class="topbar__divider"></span>
+        <!-- 个人中心：登录态下才有的入口（未登录态形态不动：请登录 / 免费注册） -->
+        <router-link v-if="loggedIn" class="topbar__center" to="/account/profile">
+          个人中心
+        </router-link>
         <a v-if="loggedIn" class="topbar__logout" href="#" @click.prevent="logout">退出</a>
         <router-link v-else class="topbar__reg" to="/register">免费注册</router-link>
       </div>
