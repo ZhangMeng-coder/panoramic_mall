@@ -96,8 +96,9 @@ export interface GoodsDetail {
   mainImage: string | null
   imageList: string[] | null
   /**
-   * 商品详情**原文**（店主在 store 端用 textarea 录入的自由文本，可能含 HTML 标签）。
-   * ⚠ 前端**按纯文本渲染**，不得 v-html —— 那等于让店主往 C 端页面注入脚本。
+   * 商品详情**HTML**（店主自由录入的富文本，两端录入框提示语即「支持 HTML」）。
+   * ⚠ 这份是**已消毒**的：mall-bff 下发前按白名单清洗过（剥脚本 / 事件属性 / 样式），
+   * 故按 HTML 渲染（`v-html`）是对的；别改回 `{{ }}` 插值（店主写的 `<p>` 会原样露出来）。
    */
   description: string | null
   specConfig: SpecConfigItem[] | null

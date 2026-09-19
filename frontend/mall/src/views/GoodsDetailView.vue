@@ -16,9 +16,11 @@ import { priceParts } from '../utils/format'
  * ① **可见性由后端一处判定**：不存在 / 已下架 / 被平台锁定 / 店铺未过审，BFF 一律回
  *    404「商品不存在或已下架」，**不区分原因**。本页拿到什么 msg 就显示什么 msg，
  *    不在前端重判一遍可见性（那会造出第二份会漂移的口径）。
- * ② **商品详情按纯文本渲染**：`description` 是店主在 store 端 textarea 里自由录入的
- *    （库里按富文本存，可能带 HTML）。用 `{{ }}` 插值 + `white-space: pre-wrap` 保留换行，
- *    **不用 v-html** —— v-html 等于让店主往 C 端页面注入脚本。
+ * ② **商品详情按 HTML 渲染**：`description` 是店主自由录入的**富文本**（store / admin 两端的
+ *    录入框提示语就是「支持 HTML」，库列注释也是「商品详情（富文本）」），故这里 `v-html` 渲染。
+ *    安全性由**后端出口**兜住 —— mall-bff 下发前已按白名单清洗（剥脚本 / 事件属性 / 样式，
+ *    见 `CatalogBffService#sanitizeDescription`），本页**不需要、也不得**自己再拼一遍 HTML。
+ *    ⚠ 别改回 `{{ }}` 插值：那样店主写的 `<p>` 会原样露在页面上。
  * ③ **不做「加入购物车 / 立即购买」**：后端没有购物车与下单接口（顶栏那两个入口也还是死链），
  *    摆一个点了没反应的按钮比不摆更糟，故只在信息区写一行说明。
  */
@@ -280,10 +282,10 @@ watch(goodsId, (id) => void load(id), { immediate: true })
           </div>
         </div>
 
-        <!-- 下：商品详情正文（纯文本渲染，保留换行；不用 v-html，见文件头 ②） -->
+        <!-- 下：商品详情正文（HTML 渲染；内容已由 mall-bff 出口消毒，见文件头 ②） -->
         <section class="detail__desc">
           <h2 class="detail__desc-title">商品详情</h2>
-          <p v-if="goods.description" class="detail__desc-body">{{ goods.description }}</p>
+          <div v-if="goods.description" class="detail__desc-body" v-html="goods.description"></div>
           <p v-else class="detail__desc-empty">店主未填写商品详情</p>
         </section>
       </template>

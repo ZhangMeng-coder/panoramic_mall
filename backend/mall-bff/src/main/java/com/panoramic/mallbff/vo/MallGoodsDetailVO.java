@@ -14,8 +14,9 @@ import java.util.List;
  * 由 {@code CatalogBffService#toMallDetail} 逐字段手工映射裁剪出本形状，域 VO 日后加字段不会自动漏到 C 端。</p>
  * <p><b>可见性口径与列表一致</b>（同一不变量）：上架 + 未被平台锁定 + 店铺已审核通过，否则接口回
  * 404「商品不存在或已下架」。故能拿到本对象的商品，一定也能在列表里被搜到。</p>
- * <p>⚠ {@code description} 是<b>店主自由录入的文本</b>（库里按富文本 HTML 存），前端
- * <b>不得用 v-html 渲染</b>——那等于让店主往 C 端页面注入脚本。按纯文本渲染（保留换行）。</p>
+ * <p>⚠ {@code description} 是<b>店主自由录入的富文本</b>（库里按 HTML 存），出参前已由
+ * {@code CatalogBffService#sanitizeDescription} 按白名单清洗——前端按 HTML 渲染（{@code v-html}）
+ * 是安全的，因为消毒点收在本端出口这一处。</p>
  */
 @Data
 public class MallGoodsDetailVO {
@@ -41,7 +42,7 @@ public class MallGoodsDetailVO {
     private List<String> imageList;
 
     /**
-     * 商品详情描述（店主录入的富文本原文，⚠ 前端按纯文本渲染，不得 v-html）
+     * 商品详情描述（店主录入的富文本，**已按白名单清洗**，前端可按 HTML 渲染）
      */
     private String description;
 

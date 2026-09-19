@@ -23,6 +23,9 @@ import com.panoramic.mallbff.vo.MallGoodsItemVO;
 import com.panoramic.mallbff.vo.MallGoodsSkuVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.safety.Safelist;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -55,6 +58,9 @@ import java.util.stream.Collectors;
  * 降级为友好提示，见 {@link BffFeignCall}。分类树对 {@link #goods}/{@link #facets} 只是<b>增强</b>
  * （用于子树展开与筛选名解析），故那条路径单独吞异常降级为「无树」；而 {@link #categories()}
  * 是首页宫格的主内容，拿不到就让异常抛出（前端整块不渲染）。</p>
+ *
+ * <p><b>店主录入的富文本在这条出口上消毒</b>：商品详情是店主自由录入的 HTML（域侧原样存取、
+ * 不清洗），故 {@link #toMallDetail} 下发前按白名单洗一遍，见 {@link #sanitizeDescription}。</p>
  */
 @Slf4j
 @Service
@@ -80,6 +86,18 @@ public class CatalogBffService {
     private static final Integer SHELF_ON = 1;
     /** C 端固定展示口径：未被平台锁定 */
     private static final Integer LOCK_OFF = 0;
+
+    /**
+     * 商品详情富文本的白名单：只留排版类标签，脚本 / 事件属性 / 样式属性一并剥掉。
+     * <p>用 {@link Safelist#relaxed()} 而不是 {@code basic()}：店主在详情里放图、列表、
+     * 表格是电商常态；{@code relaxed} 已剥掉 {@code script} 与 {@code on*} 事件属性，
+     * 并对 {@code a[href]} / {@code img[src]} 强制协议白名单（{@code javascript:} 取不出来）。</p>
+     */
+    private static final Safelist DESC_SAFELIST = Safelist.relaxed();
+
+    /** 清洗输出**不重排**：默认的 prettyPrint 会插缩进与换行，把店主排好的正文改样 */
+    private static final Document.OutputSettings DESC_OUTPUT =
+            new Document.OutputSettings().prettyPrint(false);
 
     private final GoodsCenterClient goodsCenterClient;
     private final StoreClient storeClient;
@@ -506,6 +524,10 @@ public class CatalogBffService {
      * 等管理端或内部字段，<b>域返回的字段不等于可以对外暴露</b>；手工映射保证域 VO 日后加字段
      * 不会自动漏到 C 端。</p>
      *
+     * <p>{@code description} 另有一道<b>消毒</b>：它是店主自由录入的富文本（前端提示语即
+     * 「支持 HTML」、库列注释为「商品详情（富文本）」），域侧原样存取、不清洗，故在这条出口上
+     * 按白名单洗一遍再下发，见 {@link #sanitizeDescription}。</p>
+     *
      * @param src 域详情（已判定为对本端可见）
      * @return C 端详情
      */
@@ -515,7 +537,7 @@ public class CatalogBffService {
         vo.setName(src.getName());
         vo.setMainImage(src.getMainImage());
         vo.setImageList(src.getImageList());
-        vo.setDescription(src.getDescription());
+        vo.setDescription(sanitizeDescription(src.getDescription()));
         vo.setSpecConfig(src.getSpecConfig());
         vo.setStoreId(src.getStoreId());
         // storeName 由域填充（域持 store_shop）；域没填时回退空串，前端按空值不渲染店铺行
@@ -526,6 +548,51 @@ public class CatalogBffService {
         vo.setBrandName(src.getBrandName());
         vo.setSkus(toMallSkus(src.getSkus()));
         return vo;
+    }
+
+    /**
+     * 店主录入的商品详情 → 可安全渲染的 HTML。
+     *
+     * <p><b>为什么要洗</b>：店主的输入不可信，而 C 端是公网、给买家看的页面 —— 原样下发再
+     * {@code v-html} 等于把页面交给店主注入。消毒点选在<b>端 BFF 的出口</b>（而不是域、也不是前端）：
+     * 出口只有一个，今天的前端与将来的其它 C 端形态都取这一份；前端若各自去引清洗库，
+     * 漏一个就是一处 XSS。见 docs/contracts/cross-cutting.md 第 21 条。</p>
+     *
+     * <p><b>纯文本不是特例，是默认形态之一</b>：存量描述里可能一个标签都没有（店主就当纯文本框写、
+     * 靠换行分段）。那种内容直接清洗会把换行折成空格、整段挤成一坨，故先判有没有标签：
+     * 没有则转义 + 换行折 {@code <br>}，两类都汇到同一套白名单清洗。出口形状统一是「安全的 HTML」，
+     * 前端一种渲染方式覆盖。</p>
+     *
+     * @param raw 域返回的原始富文本（可空）
+     * @return 已清洗的 HTML；入参为空时原样返回（前端有「店主未填写商品详情」的分支）
+     */
+    private static String sanitizeDescription(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return raw;
+        }
+        String source = looksLikeHtml(raw) ? raw : plainTextToHtml(raw);
+        // baseUri 传空串（也是 Jsoup 单参 clean() 的默认值）：本服务不知道「这段内容原本来自哪个
+        // 页面」，拿自己的地址去填，只会让相对地址解析到一个与本字段无关的地方
+        return Jsoup.clean(source, "", DESC_SAFELIST, DESC_OUTPUT);
+    }
+
+    /**
+     * 判入参是不是「带标签的 HTML」：解析成片段后**有元素子节点**即算。
+     * <p>用解析器判而不是正则：正则判 {@code <p>} 既会漏（{@code <div class="x">}）也会误
+     * （店主正文里写「a &lt; b」），而解析器对两者的处理正是我们要的 —— 后者会落成文本节点。</p>
+     */
+    private static boolean looksLikeHtml(String raw) {
+        return !Jsoup.parseBodyFragment(raw).body().children().isEmpty();
+    }
+
+    /**
+     * 纯文本 → HTML 片段：先转义，再把换行折成 {@code <br>}。
+     * <p>顺序不能反 —— 先插 {@code <br>} 再转义会把尖括号自己转掉。只转义 {@code & < >}：
+     * 引号只在属性里有含义，而这里构造不出属性。</p>
+     */
+    private static String plainTextToHtml(String raw) {
+        String escaped = raw.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return escaped.replaceAll("\\r\\n|\\r|\\n", "<br>");
     }
 
     /**

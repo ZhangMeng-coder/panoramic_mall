@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 20 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 21 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -264,6 +264,19 @@ layer: cross-cutting
 | 4xx/5xx 分野 | **只有业务 4xx**（400/403/404）才转成 404；`BffFeignCall` 的熔断/连接降级是 `ServiceException(500, …)`，**照抛**——否则下游一抖，「商品服务挂了」会被伪装成「商品已下架」（第 13 条在本场景的延伸） |
 | 破坏后果 | 详情漏判某一条件 → 平台锁定 / 未过审店铺的商品可被 `/goods/{id}` 直接打开（列表搜不到，但 id 可枚举）；把 5xx 也当 404 → 下游故障时全站商品看起来都下架了 |
 | 核对方式 | **人工核对**（可见性重判无法用静态哨兵表达） |
+
+---
+
+### 21. 富文本字段：写入侧原样存，**消毒在消费端 BFF 的出口**（⚠ **已知风险**：admin 端尚未消毒）
+
+| | |
+|---|---|
+| 契约 | store 域的富文本列（当前是 `store_goods_spu.description`）是**店主自由录入的 HTML**（store / admin 两端的录入框提示语就是「支持 HTML」、库列注释是「商品详情（富文本）」）：**域侧原样存取、不清洗，也不做任何内容裁决**。渲染它的消费端 BFF **必须在自己出口按白名单清洗**，出参即「可直接渲染的 HTML」。消毒点为什么在 BFF、不在域也不在前端：域侧不持身份、拿不到「这一份给谁看」；前端各自去引清洗库，漏一个就是一处 XSS。⚠ 店主输入**不可信** —— 原样下发再 `v-html`，等于把渲染它的那个页面交给店主注入 |
+| 定义位置 | 域侧列：`store/src/main/resources/db/*.sql`（`store_goods_spu.description`）；清洗点：mall-bff `CatalogBffService#sanitizeDescription`（`Safelist.relaxed`：剥 `script` / `on*` 事件属性 / `style`，`a[href]` 限 ftp/http/https/mailto、`img[src]` 限 http/https；无标签的纯文本折成 `<br>` 后走同一套清洗，出口形状统一是 HTML） |
+| 消费位置 | ① mall-bff `CatalogBffService#toMallDetail` —— **已洗**；② admin BFF `ShopGoodsBffService#detailGoods`（直接回域 VO）+ `frontend/admin/src/views/shopgoods/ShopGoodsDetail.vue` 的 `v-html` —— **未洗，见下「已知风险」**；③ store 端只作**录入**（textarea），不渲染 |
+| ⚠ 已知风险 | **店主 → 平台管理员的存储型 XSS**：店主在 store 端把 `<img src=x onerror=…>` 当描述存下（域侧原样存），平台管理员打开「店铺商品管理 → 商品详情」即在自己的会话里执行店主脚本 —— admin 的 token 在 localStorage，等同于店主提权到平台账号。修法：admin BFF 出口套同一套清洗（推荐把白名单下沉成 `common` 的共用件，两处共用一份策略，避免口径漂移）。**本次只登记，未修** |
+| 破坏后果 | 去掉清洗 → 渲染该字段的页面被店主注入（见上「已知风险」已在 admin 端发生）；改回 `{{ }}` 纯文本插值 → 店主写的 `<p>` 原样露在页面上（2026-09-19 的一次真实回退）；新增端形态（小程序 / APP）若不在自己的出口自洗一遍，同样中招 —— 域侧不会替它洗 |
+| 核对方式 | **人工核对**（白名单策略无法用静态哨兵表达） |
 
 ---
 

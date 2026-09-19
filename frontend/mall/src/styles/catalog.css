@@ -606,8 +606,72 @@
   color: var(--n700);
   font-size: var(--t-base);
   line-height: 1.8;
-  white-space: pre-wrap; /* 店主录入的换行照原样显示 */
   word-break: break-word; /* 长 URL / 无空格串不撑破卡片 */
+}
+
+/* 正文是店主录入的 HTML（已由 mall-bff 出口消毒，见 GoodsDetailView.vue 文件头 ②）。
+   这里只做「别撑破 1280 容器 + 别和页面风格打架」的兜底，不重定义富文本 —— 店主贴什么标签、
+   浏览器默认怎么排就怎么排。
+   ⚠ 不要加回 white-space: pre-wrap：标签之间的源码换行会被它渲染成一片空行。
+   纯文本描述由后端折成 <br>，这里不需要为换行做任何事。 */
+.detail__desc-body > :first-child {
+  margin-top: 0;
+}
+
+.detail__desc-body > :last-child {
+  margin-bottom: 0;
+}
+
+.detail__desc-body h1,
+.detail__desc-body h2,
+.detail__desc-body h3,
+.detail__desc-body h4,
+.detail__desc-body h5,
+.detail__desc-body h6 {
+  margin: var(--s-5) 0 var(--s-2);
+  color: var(--n900);
+  font-weight: var(--w-semibold);
+  line-height: 1.4;
+}
+
+.detail__desc-body h1 {
+  font-size: var(--t-lg);
+}
+
+.detail__desc-body h2 {
+  font-size: var(--t-md);
+}
+
+.detail__desc-body h3,
+.detail__desc-body h4,
+.detail__desc-body h5,
+.detail__desc-body h6 {
+  font-size: var(--t-base);
+}
+
+.detail__desc-body ul,
+.detail__desc-body ol {
+  padding-left: var(--s-5);
+}
+
+.detail__desc-body a {
+  color: var(--brand);
+}
+
+.detail__desc-body img {
+  max-width: 100%; /* 店主贴的大图不撑破卡片 */
+  height: auto;
+}
+
+.detail__desc-body table {
+  max-width: 100%;
+  border-collapse: collapse;
+}
+
+.detail__desc-body th,
+.detail__desc-body td {
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--n200);
 }
 
 .detail__desc-empty {
