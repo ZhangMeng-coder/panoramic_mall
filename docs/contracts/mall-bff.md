@@ -3,7 +3,7 @@ service: mall-bff
 layer: page
 baseUrl: /mall
 scanDirs: backend/mall-bff/src/main/java/com/panoramic/mallbff/controller
-typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/mall-bff/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/common/src/main/java, backend/mall-bff/src/main/java
 -->
 
 # 商城前台 BFF（mall-bff）· 第 ① 层

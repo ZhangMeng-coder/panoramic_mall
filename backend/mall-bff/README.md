@@ -20,7 +20,7 @@
 | 与谁**互不调用** | admin / store-bff | 三端身份空间彼此隔离 |
 
 `@EnableFeignClients` 扫两个包：`com.panoramic.contract.goods`（`GoodsCenterClient`）与 `com.panoramic.contract.store`（`StoreClient`），
-编排集中在 `service/CatalogBffService`；Feign 出参 DTO 与域侧**同源于 `common`**，本模块不复制一份。
+编排集中在 `service/CatalogBffService`；Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`contract.goods.*` / `contract.store.*`），本模块不复制一份。
 
 本层依赖 `common-auth`（`JwtService` / `LoginUserCacheService` / `SecurityConfig` / `AuthTokenFilter`）做鉴权——业务域只依赖 `common`，结构上拿不到这条链。
 
@@ -74,7 +74,7 @@
 ### 3. 边界（本层不做什么）
 
 - **不持业务域实体、不落域表**：本层只有 `mall_user` 一张表
-- **只做编排、不持域数据**：调域走 `common` 的 `StoreClient` / `GoodsCenterClient`，编排集中在 `CatalogBffService`；
+- **只做编排、不持域数据**：调域走 `store-interface` 的 `StoreClient` 与 `goods-center-interface` 的 `GoodsCenterClient`，编排集中在 `CatalogBffService`；
   降级统一走 `common` 的 `BffFeignCall`（下游故障 → 「…暂不可用」，业务 4xx 原样透传给页面）；
   分类树对分页 / facets 只是**增强**（子树展开、筛选名解析），拿不到就降级为「无树」，不拖垮主流程
 - **不做身份类型判断**：`type` claim 由签发端携带、全链路透传；网关只验签 + 查登录态

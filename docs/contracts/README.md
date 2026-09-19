@@ -50,7 +50,7 @@ service: admin
 layer: page
 baseUrl: /admin
 scanDirs: backend/admin/src/main/java/com/panoramic/admin/controller
-typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/admin/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/common/src/main/java, backend/admin/src/main/java
 -->
 ```
 

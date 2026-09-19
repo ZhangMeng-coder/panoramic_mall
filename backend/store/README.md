@@ -10,7 +10,7 @@
 
 | 方向 | 对象 | 通道 |
 |---|---|---|
-| 被谁调 | store-bff（**owner 侧**：我的店铺、店铺商品） | `common` 的 `StoreClient`，带熔断降级 |
+| 被谁调 | store-bff（**owner 侧**：我的店铺、店铺商品） | `store-interface` 的 `StoreClient`，带熔断降级 |
 | 被谁调 | admin BFF（**platform 侧**：店铺管理审核、店铺商品跨店管理与锁定） | 同上 |
 | 被谁调 | mall-bff（**跨店通用侧**：C 端商品分页与筛选聚合，`/goods/cross-shop/spu/page` + `/goods/facets`） | 同上 |
 | 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |

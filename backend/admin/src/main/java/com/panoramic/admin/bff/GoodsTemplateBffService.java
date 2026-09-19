@@ -27,7 +27,7 @@ import java.util.function.Supplier;
 /**
  * admin 端 BFF · 标准商品模板维护编排。
  * <p>只做页面编排与聚合，不持有/复制 goods 域任何实体与表；全部经内部 Feign 调 goods-center
- * （共享 DTO 同源在 common），并按 Feign 规约熔断：
+ * （共享 DTO 同源在 goods-center-interface），并按 Feign 规约熔断：
  * 下游业务异常（400 参数/业务、403 权限）原样透传由统一异常处理还原 RespData 给页面；
  * 连接失败 / 熔断开启 / 其它异常统一降级为友好提示，避免拖垮调用方。</p>
  */

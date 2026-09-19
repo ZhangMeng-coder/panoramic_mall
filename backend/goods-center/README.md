@@ -11,7 +11,7 @@
 
 | 方向 | 对象 | 通道 |
 |---|---|---|
-| 被谁调 | admin BFF（商品模板管理） | `common` 的 `GoodsCenterClient`，带熔断降级 |
+| 被谁调 | admin BFF（商品模板管理） | `goods-center-interface` 的 `GoodsCenterClient`，带熔断降级 |
 | 被谁调 | store-bff（分类树 / 品牌下拉 / 按 SKU 编码反查模板） | 同上 |
 | 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |
 

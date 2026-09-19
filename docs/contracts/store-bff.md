@@ -3,7 +3,7 @@ service: store-bff
 layer: page
 baseUrl: /store
 scanDirs: backend/store-bff/src/main/java/com/panoramic/storebff/controller
-typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/store-bff/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/common/src/main/java, backend/store-bff/src/main/java
 -->
 
 # 店铺端 BFF（store-bff）对外契约 · 第 ① 层

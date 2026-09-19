@@ -20,7 +20,9 @@
 | `security` | `LoginUser` | 登录用户模型（含 `userType` 与 `USER_TYPE_ADMIN/STORE/USER` 常量、`HEADER_USER_TYPE`）。**留在 common**，供域服务读身份做审计填充 |
 | `util` | `UserContext` | 当前用户上下文（ThreadLocal）：`getUserId()` / `getUserType()`（类型缺失回退 `admin`）/ 角色权限等 |
 | `feign` | `InternalApiErrorDecoder` | 把下游非 2xx 的 `{code,msg}` 还原为 `ServiceException` |
-| `goods.api` / `store.api` | `GoodsCenterClient` / `StoreClient` + `*FeignConfiguration` | BFF→域 的内部 Feign 客户端与同源 DTO/VO；出站透传 `X-User-Id`/`X-User-Type`（**不再带内部令牌**） |
+> ⚠ **各域的 Feign 客户端与同源 DTO/VO 不在本模块**（2026-09-19 拆出）：`GoodsCenterClient` + `contract.goods.*`
+> 在 [goods-center-interface](../goods-center-interface/)；`StoreClient` + `contract.store.*` 在 [store-interface](../store-interface/)。
+> 本模块**不含任何域契约类型**——这正是为了「引用别域类型必然编译失败」。
 | `enums` | `DeleteTypeEnum` / `ServiceExceptionEnums` | 删除标识枚举 / 通用异常码枚举 |
 
 ## 接入约定（供业务服务）
