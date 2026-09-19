@@ -13,8 +13,6 @@ typeDirs: backend/customer-center-interface/src/main/java
 > **不暴露公网路由**，只被 mall-bff 经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 8 个接口。**
-
 ⚠ **本表按行分批实现**（契约先行）：**某一行是否已落地，以下表的「状态」列为准**（留空 = 已实现，
 `待实现` = 已定契约、代码未写）——本文件正文不另记进度，写死条数只会在下次改动时失真。
 某行标 `待实现` 时**只核对路径 / 方法 / 权限串的写法**，不参与「契约 ↔ 代码」双向核对（见 [README.md](./README.md)）；
@@ -37,10 +35,10 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | CustomerCenterClient.java:39 | ProfileController.java:34 | CustomerProfileBffService(mall-bff) |  |
-| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | CustomerCenterClient.java:48 | ProfileController.java:42 | CustomerProfileBffService(mall-bff) |  |
+| getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | CustomerCenterClient.java:46 | ProfileController.java:34 | CustomerProfileBffService(mall-bff) |  |
+| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | CustomerCenterClient.java:55 | ProfileController.java:42 | CustomerProfileBffService(mall-bff) |  |
 | listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | CustomerCenterClient.java:64 | AddressController.java:38 | CustomerAddressBffService(mall-bff) |  |
-| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | CustomerCenterClient.java:74 | AddressController.java:46 | CustomerAddressBffService(mall-bff) |  |
+| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | CustomerCenterClient.java:74 | AddressController.java:46 | —（本期未编排） |  |
 | saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | CustomerCenterClient.java:85 | AddressController.java:55 | CustomerAddressBffService(mall-bff) |  |
 | updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `void` | CustomerCenterClient.java:96 | AddressController.java:64 | CustomerAddressBffService(mall-bff) |  |
 | deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `void` | CustomerCenterClient.java:107 | AddressController.java:74 | CustomerAddressBffService(mall-bff) |  |

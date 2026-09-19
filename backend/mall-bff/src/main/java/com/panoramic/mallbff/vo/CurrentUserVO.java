@@ -15,7 +15,10 @@ import java.util.List;
  * <p>顾客账号无 RBAC 权限维度，{@code perms} 恒为空列表。</p>
  * <p>三个资料字段的<b>来源与降级</b>：取自 customer-center（经 {@code CustomerProfileBffService}），
  * 域不可用时整组留空、不阻断 {@code /auth/me}；{@code nickname} 另有「为空则回退手机号」的兜底，
- * 口径见 docs/contracts/mall-bff.md 的「资料读口径」「昵称兜底」两行。</p>
+ * 口径见 docs/contracts/mall-bff.md 的「资料读口径」「昵称兜底」「资料可用性」三行。</p>
+ * <p>⚠ <b>降级态与「新顾客还没填过」在出参上不同形</b>：域侧「无资料行」返回的是「仅含 id 的<b>空 VO</b>」（非 null），
+ * 与「读失败降级」在资料三字段上完全同形，故另加 {@link #profileLoaded} 让调用方（页面）能判定这次到底读到了没有。
+ * 前端<b>不得</b>用「昵称 == 手机号就当空」之类启发式猜（会把真拿手机号当昵称的顾客判错）。</p>
  */
 @Data
 public class CurrentUserVO {
@@ -49,6 +52,16 @@ public class CurrentUserVO {
      * 生日（取自 customer-center 的顾客资料；资料不可用时留空）
      */
     private LocalDate birthday;
+
+    /**
+     * 本次资料是否真的从 customer-center 读到了（始终赋非空值）
+     * <p>{@code true} = 域读成功（返回的 VO 哪怕只有 id 也算「读到」，此时三个资料字段为 <b>null 即「顾客没填」</b>）；
+     * {@code false} = 读失败已降级，此时 {@code nickname} 是手机号兜底、{@code avatar/gender/birthday} 是
+     * <b>「拿不到」而非「空」</b>，四项一律<b>不可信</b>。</p>
+     * <p>⚠ 页面据此禁用资料表单：{@code PUT /profile} 是<b>整份替换</b>，拿降级值提交会把真实资料静默清空
+     * （口径见 docs/contracts/mall-bff.md 的「资料可用性」）。</p>
+     */
+    private Boolean profileLoaded;
 
     /**
      * 手机号（登录账号；C 端由快照回填，非查询所得）

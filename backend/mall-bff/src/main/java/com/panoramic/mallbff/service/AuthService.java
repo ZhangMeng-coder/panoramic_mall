@@ -102,7 +102,8 @@ public class AuthService {
         MallUser user = new MallUser();
         user.setPhone(phone);
         // ⚠ 不再写 user.setNickname(...)：nickname 已从 mall_user 迁到 customer-center 的 customer_profile
-        //    （列已删、实体字段已摘），昵称在这里经 saveProfile 播种，读路径见 toCurrentUser。
+        //    （实体字段已摘；**列待 T10 迁移时删除**，见 backend/mall-bff/README.md 的实体标记），
+        //    昵称在这里经 saveProfile 播种，读路径见 toCurrentUser。
         user.setStatus(1);
         mallUserService.save(user);
 
@@ -253,6 +254,10 @@ public class AuthService {
         // 资料取自 customer-center，是**读增强**：取不到由 loadProfile 降级为 null（它内部已 catch + 告警），
         // **绝不阻断** /auth/me 与登录（同 CatalogBffService 对分类树的处理）。
         CustomerProfileVO profile = customerProfileBffService.loadProfile(loginUser.getId());
+        // ⚠ 资料可用性标记：**域返回了 VO（哪怕只有 id）即为 true，降级为 null 才是 false**。
+        //    它是「降级读」与「新顾客本来就没填」唯一的区分手段（两者在资料字段上完全同形），
+        //    页面靠它决定是否渲染资料表单——PUT /profile 是整份替换，拿降级值提交会静默清空真实资料。
+        vo.setProfileLoaded(profile != null);
         String nickname = profile == null ? null : profile.getNickname();
         // ⚠ 昵称为空的兜底**只在这一处**（spec §6.2）：域与资料页都不再各写一份
         vo.setNickname(StringUtils.hasText(nickname) ? nickname : loginUser.getUsername());

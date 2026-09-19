@@ -6,6 +6,7 @@ import { getUser, setUser } from '../../store/auth'
 import { showToast } from '../../composables/useToast'
 import { PHONE_RE, useSmsCode } from '../../composables/useSmsCode'
 import { maskPhone } from '../../utils/format'
+import type { CurrentUser } from '../../types/auth'
 import type { ProfilePayload } from '../../types/profile'
 
 /**
@@ -20,8 +21,9 @@ import type { ProfilePayload } from '../../types/profile'
  *    本页照读照写——再加一层「昵称 == 手机号就当空」的前端推断，等于在别处又写一份该规则。
  * ③ **短信是模拟通道**（固定码 888888）：「获取验证码」分别对**当前号**与**新号**各调一次
  *    `authApi.sendSmsCode`；换绑成功后服务端**不重签 token**，前端只需刷新一次 store。
- * ④ **用户态可能不在**（守卫对 `/auth/me` 的非 401 失败放行，见 `profileReady` 的注释）——
- *    那时只渲染降级块 + 重试，**不渲染表单**。
+ * ④ **资料读不到时只渲染降级块 + 重试，不渲染表单**（判据见 `profileUsable`）——两种情形都算：
+ *    用户态不在（守卫对 `/auth/me` 的非 401 失败放行），或用户态在但 `profileLoaded` 为假
+ *    （`/auth/me` 拿到了账号、顾客资料却读失败，后端已降级）。
  */
 
 const GENDERS: { value: number; label: string }[] = [
@@ -31,13 +33,23 @@ const GENDERS: { value: number; label: string }[] = [
 ]
 
 /**
- * ⚠ **不假定用户态一定在**：守卫对 `/auth/me` 的**非 401 失败**（超时 / 网络 / 5xx）是**不跳转、直接放行**的
- * （`router/index.ts` 守卫的 catch ② 有长注释论证为什么不能跳：token 还在，跳登录页会被弹回来成环）。
- * 那条路径上 token 仍在、`getUser()` 却是 **null** —— 此时**绝不能渲染表单**：
- * `PUT /profile` 是整份替换，空表单点一次「保存」就把已存的昵称 / 头像 / 生日**静默清光**。
- * 故 `profileReady` 为假时只渲染降级块 + 「重试」（见 `retry()`）。
+ * 资料表单**能不能渲染**：两个否都要拦，且各自都足以单独拦住——
+ * ① **用户态不在**：守卫对 `/auth/me` 的**非 401 失败**（超时 / 网络 / 5xx）是不跳转、直接放行的
+ *    （`router/index.ts` 守卫的 catch ② 有长注释论证为什么不能跳：token 还在，跳登录页会被弹回来成环）。
+ *    那条路径上 token 仍在、`getUser()` 却是 **null**。
+ * ② **用户态在、资料没读到**：`/auth/me` 拿到了账号，但顾客资料读失败被后端静默降级
+ *    （`profileLoaded === false`，见契约「资料可用性」）——此时 `nickname` 是手机号兜底、
+ *    `avatar` / `gender` / `birthday` 是「拿不到」而不是「空」。
+ *
+ * 两种情形都**绝不能渲染表单**：`PUT /profile` 是整份替换，空表单 / 降级值点一次「保存」
+ * 就把已存的昵称 / 头像 / 生日**静默清光**。故 `profileReady` 为假时只渲染降级块 + 「重试」（见 `retry()`）。
+ * ⚠ 判据只认 `profileLoaded` 这个标记，**不要用「昵称 == 手机号」去猜**——真拿手机号当昵称的顾客会被判错。
  */
-const profileReady = ref(getUser() !== null)
+function profileUsable(current: CurrentUser | null): boolean {
+  return current !== null && current.profileLoaded
+}
+
+const profileReady = ref(profileUsable(getUser()))
 const retrying = ref(false)
 
 /* ---- 资料：初值由 `initFromUser()` 填（保存 / 重试成功后同样按后端回读刷新 store） ---- */
@@ -100,7 +112,7 @@ const changing = ref(false)
 
 /**
  * 用 store 里的用户态填满表单（**首屏与「重试」成功后各调一次**——重试成功却只 setUser 不重填，
- * 表单仍是空的，等于没修）。`profileReady` 一并按「用户态在不在」重算。
+ * 表单仍是空的，等于没修）。`profileReady` 一并按 `profileUsable` 重算（用户态在不在 **且** 资料这次读到没有）。
  */
 function initFromUser(): void {
   const current = getUser()
@@ -109,7 +121,7 @@ function initFromUser(): void {
   gender.value = current?.gender ?? null
   birthday.value = current?.birthday ?? ''
   currentPhone.value = current?.phone ?? ''
-  profileReady.value = current !== null
+  profileReady.value = profileUsable(current)
 }
 
 initFromUser()
@@ -172,8 +184,9 @@ async function changePhone(): Promise<void> {
 <template>
   <h1 class="acct__title">个人资料</h1>
 
-  <!-- 降级态（用户态拿不到）：**不渲染表单**——`PUT /profile` 是整份替换，
-       空表单被点一次「保存」就把已存资料静默清光；也别渲染成空表单让人以为资料真是空的 -->
+  <!-- 降级态（用户态拿不到，或拿到了但 `profileLoaded === false`）：**不渲染表单**——`PUT /profile`
+       是整份替换，空表单 / 降级值被点一次「保存」就把已存资料静默清光；
+       也别渲染成空表单让人以为资料真是空的 -->
   <template v-if="!profileReady">
     <p class="acct__desc">暂时读不到你的资料</p>
     <div class="acct__fallback">

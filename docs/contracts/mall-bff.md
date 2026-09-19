@@ -81,7 +81,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | | ⚠ 换绑的「拒绝同号」必须**先于**「新号查重」：反过来的话新号 == 旧号会先被查重命中、报「手机号已注册」，刚登记的「新手机号与当前手机号相同」400 **永不可达**（spec §6.3 原写的顺序即反例，已订正） |
 | 资料读口径 | **不单开 `GET /profile`**：资料读合并在 `/auth/me` —— 其出参含**完整资料**（`nickname` / `avatar` / `gender` / `birthday`）。要改资料走 `PUT /profile`（只写） |
 | 资料写口径 | `PUT /profile` 是**整份替换**（四项全传，未传即写为 NULL）；资料页每次全量提交。要「只改一个字段」得先读 `/auth/me` 拿到完整资料再整体回传 |
-| 昵称兜底 | 资料为空（或 customer-center 不可用）时 `nickname` **回退为手机号**，其余资料字段留空、**不阻断** `/auth/me`。⚠ **只在 `/auth/me` 一处兜底**，别在别处再写一份 |
+| 昵称兜底 | 资料为空（或 customer-center 不可用）时 `nickname` **回退为手机号**，其余资料字段留空、**不阻断** `/auth/me`。⚠ **只在 `/auth/me` 一处兜底**，别在别处再写一份。⚠ 与「新顾客还没填过资料」在出参上**不同形**：靠下一行的 `profileLoaded` 区分，**别用「昵称是否等于手机号」去猜**（真拿手机号当昵称的顾客会被判错） |
+| 资料可用性 | `CurrentUserVO.profileLoaded` = **本次是否真的从 customer-center 读到资料**：`true` = 域读成功（此时资料四项为 null 即「顾客没填」）；`false` = 读失败已降级，`nickname` 是手机号兜底、`avatar` / `gender` / `birthday` 是**「拿不到」而非「空」**，四项**一律不可信**。⚠ **`false` 时前端不得渲染资料表单**——`PUT /profile` 是**整份替换**（见上「资料写口径」），拿降级值提交会把真实资料**静默清空**还回「已保存」；此时资料页只渲染降级块 + 「重试」 |
 | 换绑口径 | `POST /auth/phone` **双验证**（旧号码验证码 + 新号码验证码）；成功后**服务器登录态快照即时更新**，⚠ **不重签 token**（前端无需换 token、也不重新登录） |
 | 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
 | 身份类型绑定 | 本端只接受 `type=user` 的登录态（`panoramic.auth.user-type: user`）；跨端 token（`admin` / `store`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**（见 [cross-cutting.md](./cross-cutting.md) 第 9 条） |

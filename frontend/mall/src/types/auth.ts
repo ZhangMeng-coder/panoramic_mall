@@ -17,6 +17,14 @@ export interface CurrentUser {
   gender: number | null
   /** 生日；资料不可用时为空。后端是 LocalDate，本端 JSON 里就是 `YYYY-MM-DD` 或 null */
   birthday: string | null
+  /**
+   * **本次资料是否真的从 customer-center 读到了**（后端恒返回 true / false，非 null）。
+   * `true` = 域读成功，此时上面四项为 null 就是「顾客没填」；`false` = 读失败已降级，
+   * `nickname` 是手机号兜底、其余三项是「拿不到」而非「空」——**四项都不可信**。
+   * ⚠ 为 `false` 时**不得渲染资料表单**：`PUT /profile` 是整份替换，拿降级值提交会静默清空真实资料。
+   * ⚠ 别用「昵称 == 手机号」去推断这件事（契约「资料可用性」），只认这个标记。
+   */
+  profileLoaded: boolean
   phone: string
   /** 顾客账号无 RBAC 权限维度，恒为空数组（C 端不接 RBAC） */
   perms: string[]

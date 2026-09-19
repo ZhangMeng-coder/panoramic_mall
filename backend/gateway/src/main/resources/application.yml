@@ -42,7 +42,8 @@ spring:
               predicates:
                 - Path=/store/**
             - id: mall-bff-route
-              # 商城前台 BFF（mall-bff）对 C 端开放（顾客账号：取码/注册/登录；商品浏览）；已接 goods-center（分类树）与 store（商品分页/筛选聚合）。
+              # 商城前台 BFF（mall-bff）对 C 端开放（顾客账号：取码/注册/登录；商品浏览；顾客资料与收货地址）；
+              # 已接 goods-center（分类树）、store（商品分页/筛选聚合）与 customer-center（顾客资料/地址）三个业务域。
               uri: lb://mall-bff
               filters:
                 - StripPrefix=1

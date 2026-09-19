@@ -84,9 +84,9 @@ layer: cross-cutting
 | 契约 | 网关验签后注入身份头，端 BFF 经 Feign **原样透传**，域直取填 `UserContext`；**仅用于审计填充与 `audit_by` 留痕，读 ≠ 判断** |
 | 定义位置 | `X-User-Type` 有常量 `LoginUser.HEADER_USER_TYPE`（:35）；⚠ `X-User-Id` **无 Java 常量**，头名只由 Nacos `auth.yml` 的 `panoramic.auth.header-name` 提供，且默认值散落在 5 处 `@Value` |
 | 注入位置（唯一） | `gateway/filter/AuthGlobalFilter.java:89-90` |
-| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59` |
-| 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`common-auth/AuthTokenFilter.java:71` |
-| ⚠ 已知风险 | 两个同职责的 Feign 配置**行为不对称**：`GoodsFeignConfiguration:55` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57` **不做回退** |
+| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59`、`customer-center-interface/.../contract/customer/api/CustomerFeignConfiguration.java:30-62` |
+| 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`customer-center/config/CustomerUserIdentityFilter.java:36,56`、`common-auth/AuthTokenFilter.java:71` |
+| ⚠ 已知风险 | **三个**同职责的 Feign 配置**行为不对称**，是**三种**行为：`GoodsFeignConfiguration:55` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57` **不做回退**；`CustomerFeignConfiguration:56-59` **不做回退，且 `userType` 为空时干脆不发该头**——这是有意的选择（理由写在代码里：C 端身份一旦被盖成 `admin`，域内审计留痕就失真），**新域照哪个抄要自己判，别默认跟 goods 那份**。⚠ 新增域时**必须**同步登记本枚举（漏登记等于把这个刻意选择埋掉） |
 | 破坏后果 | 头名不一致 → 域取不到身份 → 审计字段静默留空（不报错，最难发现的一类） |
 | 核对方式 | 哨兵 `X-User-Type`、`X-User-Id`、`panoramic.auth.header-name` |
 
@@ -96,7 +96,7 @@ layer: cross-cutting
 |---|---|
 | 契约 | 域内身份过滤器在缺 `X-User-Id` 时**直接放行**（审计留空），**不得回 401** —— 那等于在域内做鉴权 |
 | 定义位置 | `CLAUDE.md`「信任与防线 · 缺头即不填充、不拦截」 |
-| 消费位置 | `StoreUserIdentityFilter`、`GoodsUserIdentityFilter` |
+| 消费位置 | `StoreUserIdentityFilter`、`GoodsUserIdentityFilter`、`CustomerUserIdentityFilter`（缺 `X-User-Id` 时直接放行、审计留空） |
 | 破坏后果 | 域内回 401 → 直连调用（无网关头）全部失败，破坏"域不做鉴权"的分层 |
 | 核对方式 | 人工核对（静态哨兵无法表达"缺头时不拦截"这一语义） |
 
@@ -191,9 +191,9 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
+| 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface` / `customer-center-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
 | 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 公共类型」 |
-| 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
+| 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java`、`customer-center-interface/.../contract/customer/api/CustomerCenterClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
 | 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在该服务 `contract-meta` 的 `typeDirs` 里找到对应 `.java` |
 | 结构保障 | 各域模块只依赖**自己那个** `-interface`（`common` 里没有契约类型），跨域引用会**当场编译失败**；新建域时必须同步建 `<域>-interface` 模块 |
@@ -202,10 +202,10 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | 域服务（goods-center 8081 / store 8083）**不做任何鉴权**，其安全性完全依赖"端口只在内网可达" |
-| 定义位置 | 各域 `application.yml` 注释；`goods-center/config/GoodsSecurityConfig.java:16`、`store/config/StoreSecurityConfig.java:17` |
+| 契约 | 域服务（goods-center 8081 / store 8083 / customer-center 8086）**不做任何鉴权**，其安全性完全依赖"端口只在内网可达" |
+| 定义位置 | 各域 `application.yml` 注释；`goods-center/config/GoodsSecurityConfig.java:16`、`store/config/StoreSecurityConfig.java:17`、`customer-center/config/CustomerSecurityConfig.java:17` |
 | 消费位置 | 全部部署环境 |
-| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏） |
+| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏）。⚠ **customer-center 上这条更硬**：域侧 `customerId` **直接取自请求路径且不做任何鉴权**（「锚点即数据权限」，见 [customer-center.md](./customer-center.md)），**能连到 8086 的人就能读写任意顾客的资料与地址簿**——该口径只在「路径上的 `customerId` 由端 BFF 从登录态填」+「8086 不可从公网抵达」两条**同时**成立时才成立 |
 | 核对方式 | **无法静态核对**。本页仅登记，属部署/运维前提 |
 
 ### 16. 权限串与前端路由一致性
@@ -300,7 +300,7 @@ layer: cross-cutting
     { "literal": "CLAIM_USER_TYPE", "in": ["backend/common/src/main/java/com/panoramic/common/security/LoginUser.java"], "why": "JWT type claim 常量定义处（第 4 条）" },
     { "literal": "panoramic:login", "in": ["backend/nacos-config", "backend/gateway", "backend/common-auth"], "why": "Redis 登录态键前缀，网关↔端 BFF 共享（第 5 条）" },
     { "literal": "X-User-Id", "in": ["backend/nacos-config"], "why": "X-User-Id 头名的唯一权威源（第 6 条）" },
-    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api", "backend/store-interface/src/main/java/com/panoramic/contract/store/api"], "why": "身份头注入与透传（第 6 条）" },
+    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api", "backend/store-interface/src/main/java/com/panoramic/contract/store/api", "backend/customer-center-interface/src/main/java/com/panoramic/contract/customer/api"], "why": "身份头注入与透传（第 6 条）；⚠ 三个域客户端都要在此枚举里，漏一个则从该客户端删掉透传时检查器看不见" },
     { "literal": "bff-services", "in": ["backend/gateway"], "why": "网关 BFF 白名单键（第 10 条）" },
     { "literal": "${panoramic.auth.user-type}", "in": ["backend/common-auth"], "why": "端 BFF 身份类型绑定的消费处（第 9 条）；⚠ 必须带 ${} 占位符形式——裸属性名会被类注释里的散文假性满足" },
     { "literal": "user-type:", "in": ["backend/admin", "backend/store-bff", "backend/mall-bff"], "why": "三端 BFF 各须显式声明本端身份类型（第 9 条）" },

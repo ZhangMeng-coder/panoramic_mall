@@ -85,7 +85,7 @@ public class CustomerAddressServiceImpl extends ServiceImpl<CustomerAddressMappe
         // ⚠ 用 lambdaUpdate().set(...) 而非 updateById(entity)：updateById 跳过 null 列，会把「清空省市区」静默丢掉
         //    （同 T3 资料保存、store 域 refreshMinPrice 的坑）；代价是该支路不触发审计自动填充
         //    （ChainUpdate#update() 走 update(null)），当前唯一写者是顾客本人，无可观测影响。
-        lambdaUpdate()
+        boolean updated = lambdaUpdate()
                 .eq(CustomerAddress::getId, id)
                 .eq(CustomerAddress::getCustomerId, customerId)   // 锚点：域内不做鉴权，作用域只能靠它
                 .set(CustomerAddress::getReceiverName, dto.getReceiverName())
@@ -93,6 +93,13 @@ public class CustomerAddressServiceImpl extends ServiceImpl<CustomerAddressMappe
                 .set(CustomerAddress::getRegion, dto.getRegion())
                 .set(CustomerAddress::getDetailAddress, dto.getDetailAddress())
                 .update();
+        // ⚠ 受影响行数**必须判**（兄弟方法 setDefaultAddress 同形，不是多余的防御）：两个标签页 / 两端并发时，
+        //    A 在 requireOwned 与本次 UPDATE 之间删掉该行 → 本语句匹配 0 行、**不抛异常**，
+        //    调用方却拿到成功回执、页面弹「地址已更新」——**成功是假的**（A 那边看到的还是删除前的旧数据）。
+        //    为 0 行一律按「地址不存在」回 404，口径与 getAddress / requireOwned / setDefaultAddress 一致。
+        if (!updated) {
+            throw new ServiceException(404, "地址不存在");
+        }
     }
 
     @Override
