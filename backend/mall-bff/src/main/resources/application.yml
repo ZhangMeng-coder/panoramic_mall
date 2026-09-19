@@ -25,16 +25,18 @@ spring:
         # 配置中心与注册中心同址
         server-addr: @nacos.server-addr@
 
-# 服务侧白名单（路由前缀已剥离）：C 端自助的取码/注册/登录与商品浏览（/catalog/**）放行，
-# 其余（/auth/logout、/auth/me）需顾客登录态（common 本地认证链：JWT + Redis 快照，type=user）。
-# ⚠ /catalog/** 必须登记：首页/搜索/分类页对游客开放（前台首页公开、不要求登录），漏登记则未登录直接 401。
+# 服务侧白名单（路由前缀已剥离）：C 端自助的取码/注册/登录与**首页宫格的分类树**（/catalog/categories）放行，
+# 其余（/auth/logout、/auth/me、/catalog/goods、/catalog/facets、/catalog/goods/{id}）需顾客登录态
+# （common 本地认证链：JWT + Redis 快照，type=user）。
+# ⚠ 白名单是「精确路径」而不是 `/catalog/**` 前缀：分级是「首页免登录、一涉及商品查询与详情就鉴权」，
+# 写成前缀会把商品分页 / 筛选 / 详情一起放开（前台裸露）。这条与网关侧逐字对应，两边同一改动内一起改。
 # 数据源/mybatis-plus/jwt-secret/redis/熔断参数等
 # 由 Nacos 共享配置提供（datasource-mysql.yml / datasource-redis.yml / auth.yml / feign-circuitbreaker.yml），不再本地重复。
 # ⚠ /auth/sms-code 必须登记：它在登录之前被调用（「获取验证码」按钮），漏登记则取码直接 401。
 # ⚠ 白名单是「网关侧 + 服务侧」两处各写一份的契约（网关侧带 /mall 前缀），单边改动 = 登不进去或裸露到公网。
 panoramic:
   auth:
-    whitelist-paths: /auth/login,/auth/register,/auth/sms-code,/catalog/**
+    whitelist-paths: /auth/login,/auth/register,/auth/sms-code,/catalog/categories
     # 本端身份类型：AuthTokenFilter 只接受该类型的登录态，跨端 token 一律按未认证处理（401）。
     # ⚠ 无默认值——必须显式声明，漏配则启动失败（见 docs/contracts/cross-cutting.md 第 9 条）。
     user-type: user

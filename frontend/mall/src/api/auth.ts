@@ -27,8 +27,12 @@ export const authApi = {
     return request.post<void>('/mall/auth/logout')
   },
 
-  /** 当前登录顾客；未登录 / token 失效会被网关拦下 */
+  /**
+   * 当前登录顾客；未登录 / token 失效会被网关拦下。
+   * ⚠ 带 `silent401`：本次调用只由**路由守卫**在刷新时发起（重建内存里的用户态），
+   * 公开首页上的失败不该把游客弹去登录页——见 `api/request.ts` 的 `sessionExpired`。
+   */
   me(): Promise<CurrentUser> {
-    return request.get<CurrentUser>('/mall/auth/me')
+    return request.get<CurrentUser>('/mall/auth/me', { silent401: true })
   }
 }

@@ -49,7 +49,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 ### 网关侧
 
-`gateway/src/main/resources/application.yml:63` → `panoramic.auth.whitelist-paths`：
+`gateway/src/main/resources/application.yml:66` → `panoramic.auth.whitelist-paths`：
 
 | 路径 | 说明 |
 |---|---|
@@ -59,7 +59,7 @@ config: backend/gateway/src/main/resources/application.yml
 | `/mall/auth/login` | 顾客登录（手机号 + 验证码） |
 | `/mall/auth/register` | 顾客注册（注册即登录） |
 | `/mall/auth/sms-code` | 顾客取短信验证码（**在登录之前被调用**，漏登记则取码按钮直接 401） |
-| `/mall/catalog/**` | C 端商品浏览（分类树 / 商品分页 / 筛选聚合）——**前台首页公开、不要求登录**，故免鉴权 |
+| `/mall/catalog/categories` | C 端**首页宫格的分类树**——首页公开、不要求登录，故免鉴权。⚠ **精确路径，不是 `/mall/catalog/**`**：商品分页 / 筛选 / 详情一律要登录态（「首页免登录，一涉及商品查询与详情就鉴权」，见 [cross-cutting.md](./cross-cutting.md) 第 11 条） |
 | `/discovery/**` | 服务发现探活 |
 
 ### 服务本地侧
@@ -68,7 +68,7 @@ config: backend/gateway/src/main/resources/application.yml
 |---|---|---|
 | admin | `/auth/login` | `admin/src/main/resources/application.yml` |
 | store-bff | `/auth/login`, `/auth/register` | `store-bff/src/main/resources/application.yml` |
-| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code`, `/catalog/**` | `mall-bff/src/main/resources/application.yml` |
+| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code`, `/catalog/categories` | `mall-bff/src/main/resources/application.yml` |
 
 ⚠ 只改一处 → 要么登录接口被拦（登不进去），要么本应鉴权的接口裸露到公网。
 

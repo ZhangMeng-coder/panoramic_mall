@@ -51,7 +51,9 @@ typeDirs: backend/common/src/main/java, backend/mall-bff/src/main/java
 |---|---|
 | 账号形态 | **账号即手机号**：`phone` 为登录账号（`mall_user` 唯一键 `uk_phone`）；`username` 不是独立列，导出到快照与 `CurrentUserVO` 时与 `phone` 同值 |
 | 验证方式 | 手机号 + **短信验证码**，无密码。⚠ 短信为**模拟实现**：取码只打日志、不放真实短信、不落库、不落 Redis；校验与固定码 `panoramic.mall.sms-fixed-code`（默认 `888888`）比对 |
-| 免鉴权路径 | `/auth/sms-code`、`/auth/register`、`/auth/login`、`/catalog/**`（**两处各写一份**，见 [gateway.md](./gateway.md) 第三节）。⚠ `sms-code` 在登录**之前**被调用，漏登记则「获取验证码」直接 401；`/catalog/**` 是**公开浏览类前缀**，同样两处都要登记 |
+| 免鉴权路径 | `/auth/sms-code`、`/auth/register`、`/auth/login`、`/catalog/categories`（**两处各写一份**，见 [gateway.md](./gateway.md) 第三节）。⚠ `sms-code` 在登录**之前**被调用，漏登记则「获取验证码」直接 401；`/catalog/categories` 是**首页宫格分类树的精确路径**，不是 `/catalog/**` 前缀——写成前缀会把商品查询与详情一起放开到公网 |
+| 鉴权分级 | **首页公开、一涉及商品查询与详情就要登录态**：免鉴权只有上一条那 4 条，`/catalog/goods`、`/catalog/facets`（及后续详情接口）一律需顾客登录态。前端配套三层：① 需登录页（`/search`、`/category/:id`、`/goods/:id`）由路由守卫拦，未登录带 `redirect` 跳 `/login`，登录后回原页；② 登录态**中途失效**由拦截器 401 兜底：清本地态 + 提示「请先登录」+ 带 `redirect` 跳登录页；③ **唯一静默的 401** 是路由守卫刷新重建用户态的 `/auth/me`（`silent401`）——公开首页上的重建失败不该把游客弹走 |
+| 未认证响应 | HTTP **401** + `{code:401,msg}`（`common-auth` 的 `AuthenticationEntryPoint` 写出，网关侧同形）。⚠ 对本端前端而言 401 是**可预期的日常分支**（提示登录并跳转），不是故障：别把它与「商品暂不可用」那类下游降级混在一个出口里 |
 | 错误码 | 验证码错误 `400`；手机号已注册 `400`；手机号未注册 `400`；账号停用 `USER_DISABLED`（`515`） |
 | 校验顺序 | 注册：验码 → 手机号查重 → 建号；登录：验码 → 查账号 → 查状态 |
 | 登录态 | 签发 `type=user` 的 JWT，Redis 键 `panoramic:login:user:{userId}` |
@@ -72,4 +74,6 @@ mall 前台的**页面契约**（长什么样、分哪几块）由前端工程�
 ⚠ 前端**账号页已接入本表 5 条账号接口**（`/login`、`/register` 两页 + 顶栏登录态 + 守卫的刷新重建，
 接入点见 `frontend/mall/src/api/auth.ts`）；**搜索区与分类展示区已接本表 catalog 三接口**
 （接入点 `frontend/mall/src/api/catalog.ts`，页面见 `src/views/GoodsListView.vue`）。
+⚠ 前端**登录门禁**的落点：路由 `meta.requiresAuth`（`src/router/index.ts`）+ 拦截器 401 出口
+（`src/api/request.ts` 的 `sessionExpired`），口径见上表「鉴权分级」。
 ⚠ 首页「**热门商品列表**」区块**仍是静态 mock**（`frontend/mall/src/mock/`）。

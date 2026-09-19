@@ -145,8 +145,9 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 免鉴权路径需**同时**登记在网关侧与各服务本地侧；**网关侧带前缀、服务侧不带** |
-| 定义位置 | 网关 `gateway/application.yml:63`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/**,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/**`） |
-| ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401。**公开浏览类前缀**（C 端 `/catalog/**`）同理，同样**两处都要登记**：漏一处要么前台游客看不了商品（被 401 拦掉），要么本应鉴权的接口裸露 |
+| 定义位置 | 网关 `gateway/application.yml:66`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/categories,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/categories`） |
+| ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401。⚠ **C 端登记的是精确路径 `/catalog/categories`（首页宫格的分类树），不是 `/catalog/**` 前缀**：mall 的分级是「**首页免登录，一涉及商品查询与详情就鉴权**」，写成前缀会把商品分页 / 筛选 / 详情一并放开到公网（前台裸奔）。改这一行必须两侧同一改动内一起改，且不要把精确路径换回前缀 |
+| ⚠ 分级配套 | 白名单收窄只挡得住**直连**：C 端前端还有一层「需登录页」路由级拦截（`/search`、`/category/:id`、`/goods/:id` 的 `meta.requiresAuth`，未登录即带 `redirect` 跳登录页），以及拦截器 401 兜底（清本地态 + 提示 + 带 `redirect` 跳登录页）。**唯一静默的 401 是守卫刷新重建登录态的 `/auth/me`**——公开首页上的重建失败不该把游客弹走，见 [mall-bff.md](./mall-bff.md) |
 | 消费位置 | 网关 `AuthGlobalFilter` 与服务侧 `AuthTokenFilter` |
 | 破坏后果 | 只改一处 → 登录接口被拦（登不进去）或本应鉴权的接口裸露 |
 | 核对方式 | 检查器 gateway 专项：两侧白名单去前缀后应互为子集关系 |
