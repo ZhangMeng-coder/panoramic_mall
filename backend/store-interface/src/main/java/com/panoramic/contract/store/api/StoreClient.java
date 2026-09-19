@@ -40,9 +40,10 @@ import java.util.List;
  * <p>本切片起 store 域只持 {@code store_shop}（账号店同 ID：店铺主键 == 店主账号 id），不再向页面暴露公网路由，
  * 由各端 BFF 经本接口内部调用。规约（见 CLAUDE.md）：
  * <ul>
- *   <li>入参/出参 DTO 与接口同源维护在 common（store 域服务端、store-bff/admin 客户端引用同一份类型）；</li>
+ *   <li>入参/出参 DTO 与接口同源维护在 store-interface（store 域服务端、store-bff/admin 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份 + 熔断 + 错误解码。</li>
+ *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * 数据权限口径（D5）：owner 方法（store-bff 触发）强制携带 store_id，store 域只作用于「id==store_id 的店」；
  * platform 方法（admin 触发）不传 store_id，全量操作。owner / platform 的分流由「端 BFF 调哪一侧方法」

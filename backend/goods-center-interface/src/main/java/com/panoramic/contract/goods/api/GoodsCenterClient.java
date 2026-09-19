@@ -34,9 +34,10 @@ import java.util.Map;
  * <p>下沉纯域 goods-center 不再向页面暴露公网路由，由各端 BFF 经本接口内部调用。
  * 规约（见 CLAUDE.md）：
  * <ul>
- *   <li>入参/出参 DTO 与接口同源维护在 common（goods-center 服务端、本客户端引用同一份类型）；</li>
+ *   <li>入参/出参 DTO 与接口同源维护在 goods-center-interface（goods-center 服务端、本客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link GoodsFeignConfiguration} 附带信任头 + 熔断 + 错误解码。</li>
+ *   <li>调用经 {@link GoodsFeignConfiguration} 附带信任头 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * 服务端路径与映射需与 goods-center 内部控制器一一对应（前缀 /internal/goods）。</p>
  */

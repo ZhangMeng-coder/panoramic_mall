@@ -161,7 +161,7 @@ layer: cross-cutting
 | 定义位置 | `backend/nacos-config/`（源文件）；发布态在 Nacos 控制台 |
 | 消费位置 | 网关与各服务（加载矩阵见原 `nacos-config/README.md` 已迁入本页） |
 | 破坏后果 | 缺任一 data-id **启动即失败**（属"会炸得明显"的一类）；漏配新服务 → 起不来 |
-| 核对方式 | 检查器第 7 项：各服务 `application.yml` 的 `import` 列表**不得出现 `optional:`**；哨兵 `datasource-mysql` 等 |
+| 核对方式 | 检查器第 9 项：各服务 `application.yml` 的 `import` 列表**不得出现 `optional:`**。⚠ 下方的**加载矩阵为人工维护、无机器核对**——「矩阵某列 ✅ ↔ 该服务 import 里真有该 data-id」这一对应关系静态哨兵表达不了（矩阵是表格，不是源码字面量）。新增服务时**须手工补列并手工核对**，漏补不会被检查器抓到（哨兵清单里并没有 `datasource-mysql`；此处曾误称有，2026-09-19 订正） |
 
 **加载矩阵**：
 

@@ -9,7 +9,8 @@ import org.springframework.cloud.openfeign.FeignClient;
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 customer-center-interface（域服务端、mall-bff 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link CustomerFeignConfiguration} 附带信任头 + 透传主身份 + 熔断 + 错误解码。</li>
+ *   <li>调用经 {@link CustomerFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * 数据权限口径：锚点 {@code customerId} = {@code mall_user.id}（跨域 id 引用、无外键），所有方法全按传入锚点过滤；
  * <b>无 owner / platform 分侧</b>——本期只做 C 端自助，调用方传的 {@code customerId} 是否「本人」由 mall-bff
@@ -22,5 +23,5 @@ import org.springframework.cloud.openfeign.FeignClient;
 @FeignClient(name = "customer-center", contextId = "customerCenterClient",
         path = "/internal/customer", configuration = CustomerFeignConfiguration.class)
 public interface CustomerCenterClient {
-    // 方法在 Task 3 / Task 4 分批补齐（与域实现、契约摘标记同一提交）
+    // 方法按 docs/contracts/customer-center.md 的行分批补齐（与域实现、契约摘标记同一提交）
 }
