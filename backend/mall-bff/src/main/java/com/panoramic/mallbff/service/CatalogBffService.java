@@ -1,5 +1,6 @@
 package com.panoramic.mallbff.service;
 
+import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.common.goods.api.GoodsCenterClient;
 import com.panoramic.common.goods.vo.CategoryTreeVO;
@@ -7,14 +8,19 @@ import com.panoramic.common.store.api.StoreClient;
 import com.panoramic.common.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.common.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.common.store.vo.PageResult;
+import com.panoramic.common.store.vo.ShopVO;
 import com.panoramic.common.store.vo.StoreGoodsFacetItemVO;
+import com.panoramic.common.store.vo.StoreGoodsSkuVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.common.store.vo.StoreGoodsSpuFacetVO;
+import com.panoramic.common.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.mallbff.dto.MallFacetQueryDTO;
 import com.panoramic.mallbff.dto.MallGoodsPageQueryDTO;
 import com.panoramic.mallbff.vo.MallFacetItemVO;
 import com.panoramic.mallbff.vo.MallFacetVO;
+import com.panoramic.mallbff.vo.MallGoodsDetailVO;
 import com.panoramic.mallbff.vo.MallGoodsItemVO;
+import com.panoramic.mallbff.vo.MallGoodsSkuVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -59,6 +65,14 @@ public class CatalogBffService {
     private static final String DOWN_MSG = "商品暂不可用，请稍后重试";
     /** goods-center 分类树降级提示（首页宫格的主内容，无退路） */
     private static final String CATEGORY_DOWN_MSG = "分类暂不可用，请稍后重试";
+
+    /** C 端「商品不可见」的统一文案：不存在 / 已下架 / 被平台锁定 / 店铺未过审 一律不区分（不泄露存在性） */
+    private static final String NOT_VISIBLE_MSG = "商品不存在或已下架";
+
+    /** {@link BffFeignCall} 原样透传的那一类业务 4xx（400 参数/业务、403 权限、404 不存在） */
+    private static final int BAD_REQUEST = 400;
+    private static final int FORBIDDEN = 403;
+    private static final int NOT_FOUND = 404;
 
     /** C 端固定展示口径：已审核通过店铺（store_shop.status 契约：0草稿/1待审核/2已通过/3已驳回） */
     private static final Integer SHOP_STATUS_APPROVED = 2;
@@ -141,6 +155,90 @@ public class CatalogBffService {
                 ? rollupByTopCategory(tree, raw.getCategories())
                 : toCategoryFacetItems(tree, raw.getCategories()));
         return vo;
+    }
+
+    /**
+     * C 端商品详情。
+     * <p><b>可见性口径与列表完全一致</b>（同一条不变量）：上架 + 未被平台锁定 + 店铺已审核通过，
+     * 三者缺一即 404。⚠ 口径必须与 {@link #goods} 同进同退，否则会出现「列表里搜不到、
+     * 却能靠直链打开」的商品（或反之），也会把未过审店铺 / 平台锁定商品漏到前台。</p>
+     * <p>只调用<b>已有</b>的域接口（{@code platformStoreGoodsDetail} + {@code shopDetail}），
+     * 不为 C 端新增域方法：域返回的是管理端超集，裁剪在 {@link #toMallDetail} 里做。</p>
+     *
+     * @param id 店铺商品 id
+     * @return C 端详情（见 {@link MallGoodsDetailVO}）
+     */
+    public MallGoodsDetailVO detail(Long id) {
+        StoreGoodsSpuPlatformDetailVO raw = platformDetailOrNull(id);
+        // 短路顺序即不变量：先判商品自身（不存在 / 已下架 / 被锁定），再问店铺是否过审
+        if (raw == null
+                || !SHELF_ON.equals(raw.getShelfStatus())
+                || !LOCK_OFF.equals(raw.getLockStatus())
+                || !shopApproved(raw.getStoreId())) {
+            throw notVisible();
+        }
+        return toMallDetail(raw);
+    }
+
+    /**
+     * 取跨店商品详情；<b>业务 4xx（「商品不存在」等）收敛为 null</b>，其余异常原样抛出。
+     * <p>⚠ 不能笼统地把 {@link ServiceException} 都当成「不存在」：{@link BffFeignCall} 对下游故障
+     * 降级的也是 {@code ServiceException}（500 + 降级文案），一并吞掉会把「商品服务挂了」
+     * 说成「商品已下架」，让故障伪装成正常业务结果。</p>
+     *
+     * @param id 店铺商品 id
+     * @return 域详情；不存在等业务 4xx 时为 null
+     */
+    private StoreGoodsSpuPlatformDetailVO platformDetailOrNull(Long id) {
+        try {
+            return BffFeignCall.call("store", DOWN_MSG, () -> storeClient.platformStoreGoodsDetail(id));
+        } catch (ServiceException e) {
+            if (!isBusiness4xx(e)) {
+                throw e;
+            }
+            log.warn("跨店商品详情查询未命中（业务 4xx），按不可见处理: id={}, msg={}", id, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 店铺是否「已审核通过」（C 端固定口径的一环）。
+     * <p>店铺查询的业务 4xx（店铺不存在）同样按<b>不可见</b>处理——商品挂在一个查不到的店上，
+     * 对顾客而言与已下架无异；下游故障仍原样抛出。</p>
+     *
+     * @param storeId 店铺 id（可空）
+     * @return 已审核通过为 true
+     */
+    private boolean shopApproved(Long storeId) {
+        if (storeId == null) {
+            return false;
+        }
+        try {
+            ShopVO shop = BffFeignCall.call("store", DOWN_MSG, () -> storeClient.shopDetail(storeId));
+            return shop != null && SHOP_STATUS_APPROVED.equals(shop.getStatus());
+        } catch (ServiceException e) {
+            if (!isBusiness4xx(e)) {
+                throw e;
+            }
+            log.warn("店铺查询未命中（业务 4xx），按不可见处理: storeId={}, msg={}", storeId, e.getMessage());
+            return false;
+        }
+    }
+
+    /** C 端「不可见」统一出口：不存在 / 已下架 / 被平台锁定 / 店铺未过审 一律同一个 404，不区分原因 */
+    private ServiceException notVisible() {
+        return new ServiceException(NOT_FOUND, NOT_VISIBLE_MSG);
+    }
+
+    /**
+     * 判定是不是 {@link BffFeignCall} 原样透传的那类业务 4xx
+     *
+     * @param e 待判定异常
+     * @return 400 / 403 / 404 之一为 true
+     */
+    private static boolean isBusiness4xx(ServiceException e) {
+        Integer code = e.getCode();
+        return code != null && (code == BAD_REQUEST || code == FORBIDDEN || code == NOT_FOUND);
     }
 
     // ---- 分类子树展开（域不持分类表，展开只能在端 BFF 做）----
@@ -397,6 +495,71 @@ public class CatalogBffService {
         vo.setCategoryName(src.getCategoryName());
         vo.setBrandId(src.getBrandId());
         vo.setBrandName(src.getBrandName());
+        return vo;
+    }
+
+    /**
+     * 域商品详情 → C 端商品详情（<b>逐字段手工映射</b>）。
+     * <p>与 {@link #toMallItem} 同款理由：域出参是「跨店通用 / 管理端超集」，含
+     * {@code lockStatus}/{@code lockReason}/{@code lockUser}/{@code lockTime}（平台锁定）、
+     * {@code goodsSpuId}/{@code centerVersion}（中台关联与版本戳）、{@code shelfStatus}（内部状态）
+     * 等管理端或内部字段，<b>域返回的字段不等于可以对外暴露</b>；手工映射保证域 VO 日后加字段
+     * 不会自动漏到 C 端。</p>
+     *
+     * @param src 域详情（已判定为对本端可见）
+     * @return C 端详情
+     */
+    private MallGoodsDetailVO toMallDetail(StoreGoodsSpuPlatformDetailVO src) {
+        MallGoodsDetailVO vo = new MallGoodsDetailVO();
+        vo.setId(src.getId());
+        vo.setName(src.getName());
+        vo.setMainImage(src.getMainImage());
+        vo.setImageList(src.getImageList());
+        vo.setDescription(src.getDescription());
+        vo.setSpecConfig(src.getSpecConfig());
+        vo.setStoreId(src.getStoreId());
+        // storeName 由域填充（域持 store_shop）；域没填时回退空串，前端按空值不渲染店铺行
+        vo.setStoreName(src.getStoreName() == null ? "" : src.getStoreName());
+        vo.setCategoryId(src.getCategoryId());
+        vo.setCategoryName(src.getCategoryName());
+        vo.setBrandId(src.getBrandId());
+        vo.setBrandName(src.getBrandName());
+        vo.setSkus(toMallSkus(src.getSkus()));
+        return vo;
+    }
+
+    /**
+     * 域 SKU 列表 → C 端 SKU 列表：<b>只保留上架的</b>——下架 SKU 不是「暂时缺货」，是店主没在卖，
+     * 下发它只会让顾客选中一个买不到的规格。
+     * <p>SPU 上架 ⟺ 至少一个 SKU 上架（域内不变量，由 {@code refreshShelfStatus} 维护），
+     * 故走到这里（SPU 已判为上架）结果必非空。</p>
+     *
+     * @param skus 域 SKU 列表（可空）
+     * @return C 端 SKU 列表（不可空）
+     */
+    private List<MallGoodsSkuVO> toMallSkus(List<StoreGoodsSkuVO> skus) {
+        if (skus == null) {
+            return new ArrayList<>();
+        }
+        return skus.stream()
+                .filter(sku -> sku != null && SHELF_ON.equals(sku.getShelfStatus()))
+                .map(this::toMallSku)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 域 SKU → C 端 SKU（丢掉 {@code skuCode} 店主内部编码、{@code spuId} 内部归属、
+     * {@code shelfStatus} 内部上下架状态）
+     *
+     * @param src 域 SKU
+     * @return C 端 SKU
+     */
+    private MallGoodsSkuVO toMallSku(StoreGoodsSkuVO src) {
+        MallGoodsSkuVO vo = new MallGoodsSkuVO();
+        vo.setId(src.getId());
+        vo.setSpecAttrs(src.getSpecAttrs());
+        vo.setPrice(src.getPrice());
+        vo.setMainImage(src.getMainImage());
         return vo;
     }
 

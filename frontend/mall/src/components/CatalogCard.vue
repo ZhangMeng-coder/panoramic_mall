@@ -33,6 +33,15 @@ const imgSrc = computed(() => (imgFailed.value ? '' : (props.goods.mainImage ?? 
 
 <template>
   <li class="cat-card">
+    <!-- 整卡可点 → 商品详情（`/goods/:id`，需登录态）。用「拉伸链接」而不是把根节点换成
+         `<router-link>`：栅格的子项必须是 `<li>`，图 / 名 / 价三段也还要留在 li 的 flex 流里。
+         这一层是铺满整卡的透明链接，键盘可聚焦、可右键新窗口打开 -->
+    <router-link
+      class="cat-card__hit"
+      :to="`/goods/${goods.id}`"
+      :aria-label="`查看商品详情：${goods.name}`"
+    ></router-link>
+
     <!-- 主图：有图用图（后端 URL），空 / 加载失败回退 CSS 渐变占位 -->
     <div class="cat-card__thumb" :style="{ background: grad(hue, 60, 91, 82) }">
       <img

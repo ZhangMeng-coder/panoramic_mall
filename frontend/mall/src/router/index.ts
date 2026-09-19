@@ -46,6 +46,14 @@ const routes = [
     component: () => import('../views/GoodsListView.vue'),
     meta: { title: '分类商品', requiresAuth: true }
   },
+  // 商品详情：同属「涉及商品查询」→ 也要登录态（后端 `/catalog/goods/{id}` 不在免鉴权白名单里，
+  // 路由不拦的话会先渲染出页面、再由接口 401 把用户弹走，白闪一屏）
+  {
+    path: '/goods/:id',
+    name: 'goods',
+    component: () => import('../views/GoodsDetailView.vue'),
+    meta: { title: '商品详情', requiresAuth: true }
+  },
   // 兜底：未匹配路径回首页
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]

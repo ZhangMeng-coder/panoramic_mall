@@ -248,6 +248,7 @@
    ========================================================================== */
 
 .cat-card {
+  position: relative; /* 整卡链接的定位锚（见 .cat-card__hit） */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -265,6 +266,13 @@
   border-color: var(--brand);
   transform: translateY(-3px);
   box-shadow: var(--sh-lg);
+}
+
+/* 整卡链接：铺满卡片的透明层（拉伸链接手法）。z-index 高于正文，整张卡都是点击区 */
+.cat-card__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
 }
 
 /* ---- 图位：有图用图，无图是 CSS 渐变底 + 名称首字 ---- */
@@ -337,4 +345,273 @@
   font-size: var(--t-xs);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* ============================================================================
+   商品详情页（GoodsDetailView）—— 面包屑 + 左图右信息 + 下方详情正文
+   与列表页同一套骨架（顶栏 / 搜索条 / 1280 容器 / 页脚），只多这三块
+   ========================================================================== */
+
+.detail {
+  padding-bottom: var(--s-16);
+}
+
+/* ---- 面包屑：首页 › 分类 › 商品 ---- */
+.detail__crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.detail__crumb-link:hover {
+  color: var(--brand);
+}
+
+.detail__crumb-cur {
+  overflow: hidden;
+  max-width: 480px;
+  color: var(--n800);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.detail__crumb-sep {
+  color: var(--n400);
+  user-select: none;
+}
+
+/* ---- 主区：左 480 固定图位 + 右侧自适应信息 ---- */
+.detail__main {
+  display: grid;
+  grid-template-columns: 480px 1fr;
+  gap: var(--s-10);
+  padding: var(--s-6);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-sm);
+}
+
+/* ---- 图位：有图用图，空 / 加载失败回退 CSS 渐变 + 名称首字 ---- */
+.detail__stage {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+}
+
+.detail__stage-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.detail__stage-ph {
+  font-size: var(--t-3xl);
+  font-weight: var(--w-semibold);
+  letter-spacing: 4px;
+  text-indent: 4px; /* 抵消末字后多出的字距，视觉居中 */
+}
+
+.detail__thumbs {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.detail__thumb {
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.detail__thumb:hover,
+.detail__thumb.is-on {
+  border-color: var(--brand);
+}
+
+.detail__thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ---- 右侧信息 ---- */
+.detail__name {
+  color: var(--n900);
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
+  line-height: 1.45;
+}
+
+/* 价格带：柔色底把价格从信息流里拎出来（促销语境的惯用处理） */
+.detail__price-band {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  background: var(--brand-soft);
+  border-radius: var(--r-lg);
+}
+
+.detail__price {
+  display: flex;
+  align-items: baseline;
+  color: var(--brand);
+  font-weight: var(--w-bold);
+  line-height: 1;
+}
+
+.detail__price-sym {
+  font-size: var(--t-md);
+}
+
+.detail__price-int {
+  font-size: var(--t-2xl);
+}
+
+.detail__price-dec {
+  font-size: var(--t-md);
+}
+
+.detail__price-suffix {
+  color: var(--n600);
+  font-size: var(--t-sm);
+  font-weight: var(--w-regular);
+}
+
+.detail__price-tbd {
+  color: var(--n500);
+  font-size: var(--t-md);
+}
+
+.detail__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-5);
+  font-size: var(--t-sm);
+}
+
+.detail__meta-row {
+  display: flex;
+  gap: var(--s-4);
+}
+
+/* 键列定宽：三行的值左边缘对齐 */
+.detail__meta-key {
+  flex: 0 0 48px;
+  color: var(--n500);
+}
+
+.detail__meta-val {
+  color: var(--n800);
+}
+
+/* ---- 规格选择 ---- */
+.detail__specs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  margin-top: var(--s-6);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--n200);
+}
+
+.detail__spec {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.detail__spec-name {
+  flex: 0 0 48px;
+  padding-top: 5px; /* 与胶囊内文字基线对齐 */
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+.detail__spec-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.detail__spec-value {
+  padding: var(--s-1) var(--s-3);
+  color: var(--n800);
+  font-size: var(--t-sm);
+  background: var(--n0);
+  border: 1px solid var(--n300);
+  border-radius: var(--r-pill);
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.detail__spec-value:hover {
+  color: var(--brand);
+  border-color: var(--brand);
+}
+
+.detail__spec-value.is-on {
+  color: var(--brand);
+  font-weight: var(--w-medium);
+  background: var(--brand-soft);
+  border-color: var(--brand);
+}
+
+.detail__warn {
+  margin-top: var(--s-3);
+  color: var(--warning);
+  font-size: var(--t-sm);
+}
+
+.detail__note {
+  margin-top: var(--s-6);
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+/* ---- 商品详情正文（纯文本，white-space 保换行）---- */
+.detail__desc {
+  margin-top: var(--s-6);
+  padding: var(--s-6);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-xl);
+}
+
+.detail__desc-title {
+  padding-left: var(--s-3);
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  line-height: 1.2;
+  border-left: 3px solid var(--brand);
+}
+
+.detail__desc-body {
+  margin-top: var(--s-4);
+  color: var(--n700);
+  font-size: var(--t-base);
+  line-height: 1.8;
+  white-space: pre-wrap; /* 店主录入的换行照原样显示 */
+  word-break: break-word; /* 长 URL / 无空格串不撑破卡片 */
+}
+
+.detail__desc-empty {
+  margin-top: var(--s-4);
+  color: var(--n500);
+  font-size: var(--t-sm);
 }

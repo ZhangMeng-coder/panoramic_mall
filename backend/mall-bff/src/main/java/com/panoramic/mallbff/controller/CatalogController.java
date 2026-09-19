@@ -7,10 +7,12 @@ import com.panoramic.mallbff.dto.MallFacetQueryDTO;
 import com.panoramic.mallbff.dto.MallGoodsPageQueryDTO;
 import com.panoramic.mallbff.service.CatalogBffService;
 import com.panoramic.mallbff.vo.MallFacetVO;
+import com.panoramic.mallbff.vo.MallGoodsDetailVO;
 import com.panoramic.mallbff.vo.MallGoodsItemVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -67,5 +69,16 @@ public class CatalogController {
     @PostMapping("/facets")
     public RespData<MallFacetVO> facets(@RequestBody MallFacetQueryDTO dto) {
         return RespData.success(catalogBffService.facets(dto));
+    }
+
+    /**
+     * 商品详情（<b>需登录态</b>：不在免鉴权白名单里）
+     * <p>不可见的四种情形——不存在 / 已下架 / 被平台锁定 / 店铺未过审——一律回业务码 <b>404</b>
+     * 「商品不存在或已下架」，<b>不区分原因</b>（也不泄露商品存在性）。可见性口径与
+     * {@link #goods} 完全一致，见 {@code CatalogBffService#detail}。</p>
+     */
+    @GetMapping("/goods/{id}")
+    public RespData<MallGoodsDetailVO> detail(@PathVariable("id") Long id) {
+        return RespData.success(catalogBffService.detail(id));
     }
 }

@@ -45,7 +45,7 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, Long, StoreGoodsSkuReplaceDTO | void | StoreClient.java:134 | GoodsController.java:99 | StoreGoodsBffService(store-bff) |  |
 | updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, Long, StoreGoodsSkuShelfDTO | void | StoreClient.java:141 | GoodsController.java:109 | StoreGoodsBffService(store-bff) |  |
 | pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:160 | GoodsController.java:126 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:174 | GoodsController.java:144 | ShopGoodsBffService(admin) |  |
+| platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:174 | GoodsController.java:144 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
 | lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:180 | GoodsController.java:153 | ShopGoodsBffService(admin) |  |
 | unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:186 | GoodsController.java:161 | ShopGoodsBffService(admin) |  |
 | listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:193 | ShopController.java:89 | ShopGoodsBffService(admin) |  |
@@ -59,13 +59,23 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | 侧 | 条数 | 方法 | 特征 |
 |---|:--:|---|---|
 | **owner** | 10 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
-| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方是 admin BFF，权限由 admin 的 `@PreAuthorize` 把关 |
+| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方主要是 admin BFF（权限由 admin 的 `@PreAuthorize` 把关），其中 `platformStoreGoodsDetail` **另被 mall-bff 的 `CatalogBffService` 消费**（C 端商品详情，见下条） |
 | **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets | **不带 `storeId`、也不带任何端别约束**：域只按传入条件过滤，**限定条件全由调用方自设**。`pageStoreGoodsCrossShop` 由 admin BFF 与 mall-bff 共用、`crossShopFacets` 目前只有 mall-bff 消费，差别只在传入条件——C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`（只出已审核通过店铺的在售未锁定商品），管理端不传这三个约束、走全量 |
 
 > 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
 > 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
 > ⚠ 跨店通用侧返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` 等），
 > **C 端输出前必须由端 BFF 裁剪**（见 [cross-cutting.md](./cross-cutting.md) 第 19 条）。
+>
+> ⚠ **platform 侧 `platformStoreGoodsDetail` 的第二个消费者是 mall-bff**（C 端商品详情，`CatalogBffService#detail`）：
+> 它拿到的是**管理端超集**（`lockStatus` / `lockReason` / `lockUser` / `lockTime` / `goodsSpuId` /
+> `centerVersion` / 含已下架的全部 SKU），**读 ≠ 判断**——域侧照旧不做任何 C 端裁决，
+> 由 mall-bff 自己按与列表**同一不变量**重判可见性（`shelfStatus=1` + `lockStatus=0` + 店铺 `status=2`，
+> 任一不满足回 C 端 404「商品不存在或已下架」），并**逐字段手工映射裁剪**成 C 端形状
+> （不用 BeanUtils 拷贝：域 VO 日后加字段不会自动漏到前台）。契约见 [mall-bff.md](./mall-bff.md)。
+> ⚠ **下游故障 ≠ 不可见**：`BffFeignCall` 把熔断 / 连接失败降级成 `ServiceException(500, …)`，
+> mall-bff 只把**业务 4xx**（400/403/404）转成「不存在或已下架」，其余照抛——
+> 否则一次下游抖动会被伪装成「这商品下架了」。
 
 ## 四、形状规则
 
