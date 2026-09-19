@@ -15,9 +15,9 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 **共 8 个接口。**
 
-⚠ **本表按行分批实现**（契约先行）：已实现的 2 条（`getProfile` / `saveProfile`）状态列留空、
-`契约声明(接口模块)` / `域实现` 填落点；**其余 6 条（收货地址）仍标 `待实现`**，两列填 `—`。
-`待实现` 行**只核对路径 / 方法 / 权限串的写法**，不参与「契约 ↔ 代码」双向核对（见 [README.md](./README.md)）。
+⚠ **本表按行分批实现**（契约先行）：8 条**全部落地**（`待实现` 归零）——状态列一律留空，
+`契约声明(接口模块)` / `域实现` 填落点。
+某行标 `待实现` 时**只核对路径 / 方法 / 权限串的写法**，不参与「契约 ↔ 代码」双向核对（见 [README.md](./README.md)）；
 实现完成后须在**同一改动内**把对应行的「状态」摘回留空，否则检查器的反向哨兵会报错。
 
 ## 一、归属与形状
@@ -39,12 +39,12 @@ typeDirs: backend/customer-center-interface/src/main/java
 |---|---|---|---|---|---|---|---|---|
 | getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | CustomerCenterClient.java:39 | ProfileController.java:34 | CustomerProfileBffService(mall-bff) |  |
 | saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | CustomerCenterClient.java:48 | ProfileController.java:42 | CustomerProfileBffService(mall-bff) |  |
-| listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
-| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
-| saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
-| updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `void` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
-| deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `void` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
-| setDefaultAddress | POST | /addresses/{customerId}/{id}/default | `Long`, `Long` | `void` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
+| listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | CustomerCenterClient.java:64 | AddressController.java:38 | CustomerAddressBffService(mall-bff) |  |
+| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | CustomerCenterClient.java:74 | AddressController.java:46 | CustomerAddressBffService(mall-bff) |  |
+| saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | CustomerCenterClient.java:85 | AddressController.java:55 | CustomerAddressBffService(mall-bff) |  |
+| updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `void` | CustomerCenterClient.java:96 | AddressController.java:64 | CustomerAddressBffService(mall-bff) |  |
+| deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `void` | CustomerCenterClient.java:107 | AddressController.java:74 | CustomerAddressBffService(mall-bff) |  |
+| setDefaultAddress | POST | /addresses/{customerId}/{id}/default | `Long`, `Long` | `void` | CustomerCenterClient.java:117 | AddressController.java:83 | CustomerAddressBffService(mall-bff) |  |
 
 > 「入参」列里**连续两个 `Long`** 时，第一个是 **`customerId`**（数据权限锚点），第二个是 `id`。
 > 例：`getAddress` 的 `Long, Long` = `customerId, id`。
@@ -55,5 +55,5 @@ typeDirs: backend/customer-center-interface/src/main/java
 ## 三、业务规则去哪看
 
 资料与地址的落库口径、**默认地址唯一性**（同一顾客至多一条 `is_default=1`）、
-删默认地址后**不自动递补**等业务规则，见 [`backend/customer-center/README.md`](../../backend/customer-center/README.md)（随实现任务创建）。
+删默认地址后**不自动递补**等业务规则，见 [`backend/customer-center/README.md`](../../backend/customer-center/README.md)。
 本文件只写接口与形状。
