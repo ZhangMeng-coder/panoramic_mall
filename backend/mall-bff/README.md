@@ -12,7 +12,7 @@
 
 ## 一、架构位置
 
-**端 BFF（第 ① 层）**：公网唯一入口是网关；本层的 `/auth/**` 与公开浏览的 `/catalog/**` 就是**前端可见的接口面**。
+**端 BFF（第 ① 层）**：公网唯一入口是网关；本层的 `/auth/**` 与公开浏览的 `/catalog/categories` 就是**前端可见的接口面**。
 
 | 方向 | 对象 | 通道 |
 |---|---|---|
@@ -63,7 +63,8 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 
 - 取码 / 注册 / 登录走白名单（网关 `/mall/auth/sms-code,register,login` + 服务侧 `/auth/sms-code,/auth/register,/auth/login`，**两处都要登记**）
   - ⚠ `/auth/sms-code` 在**登录之前**被调用（「获取验证码」按钮），漏登记则取码直接 401
-- ⚠ **公开浏览路径 `/catalog/**` 同样两处都要登记**（网关侧 `/mall/catalog/**` + 服务侧 `/catalog/**`）：它是**匿名公开**的（首页与分类页对游客开放），漏登记则游客每次打开首页都被 401 拦下
+- ⚠ **免鉴权白名单只有一条浏览路径，且是精确路径 `/catalog/categories`**（网关侧 `/mall/catalog/categories` + 服务侧 `/catalog/categories`，**两处都要登记**）：首页宫格分类树对游客开放，漏登记则游客每次打开首页都被 401 拦下
+  - ⚠⚠ **不要写成 `/catalog/**` 前缀**：`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` **一律要顾客登录态**（见 [CLAUDE.md](../../CLAUDE.md) 的「鉴权分级」）。放成前缀等于把商品查询、筛选与详情**裸奔到公网**——这是本仓库明确禁止的方向，白名单里绝不许出现 `/catalog/**`
 - 签发 `type=user` 的 JWT 并写 Redis 顾客登录上下文，**键 = `panoramic:login:user:{userId}`**
 - 本地认证链：JWT / 网关注入的 `X-User-Id` + `X-User-Type` → Redis 按 `user:{id}` 重建登录顾客
 - **顾客端不接 RBAC**：登录后对自己的数据全权限，因此本层**没有一个 `@PreAuthorize`**（这是预期状态，不是漏登记）
@@ -92,6 +93,6 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
   - ⚠ 本层**已接域调用**（goods-center + store），`feign-circuitbreaker.yml` **不再是空转**——「端 BFF 一律加载四个」的规律不变
 - **`config/JacksonConfig` 不是可选项**：Boot 4 的 web starter 不再自动注册 `ObjectMapper`，而 `LoginUserCacheService` 要注入一个用于读写 Redis 登录快照——缺此 bean 服务直接起不来
-- 本地白名单 `panoramic.auth.whitelist-paths: /auth/login,/auth/register,/auth/sms-code,/catalog/**`（覆盖 `SecurityConfig` 只含 `/auth/login` 的默认值；`/catalog/**` 是公开浏览路径，缺它则游客打开首页直接 401）
+- 本地白名单 `panoramic.auth.whitelist-paths: /auth/login,/auth/register,/auth/sms-code,/catalog/categories`（覆盖 `SecurityConfig` 只含 `/auth/login` 的默认值；`/catalog/categories` 是首页分类树、匿名公开，缺它则游客打开首页直接 401。⚠ 是**精确路径**不是前缀，理由见上「登录与登录态」）
 - 模拟短信固定码 `panoramic.mall.sms-fixed-code: 888888`
 - 响应结构：成功 `code=200`；业务校验失败 `code=400` 携带中文提示；账号停用 `code=515`
