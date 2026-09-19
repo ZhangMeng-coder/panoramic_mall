@@ -14,7 +14,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 ## 一、归属（术语防呆）
 
-根 `CLAUDE.md` 已划定：**"顾客 / 购物车 / 订单 / 评价"属未来 trade 域**。
+根 `CLAUDE.md` 已划定：**"顾客资料 / 收货地址"属 `customer-center`；"购物车 / 订单 / 评价"属本域**。
 ⚠ 别把这些实体塞进 `goods-center`（标准商品模板库）或 `store`（店铺在售商品/库存/信誉）。
 
 ## 二、已确定、不可改的部分

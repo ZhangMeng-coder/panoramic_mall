@@ -56,7 +56,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 ```
 
 - `scanDirs`：扫这个服务的 Controller 源码，用来和表比对端点（逗号分隔多个目录）。
-- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要给**它表里用到的**接口模块（现有 `goods-center-interface` / `store-interface` / `customer-center-interface` 三个模块，**各端按需**——表里出现哪个模块的类型就列哪个）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
+- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要给**它表里用到的**接口模块（现有 `goods-center-interface` / `store-interface` / `customer-center-interface`，**各端按需**——表里出现哪个模块的类型就列哪个）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
 
 **内部 Feign**（两端都要登记，所以既扫 Feign 声明也扫域实现）：
 
