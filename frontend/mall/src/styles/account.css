@@ -393,7 +393,9 @@
 }
 
 /* 降级块：资料读不到时**不渲染表单**（空表单既会诱人误保存，也让人以为资料真是空的），
-   只给一句「暂不可用」+ 重试（按钮照 .field__code 那套次级胶囊） */
+   只给一句「暂不可用」+ 重试（按钮照 .field__code 那套次级胶囊）。
+   ⚠ `.acct__retry` 就是**面板内的次级胶囊按钮**：降级块的重试与收货地址页的「新增地址」共用
+   这一份，别各写一套；`.acct__fallback` 是降级块**专用**（实线 + 暖底 + 居中），它＝「读不到」 */
 .acct__fallback {
   margin-top: var(--s-6);
   padding: var(--s-6) var(--s-5);
@@ -430,6 +432,140 @@
   background: var(--n100);
   color: var(--n400);
   cursor: not-allowed;
+}
+
+/* ---- 收货地址页：列表行 + 行内操作 + 空态 ---- */
+
+/* 表单底部：主按钮吃掉剩余宽度，取消是行内轻按钮（不另起一行，免得表单末尾多一段空白） */
+.acct__form-ops {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.acct__form-ops .btn-primary {
+  flex: 1;
+}
+
+/* 行内轻按钮（编辑 / 设为默认 / 删除 / 取消 / 确认删除）：无底色、无边框，
+   靠字色与 hover 表达层级——它们是一行里的次要动作，不该各长成一个按钮 */
+.acct__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.acct__link:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.acct__link--danger {
+  color: var(--danger);
+  font-weight: var(--w-medium);
+}
+
+/* 破坏性动作的 hover 不再往主色去（主色是「促销 / 正向」的语气） */
+.acct__link--danger:hover:not(:disabled) {
+  color: var(--brand-hover);
+}
+
+.acct__link:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+.acct__addr-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+
+.acct__addr-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  transition: box-shadow var(--dur) var(--ease);
+}
+
+.acct__addr-item:hover {
+  box-shadow: var(--sh-sm);
+}
+
+.acct__addr-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.acct__addr-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.acct__addr-name {
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.acct__addr-phone {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 「默认」标记：柔色底 + 主色字，与取码按钮同一套小标签语言 */
+.acct__tag {
+  padding: 2px var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+}
+
+.acct__addr-text {
+  margin-top: var(--s-2);
+  color: var(--n700);
+  font-size: var(--t-base);
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+/* 操作区：`flex: none` + 顶部对齐的容器里竖直居中于首行，不随地址文字折行而漂移 */
+.acct__addr-ops {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.acct__addr-confirm {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 空态：与「加载失败」的降级块**刻意不同形**——虚线框、无底色、内容居中。
+   两者混成一块的话，「读不到地址」会被读成「没有地址」（用户以为自己存的地址丢了） */
+.acct__empty {
+  margin-top: var(--s-5);
+  padding: var(--s-8) var(--s-5);
+  border: 1px dashed var(--n300);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.acct__empty-text {
+  color: var(--n600);
+  font-size: var(--t-base);
 }
 
 /* ============================================================================

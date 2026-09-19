@@ -13,9 +13,9 @@ import SiteFooter from '../../components/SiteFooter.vue'
  */
 
 /**
- * 菜单项。⚠ 「收货地址」指向的 `/account/addresses` **此刻还没有对应的 child 路由**：
- * 那个页面与本页属同一批、稍后落地，这里先按**最终路径**给入口——
- * 不要为它写占位页，也不要先隐藏此项（隐藏了就等于把顺序反过来记账）。
+ * 菜单项。两项都已有对应的 child 路由（`/account/profile`、`/account/addresses`），
+ * 路径即入口、不再有占位项——新增内容页时这里加一项 + 路由加一个 child 即可，
+ * 本组件不需要别的改动（左右分栏只在这里搭一次）。
  */
 const menus = [
   { to: '/account/profile', label: '个人资料' },

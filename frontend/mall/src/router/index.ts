@@ -68,9 +68,13 @@ const routes = [
         name: 'account-profile',
         component: () => import('../views/account/ProfileView.vue'),
         meta: { title: '个人资料', requiresAuth: true }
+      },
+      {
+        path: 'addresses',
+        name: 'account-addresses',
+        component: () => import('../views/account/AddressView.vue'),
+        meta: { title: '收货地址', requiresAuth: true }
       }
-      // ⚠ 收货地址（`addresses`）是同一批的另一条任务落的 child，届时加在这里；
-      // AccountLayout 的菜单已按最终路径给出入口
     ]
   },
   // 兜底：未匹配路径回首页
