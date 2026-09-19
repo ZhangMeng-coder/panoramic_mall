@@ -15,8 +15,8 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 **共 8 个接口。**
 
-⚠ **本表 8 条状态均为 `待实现`**（契约先行，服务尚未创建）：本文件先把接口面固定下来，
-`契约声明(接口模块)` / `域实现` 两列填 `—` —— 代码不存在，写计划落点只会变成新的漂移点。
+⚠ **本表按行分批实现**（契约先行）：已实现的 2 条（`getProfile` / `saveProfile`）状态列留空、
+`契约声明(接口模块)` / `域实现` 填落点；**其余 6 条（收货地址）仍标 `待实现`**，两列填 `—`。
 `待实现` 行**只核对路径 / 方法 / 权限串的写法**，不参与「契约 ↔ 代码」双向核对（见 [README.md](./README.md)）。
 实现完成后须在**同一改动内**把对应行的「状态」摘回留空，否则检查器的反向哨兵会报错。
 
@@ -37,8 +37,8 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | — | — | CustomerProfileBffService(mall-bff) | 待实现 |
-| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | — | — | CustomerProfileBffService(mall-bff) | 待实现 |
+| getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | CustomerCenterClient.java:39 | ProfileController.java:34 | CustomerProfileBffService(mall-bff) |  |
+| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | CustomerCenterClient.java:48 | ProfileController.java:42 | CustomerProfileBffService(mall-bff) |  |
 | listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
 | getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |
 | saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | — | — | CustomerAddressBffService(mall-bff) | 待实现 |

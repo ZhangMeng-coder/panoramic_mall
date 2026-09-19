@@ -1,6 +1,12 @@
 package com.panoramic.contract.customer.api;
 
+import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
+import com.panoramic.contract.customer.vo.CustomerProfileVO;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * customer-center（顾客域，下沉纯域）内部 Feign 客户端。
@@ -16,12 +22,29 @@ import org.springframework.cloud.openfeign.FeignClient;
  * <b>无 owner / platform 分侧</b>——本期只做 C 端自助，调用方传的 {@code customerId} 是否「本人」由 mall-bff
  * 从登录态取，域内不做任何身份判断（不读 X-User-Type 判权；该头只用于审计留痕）。
  * 服务端路径与映射需与 customer-center 域内部控制器一一对应（前缀 /internal/customer）。</p>
- * <p>⚠ 本接口当前为<b>空壳</b>：契约表（docs/contracts/customer-center.md）8 条仍标 {@code 待实现}，
- * 方法按行分批补齐——摘掉某行的 {@code 待实现} 标记、在此声明该方法、域侧补上实现，三者必须落在同一个提交里
- * （否则 drift-check 的标记腐烂反向哨兵会报错）。</p>
+ * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表（docs/contracts/customer-center.md）某行的 {@code 待实现} 标记、
+ * 在此声明该方法、域侧补上实现，三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
+ * 当前已补齐「顾客资料」两条（getProfile / saveProfile），地址 6 条仍标 {@code 待实现}。</p>
  */
 @FeignClient(name = "customer-center", contextId = "customerCenterClient",
         path = "/internal/customer", configuration = CustomerFeignConfiguration.class)
 public interface CustomerCenterClient {
-    // 方法按 docs/contracts/customer-center.md 的行分批补齐（与域实现、契约摘标记同一提交）
+
+    /**
+     * 读顾客资料：无资料行返回「仅含 id 的空 VO」，不返回 null、不抛 404（调用方不必判空）
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @return 顾客资料
+     */
+    @GetMapping("/profile/{customerId}")
+    CustomerProfileVO getProfile(@PathVariable("customerId") Long customerId);
+
+    /**
+     * 保存顾客资料（域侧惰性建行：无记录则建 id=customerId 的资料行）
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param dto        资料字段
+     */
+    @PostMapping("/profile/{customerId}")
+    void saveProfile(@PathVariable("customerId") Long customerId, @RequestBody CustomerProfileSaveDTO dto);
 }
