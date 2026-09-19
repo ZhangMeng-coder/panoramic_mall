@@ -46,4 +46,10 @@ public class StoreGoodsSkuVO {
      * 上下架：0 下架，1 上架
      */
     private Integer shelfStatus;
+
+    /**
+     * 可用库存 = {@code stock − locked_stock}（本期 {@code locked_stock} 恒 0）。
+     * <p>⚠ 这是「能卖几件」，不是库存表里的总库存；管理端的账实明细看库存管理页接口。</p>
+     */
+    private Integer availableStock;
 }

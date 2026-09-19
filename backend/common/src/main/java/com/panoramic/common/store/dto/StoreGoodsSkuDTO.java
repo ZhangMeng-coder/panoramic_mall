@@ -4,6 +4,7 @@ import com.panoramic.common.goods.dto.SpecAttr;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -50,4 +51,11 @@ public class StoreGoodsSkuDTO {
     @DecimalMin(value = "0.01", message = "SKU 价格不能低于0.01")
     @Digits(integer = 8, fraction = 2, message = "SKU 价格最多8位整数、2位小数")
     private BigDecimal price;
+
+    /**
+     * 初始库存：<b>仅新增行（{@code id} 为空）时被采信</b>；已有行的库存由库存管理页维护，此处传了也忽略。
+     * <p>可空 = 按 0 建库存行；库存只影响可卖件数，不影响上下架与 C 端可见性。</p>
+     */
+    @Min(value = 0, message = "库存不能为负")
+    private Integer stock;
 }
