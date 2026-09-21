@@ -31,6 +31,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>⚠ 「命中」不只是「返回了东西」，而是**没有任何副作用**：不再扣库存、不再落库、不再校验商品。
  * 故用例除了断言返回对象同一，还要断言库存与仓库条数都没变。</p>
  *
+ * <p>⚠ 第一级返回的是「首次那次提交返回过的**整批**」，条数与订单号都要逐一致：
+ * 一批里可能含指纹命中的复用笔（它们的 requestId 属于上一次提交），故凭证只能是那次提交的记录本身，
+ * 不能是「按 requestId 查出来的订单行」。另有两条边界必须钉住：整批重放（含复用笔）与
+ * 「requestId 的作用域是顾客内」——后者错法的后果是把别人的订单交给当前顾客。</p>
+ *
  * <p>⚠ 时间窗口的边界是**闭区间**（{@code createTime >= since}）：窗口长度那一刻算窗口内。
  * 边界必须有用例钉住，否则「临界 1 秒」的行为只能靠读代码猜。</p>
  */
@@ -110,6 +115,56 @@ class OrderIdempotencyTest {
         assertThat(replay).hasSize(1);
         assertThat(replay.get(0)).isSameAs(first.get(0));
         assertThat(orderRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("「一店复用 + 一店新建」的提交被重放 → 返回与首次**同一批**（条数与订单号逐一致）")
+    void replayedMixedBatchReturnsTheWholeFirstBatch() {
+        // 首次只买 A 店，把 A 店那一笔落下来
+        OrderModel orderA = coordinator.create(command(11L, OrderSource.CART, "req-1", line(SKU_A, 2))).get(0);
+
+        // 再提交 req-2：A 店指纹命中复用 orderA、B 店新建 orderB
+        List<OrderModel> first = coordinator.create(
+                command(11L, OrderSource.CART, "req-2", line(SKU_A, 2), line(SKU_B, 1)));
+        assertThat(first).hasSize(2);
+        assertThat(first.get(0)).isSameAs(orderA);   // 复用笔的 requestId 仍是 req-1
+
+        // 客户端超时，原样重放 req-2
+        List<OrderModel> replay = coordinator.create(
+                command(11L, OrderSource.CART, "req-2", line(SKU_A, 2), line(SKU_B, 1)));
+
+        // ⚠ 若按「requestId 查订单行」实现第一级，这里只会返回 req-2 新建的那一笔——同一请求两次调用条数不同
+        assertThat(replay).hasSize(2);
+        assertThat(replay).containsExactlyElementsOf(first);
+        assertThat(replay).extracting(OrderModel::getOrderNo)
+                .containsExactlyElementsOf(first.stream().map(OrderModel::getOrderNo).toList());
+        assertThat(replay.get(0)).isSameAs(orderA);
+        // 重放没有任何副作用：不重建、不二次扣库存、不重复落库
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 2);
+        assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK - 1);
+        assertThat(orderRepository.count()).isEqualTo(2);
+        assertThat(stockPort.outboundRecords()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("requestId 的作用域是顾客内：B 顾客拿 A 用过的键 → 不返回 A 的订单，按新提交正常处理")
+    void requestIdIsScopedToTheCustomer() {
+        List<OrderModel> aBatch = coordinator.create(command(11L, OrderSource.CART, "req-1", line(SKU_A, 2)));
+
+        List<OrderModel> bBatch = coordinator.create(command(99L, OrderSource.CART, "req-1", line(SKU_A, 2)));
+
+        // ⚠ 只按 requestId 查的话，这里会把 11 号顾客的订单原样交给 99 号（订单号 / 金额 / 门店外泄）
+        assertThat(bBatch).singleElement().satisfies(order -> {
+            assertThat(order.getCustomerId()).isEqualTo(99L);
+            assertThat(order.getOrderNo()).isNotEqualTo(aBatch.get(0).getOrderNo());
+        });
+        assertThat(orderRepository.count()).isEqualTo(2);
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 4);
+        // A 的提交记录没被 B 顶掉，A 重放拿到的仍是自己那一笔
+        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
+                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(aBatch));
+        assertThat(orderRepository.findSubmission(99L, "req-1")).get()
+                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(bBatch));
     }
 
     @Test

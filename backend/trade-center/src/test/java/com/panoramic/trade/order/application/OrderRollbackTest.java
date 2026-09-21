@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -82,22 +83,14 @@ class OrderRollbackTest {
         properties.setOrderNoMaxRetry(5);
     }
 
-    /**
-     * 单号序列**跨协调器共享**（字段持有，不每次新建）
-     *
-     * <p>⚠ 这不是「顺手共享」：单号在真实系统里全局唯一，而失败提交**不落任何单**，
-     * 故下一次提交在同一个时钟秒里完全可能拿到同一个号（重试/补偿的常规情形）。
-     * 若每次新建协调器就重置序列，两个协调器会吐出同一个单号，
-     * 而库存端口的回补是按 {@code orderNo + skuId} 去重的——第二条回补会被静默当成重复调用吃掉，
-     * 用例里就会看到「库存少了 1 件」这种与本用例无关的假失败。</p>
-     */
-    private final AtomicInteger orderNoSequence = new AtomicInteger();
-
     private OrderCreateCoordinator coordinator(GoodsQueryPort goods, StockPort stock) {
         OrderCreatePipeline pipeline = new OrderCreatePipeline(List.of(
                 new GoodsCheckStep(goods), new StockCheckStep(stock), new PriceComputeStep(goods)), properties);
+        // 单号序列每个协调器各自从 0 起：失败提交不落库，故两个协调器吐出同一个单号是**允许**的、
+        // 也是真实存在的情形（见第 ⑤ 组用例）——不能靠「让它们错开」来回避
+        AtomicInteger sequence = new AtomicInteger();
         return new OrderCreateCoordinator(orderRepository, goods, stock,
-                new DefaultOrderNoGenerator(clock, orderNoSequence::getAndIncrement), pipeline, properties, clock);
+                new DefaultOrderNoGenerator(clock, sequence::getAndIncrement), pipeline, properties, clock);
     }
 
     private static OrderCreateCommand command(String requestId, OrderCreateCommand.Line... lines) {
@@ -135,7 +128,8 @@ class OrderRollbackTest {
         assertThat(records).allSatisfy(record -> assertThat(record.orderNo()).isEqualTo(records.get(0).orderNo()));
 
         assertThat(orderRepository.count()).isZero();
-        assertThat(orderRepository.findByRequestId("req-1")).isEmpty();
+        // 幂等映射也没落：否则「这次提交已经成功过」会被记下来，重放会返回一个根本不存在的批次
+        assertThat(orderRepository.findSubmission(11L, "req-1")).isEmpty();
     }
 
     // ── ② 多店：前一笔（本次新建）也被回补，没扣过的行不留记录 ──────────────────
@@ -208,17 +202,50 @@ class OrderRollbackTest {
     // ── ④ 回补自身的边界：幂等 + 次生错误不吞主异常 ────────────────────────────
 
     @Test
-    @DisplayName("回补幂等：同 orderNo+skuId 回补两次只生效一次，且不再追加负记录")
-    void revertIsIdempotent() {
-        InMemoryStockPort stock = new InMemoryStockPort(clock);
-        stock.setStock(SKU_A, 5);
-        stock.deduct(SKU_A, 2, "NO-1");
+    @DisplayName("净额为 0 的行不回调 revert：整次回滚只对「确实扣过」的行下手")
+    void linesWithZeroNetDeductionAreNotReverted() {
+        // ⚠ 端口层已不去重（见 StockPort#revert 契约），故「该还谁、还多少」全压在这一层的净额算式上：
+        // 二号店两行里 SKU_B 扣成、SKU_B2 库存为 0 压根没扣，只有前者该被还
+        CountingStockPort counting = new CountingStockPort(stockPort);
 
-        stock.revert(SKU_A, 2, "NO-1");
-        stock.revert(SKU_A, 2, "NO-1");
+        Throwable thrown = catchThrowable(() -> coordinator(goodsQueryPort, counting)
+                .create(command("req-1", line(SKU_B, 1), line(SKU_B2, 1))));
 
-        assertThat(stock.available(SKU_A)).isEqualTo(5);
-        assertThat(stock.outboundRecords()).hasSize(2);   // 一正一负，重复回补不再追加
+        assertThat(thrown).isInstanceOf(ServiceException.class);
+        assertThat(thrown.getMessage()).isEqualTo("库存不足");
+        assertThat(counting.revertedSkuIds()).containsExactly(SKU_B);
+        assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK);
+        assertThat(stockPort.available(SKU_B2)).isZero();   // 没扣过 → 没还，也就不会把库存冲成 1
+    }
+
+    // ── ⑤ 跨 episode 撞同一单号：回补必须真的发生（端口不去重，账靠本层净额算法兜） ──
+
+    @Test
+    @DisplayName("两次失败提交拿到同一单号 + 含同一 skuId → 两次都真的回补（库存回原值、流水净额 0）")
+    void twoFailedEpisodesSharingTheSameOrderNoBothRevert() {
+        // 失败提交从不落库 → existsByOrderNo 对它恒 false → 同一秒里的两次失败提交**完全可能**拿到同一单号
+        // （生产上是随机序列 1/10000，而重试/补偿场景下就是同一次意图被重放）。这里把序列固定成 0，
+        // 让这条路径成为必然，而不是靠碰运气才走到。
+        assertThatThrownBy(() -> fixedOrderNoCoordinator(new FailingGoodsQueryPort(goodsQueryPort, 3))
+                .create(command("req-1", line(SKU_A, 2))))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> fixedOrderNoCoordinator(new FailingGoodsQueryPort(goodsQueryPort, 3))
+                .create(command("req-2", line(SKU_A, 2))))
+                .isInstanceOf(IllegalStateException.class);
+
+        // ⚠ 若库存端口按 orderNo+skuId 去重，第二次回补会被当成「重复调用」静默吃掉：
+        // 库存永久少 2 件，而出库流水净额却显示 0——账实不符，且不报任何错。
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
+        assertThat(netOutbound()).isZero();
+        assertThat(stockPort.outboundRecords()).hasSize(4);   // 两次「+2 扣 / −2 还」
+    }
+
+    /** 单号固定为同一个的协调器（见上一条用例：把「跨 episode 撞单号」变成必然） */
+    private OrderCreateCoordinator fixedOrderNoCoordinator(GoodsQueryPort goods) {
+        OrderCreatePipeline pipeline = new OrderCreatePipeline(List.of(
+                new GoodsCheckStep(goods), new StockCheckStep(stockPort), new PriceComputeStep(goods)), properties);
+        return new OrderCreateCoordinator(orderRepository, goods, stockPort,
+                new DefaultOrderNoGenerator(clock, () -> 0), pipeline, properties, clock);
     }
 
     @Test
@@ -251,8 +278,8 @@ class OrderRollbackTest {
         assertThat(orderRepository.count()).isZero();
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
         assertThat(netOutbound()).isZero();
-        assertThat(orderRepository.findByRequestId("req-1")).isEmpty();
-        assertThat(orderRepository.findByRequestId("req-2")).isEmpty();
+        assertThat(orderRepository.findSubmission(11L, "req-1")).isEmpty();
+        assertThat(orderRepository.findSubmission(11L, "req-2")).isEmpty();
     }
 
     /**
@@ -278,6 +305,42 @@ class OrderRollbackTest {
                 throw new IllegalStateException("商品域暂不可用");
             }
             return delegate.mapBySkuIds(skuIds);
+        }
+    }
+
+    /** 记录「哪些 skuId 被回补过」的库存端口包装：回补的幂等只在编排层，故谁被还了必须看得见 */
+    private static final class CountingStockPort implements StockPort {
+
+        private final StockPort delegate;
+        private final List<Long> revertedSkuIds = new ArrayList<>();
+
+        private CountingStockPort(StockPort delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public boolean deduct(Long skuId, int quantity, String orderNo) {
+            return delegate.deduct(skuId, quantity, orderNo);
+        }
+
+        @Override
+        public void revert(Long skuId, int quantity, String orderNo) {
+            revertedSkuIds.add(skuId);
+            delegate.revert(skuId, quantity, orderNo);
+        }
+
+        @Override
+        public int available(Long skuId) {
+            return delegate.available(skuId);
+        }
+
+        @Override
+        public List<StockOutboundRecord> outboundRecords() {
+            return delegate.outboundRecords();
+        }
+
+        private List<Long> revertedSkuIds() {
+            return List.copyOf(revertedSkuIds);
         }
     }
 

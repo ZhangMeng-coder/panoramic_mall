@@ -14,7 +14,7 @@ import java.time.LocalDateTime;
  *
  * @param skuId      店铺 SKU id
  * @param quantity   正数 = 出库，负数 = 回补
- * @param orderNo    所属订单号（回补去重的键之一：同 {@code orderNo + skuId} 只回补一次）
+ * @param orderNo    所属订单号（调用方按 {@code orderNo + skuId} 汇总净额，判断这一行还欠不欠补）
  * @param occurredAt 发生时刻
  */
 public record StockOutboundRecord(Long skuId, int quantity, String orderNo, LocalDateTime occurredAt) {

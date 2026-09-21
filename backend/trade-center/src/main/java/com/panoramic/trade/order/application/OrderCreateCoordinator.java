@@ -9,6 +9,7 @@ import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderNoGenerator;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
 import com.panoramic.trade.order.domain.port.OrderRepository;
+import com.panoramic.trade.order.domain.port.OrderSubmission;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.domain.port.StockOutboundRecord;
 import com.panoramic.trade.order.domain.port.StockPort;
@@ -38,9 +39,19 @@ import java.util.TreeMap;
  * 正是那个全局事务要保证的事——任一笔失败，整次提交不留痕：库存回补 + 追加反向出库记录 + 不落单。</p>
  *
  * <h3>为什么库存扣减与订单写入不是逐笔提交（裁定 D13）</h3>
- * <p>全部步骤跑完、状态已是「待支付」、每笔都封存后，才 {@link OrderRepository#saveAll} 一次写进去。
+ * <p>全部步骤跑完、状态已是「待支付」、每笔都封存后，才 {@link OrderRepository#saveSubmission} 一次写进去
+ * ——订单与「本次提交返回了哪一批」的映射**一并**落库（两者必须原子，理由见该方法的注释）。
  * 于是「失败不留残单」这件事不需要靠删数据实现——失败时订单**从来没被写过**，只剩「回补库存」要还。
  * 反过来若逐笔提交，中途失败就留下一批半成品残单，得再写一套补偿把它们删掉，那是第二条会出错的路。</p>
+ *
+ * <p>⚠ 落库后若两者在真实实现里不是原子的（跨表 / 跨库），第一级幂等会**自愈着退化**：订单在、映射丢了时，
+ * 重放会走第二级指纹复用——窗口内各笔都还能命中，仍返回同一批；但窗口外就没有任何东西挡得住它，
+ * 会真的再下一单。故「退化」只在窗口内无害，映射本身不是缓存、不能省。</p>
+ *
+ * <h3>两级幂等的键各自的作用域</h3>
+ * <p>{@code requestId} 的作用域是**顾客内**：它由客户端生成，不同顾客之间不共享，
+ * 故第一级查询必须连 {@code customerId} 一起收窄——只按键查会让 A 顾客的订单被 B 顾客用同一个键捞走
+ * （订单号 / 金额 / 门店全外泄）。第二级的指纹里本来就含顾客 id，天然不跨顾客。</p>
  *
  * <h3>为什么回补只针对「本次新建」的笔</h3>
  * <p>「复用」（指纹命中）的那一笔属于**上一次提交**，它的库存在上一次就已经扣过；
@@ -77,7 +88,8 @@ public class OrderCreateCoordinator {
      * 创建订单（一次提交可能拆出多笔，一单一店）
      *
      * @param command 下单入参（已合并同 SKU 行）
-     * @return **本次提交涉及的全部订单**（新建 + 复用的），按 `storeId` 升序排列
+     * @return **本次提交涉及的全部订单**（新建 + 复用的），按 `storeId` 升序排列；
+     *         {@code requestId} 命中时返回的是**首次那次提交返回过的整批**（条数与订单号逐一致）
      * @throws ServiceException       商品不存在 / 不可购买 / 库存不足（HTTP 400，可原样透传页面）
      * @throws IllegalStateException  订单号连续冲突超过重试上限（生成器或环境出了问题）
      */
@@ -88,11 +100,14 @@ public class OrderCreateCoordinator {
         // ① 第一级幂等：requestId 命中就整批原样返回——不重建、不再扣库存、不校验商品。
         //    连商品都不校验是刻意的：那批订单是在商品当时可买的前提下成立的，用此刻的商品状态去否掉它，
         //    只会让「重放同一个请求」比第一次更早失败——重放应当幂等，不该有副作用也不该有新判据。
+        //    ⚠ 返回的是**那次提交返回过的整批**（提交记录说了算），不是「按 requestId 查到的订单行」：
+        //    一批里可能有指纹命中的复用笔，它们的 requestId 是上一次提交的，按行查会少返回几笔。
+        //    ⚠ 查询按 customerId 收窄：requestId 的作用域是顾客内，否则 B 顾客能拿 A 的键捞走 A 的订单。
         String requestId = normalizeRequestId(command.requestId());
         if (requestId != null) {
-            List<OrderModel> existing = orderRepository.findByRequestId(requestId);
-            if (!existing.isEmpty()) {
-                return existing;
+            Optional<OrderSubmission> previous = orderRepository.findSubmission(command.customerId(), requestId);
+            if (previous.isPresent()) {
+                return previous.get().orders();
             }
         }
 
@@ -132,9 +147,12 @@ public class OrderCreateCoordinator {
                 // 状态在 open 时就是 PENDING_PAYMENT（statusTrail 初始即含它），这里不需要、也不该再迁移一次
                 result.add(order);
             }
-            if (!created.isEmpty()) {
-                orderRepository.saveAll(List.copyOf(created));
-            }
+            // ④ 一次性落库（D13）：订单 + 本次提交的幂等映射。**整批 result 都要进映射**（含复用笔）——
+            //    重放这个请求时要返回的是「首次返回过的那一批」，少一笔就等于丢单。
+            //    复用笔的 requestId 保持它原本的值，这里不改写：它记的是「哪次提交创造了这笔单」。
+            //    ⚠ 无条件调用（哪怕 created 为空）：一批全是复用笔时，映射本身仍必须记下来。
+            orderRepository.saveSubmission(
+                    new OrderSubmission(requestId, command.customerId(), List.copyOf(result)));
             return List.copyOf(result);
         } catch (RuntimeException e) {
             revertCreated(created, e);
@@ -198,11 +216,18 @@ public class OrderCreateCoordinator {
     /**
      * 回滚本次新建的笔：**逆序**逐行回补库存
      *
-     * <p>⚠ 回补前先看一遍出库流水，只还「确实扣过的行」：{@link StockPort#revert} 的契约是
-     * 「把数量加回去」（它只按 {@code orderNo + skuId} 去重，无法知道这笔到底扣没扣），
-     * 而失败可能发生在 stock-check **之前或之中**——那时这一行根本没扣，盲目回补会把库存**冲多**。
-     * 这是典型的「不报错但写坏数据」：超卖的镜像错误，不会让任何一次下单失败。
-     * 故这里以流水为准（{@code 净出库 > 0} 才算欠补），真实实现下可换成「按订单号查出库记录」的窄查询。</p>
+     * <p>⚠ 回补前先看一遍出库流水，只还「确实扣过的行」——<b>这一段是本层唯一的回补幂等保证</b>：
+     * {@link StockPort#revert} 不做任何去重（调一次就还一次），既不能靠它挡住重复回补，
+     * 也不能靠它判断「这笔到底扣没扣」。两个错误方向都由净额算式兜住：</p>
+     * <ul>
+     *   <li><b>别还多</b>：失败可能发生在 stock-check **之前或之中**——那时这一行根本没扣，
+     *       盲目回补会把库存**冲多**（超卖的镜像错误：不报错、只写坏数据）。净额 {@code <= 0} 即跳过。</li>
+     *   <li><b>别漏还</b>：失败提交不落库 → 同一单号可能被两次失败提交复用 → 若端口那边再按
+     *       {@code orderNo + skuId} 去重，第二次**真实**回补会被静默吃掉（库存永久少扣、流水却显示净 0）。
+     *       故去重只发生在这一层，且判据是「流水净额」而不是「我是不是调过」。</li>
+     * </ul>
+     * <p>净额算法天然自愈：本方法若被重复进入（同一失败 episode 第二次），流水里已有一条负记录，
+     * 净额归零 → 自然跳过。真实实现下这一遍可换成「按订单号查出库记录」的窄查询。</p>
      *
      * <p>⚠ 逆序是刻意的：正序扣、逆序还，回补顺序与库存被占用的顺序相反，
      * 未来接入「按订单回补」的真实库存实现时，这一顺序与事务的回滚顺序一致。</p>

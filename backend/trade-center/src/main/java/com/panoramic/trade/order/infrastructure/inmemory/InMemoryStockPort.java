@@ -7,10 +7,8 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * {@link StockPort} 的内存实现（本期无真实库存写入，裁定 D1/D2）。
@@ -24,6 +22,14 @@ import java.util.Set;
  * <p>⚠ 出库记录**只追加**（正数出库、负数回补），回补不是删掉原记录：
  * 「净出库量」于是就是一次求和，断言「回滚后净出库为 0」不需要看任何操作类型字段。</p>
  *
+ * <p>⚠ <b>{@link #revert} 刻意<b>不做</b>去重</b>（曾经按 {@code orderNo + skuId} 记一个「已回补」集合，
+ * 已删）：那个去重键**不足以识别一次回补**。失败提交从不落库 → {@code existsByOrderNo} 对它恒 false →
+ * 同一秒里的两次失败提交完全可能拿到同一个单号（生产上是随机序列 1/10000，而重试/补偿场景下
+ * 就是同一次意图被重放）；若含同一 skuId，第二次回补会被当成「重复调用」静默吃掉：
+ * 库存永久少扣、而出库流水净额却显示 0——账实不符且不报任何错。
+ * 回补的幂等自此**由调用方保证**（见 {@code StockPort#revert} 的契约）：编排层按流水净额决定要不要还，
+ * 同一个失败 episode 里每个 {@code (orderNo, skuId)} 至多还一次。</p>
+ *
  * <p>⚠ <b>时钟注入而非 {@code LocalDateTime.now()}</b>：记录里的发生时刻一旦取自系统时间，
  * 单测就只能断言「有个时间」而不能断言「哪个时间」——时间相关的不变量（顺序、窗口）就没法钉住。</p>
  */
@@ -34,9 +40,6 @@ public class InMemoryStockPort implements StockPort {
 
     /** 出库 / 回补流水（只追加） */
     private final List<StockOutboundRecord> records = new ArrayList<>();
-
-    /** 已回补过的「订单号 + skuId」：保证回补幂等（重复回补会把库存越冲越多） */
-    private final Set<String> reverted = new HashSet<>();
 
     private final Clock clock;
 
@@ -80,11 +83,6 @@ public class InMemoryStockPort implements StockPort {
             throw new IllegalArgumentException("回补数量必须为正：" + quantity);
         }
         synchronized (this) {
-            // 去重放在改动之前：已回补过就什么都不做，**且不再追加记录**——
-            // 「什么都不做」若只针对库存、却仍追加一条负记录，流水就会与库存对不上
-            if (!reverted.add(deductionKey(orderNo, skuId))) {
-                return;
-            }
             stock.merge(skuId, quantity, Integer::sum);
             records.add(new StockOutboundRecord(skuId, -quantity, orderNo, LocalDateTime.now(clock)));
         }
@@ -98,9 +96,5 @@ public class InMemoryStockPort implements StockPort {
     @Override
     public synchronized List<StockOutboundRecord> outboundRecords() {
         return List.copyOf(records);
-    }
-
-    private static String deductionKey(String orderNo, Long skuId) {
-        return orderNo + "|" + skuId;
     }
 }

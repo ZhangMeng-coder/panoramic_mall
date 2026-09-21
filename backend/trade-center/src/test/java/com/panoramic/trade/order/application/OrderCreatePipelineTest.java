@@ -164,6 +164,22 @@ class OrderCreatePipelineTest {
     }
 
     @Test
+    @DisplayName("配置里同一步骤名写两遍 → IllegalStateException（否则它会跑两次：库存被扣两遍且不报错）")
+    void duplicateConfiguredStepNameRejected() {
+        List<String> calls = new ArrayList<>();
+        List<OrderCreateStep> beans = List.of(
+                RecordingStep.ok("goods-check", calls), RecordingStep.ok("stock-check", calls));
+
+        // 配置是**执行序列**不是集合：写两遍就该跑两遍，而「扣两次库存」是跑得出结果、也不报错的静默数据错
+        Throwable thrown = catchThrowable(() -> new OrderCreatePipeline(
+                beans, props("goods-check", "stock-check", "stock-check")));
+
+        assertThat(thrown).isInstanceOf(IllegalStateException.class);
+        assertThat(thrown.getMessage()).contains("重复").contains("stock-check");
+        assertThat(calls).isEmpty();
+    }
+
+    @Test
     @DisplayName("步骤配置为空 → IllegalStateException（空流水线的订单永远 seal 不了，是「不报错但写坏数据」）")
     void emptyStepsRejected() {
         List<String> calls = new ArrayList<>();

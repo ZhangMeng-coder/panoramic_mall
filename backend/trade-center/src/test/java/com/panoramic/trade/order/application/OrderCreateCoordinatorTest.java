@@ -251,7 +251,13 @@ class OrderCreateCoordinatorTest {
 
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderRepository.all()).containsExactly(order);
-        assertThat(orderRepository.findByRequestId("req-1")).containsExactly(order);
+        // 第一级幂等的凭证是**提交记录**（含整批），不是「按 requestId 查订单行」
+        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
+                .satisfies(submission -> {
+                    assertThat(submission.customerId()).isEqualTo(11L);
+                    assertThat(submission.requestId()).isEqualTo("req-1");
+                    assertThat(submission.orders()).containsExactly(order);
+                });
     }
 
     @Test
@@ -281,7 +287,9 @@ class OrderCreateCoordinatorTest {
 
         assertThat(created).hasSize(1);
         assertThat(created.get(0).getRequestId()).isNull();
-        assertThat(orderRepository.findByRequestId(null)).isEmpty();
+        // requestId 为空 → 不记幂等映射（这次提交不做请求级去重），但订单照常落库
+        assertThat(orderRepository.findSubmission(11L, null)).isEmpty();
+        assertThat(orderRepository.count()).isEqualTo(1);
     }
 }
 

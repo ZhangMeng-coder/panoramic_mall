@@ -4,10 +4,12 @@ import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.domain.OrderModel;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * 订单生成流水线：把「容器里有哪些步骤 bean」与「配置要跑哪些、什么顺序」对账成一条可执行的链（裁定 D9）。
@@ -34,7 +36,7 @@ public class OrderCreatePipeline {
      *
      * @param availableSteps 容器里全部步骤 bean（顺序不参与决策，只有 {@code name()} 参与）
      * @param properties     步骤配置（{@code panoramic.trade.order.steps}，数组顺序即执行顺序）
-     * @throws IllegalStateException 步骤配置为空、步骤名重复、配置里出现容器中没有的步骤名
+     * @throws IllegalStateException 步骤配置为空、两个 bean 重名、配置里的步骤名重复、配置里出现容器中没有的步骤名
      */
     public OrderCreatePipeline(List<OrderCreateStep> availableSteps, OrderProperties properties) {
         Objects.requireNonNull(availableSteps, "步骤 bean 列表不能为空");
@@ -75,6 +77,11 @@ public class OrderCreatePipeline {
      *
      * <p>报错消息里同时给出「配置里的名字」与「实际可用的名字集合」：这两条信息分开看都无用——
      * 只看前者不知道能写什么，只看后者不知道错的是哪一行配置。</p>
+     *
+     * <p>⚠ <b>配置里的重复项必须拦</b>：{@code configured} 是**执行序列**而不是集合，
+     * 配成 {@code [goods-check, stock-check, stock-check, price-compute]} 会让库存被扣两遍——
+     * 跑得出结果、也不报错，只是每单静默多占一份库存。这与 {@code OrderStatusFlow} 拒绝重复状态
+     * 是同一个口径（两侧不能一边严一边松），故在这里拦下，而不是指望「谁会配错呢」。</p>
      */
     private static List<OrderCreateStep> resolve(List<OrderCreateStep> availableSteps, List<String> configured) {
         Map<String, OrderCreateStep> byName = new LinkedHashMap<>();
@@ -92,11 +99,16 @@ public class OrderCreatePipeline {
             }
         }
         List<OrderCreateStep> resolved = new ArrayList<>(configured.size());
+        Set<String> used = new HashSet<>();
         for (String name : configured) {
             OrderCreateStep step = name == null ? null : byName.get(name);
             if (step == null) {
                 throw new IllegalStateException("订单生成步骤配置里出现未知的步骤名：" + name
                         + "（实际可用的步骤名：" + byName.keySet() + "）");
+            }
+            if (!used.add(name)) {
+                throw new IllegalStateException("订单生成步骤配置里出现重复的步骤名：" + name
+                        + "（同一步骤会被执行多次，例如库存被扣两遍；请检查 panoramic.trade.order.steps）");
             }
             resolved.add(step);
         }

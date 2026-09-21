@@ -9,6 +9,7 @@ import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderNoGenerator;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
+import com.panoramic.trade.order.domain.port.OrderSubmission;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
@@ -100,7 +101,7 @@ class OrderNoGeneratorTest {
         seeded.applyGoodsSnapshot(SKU_B, snapshot);
         seeded.applyPrice(SKU_B, snapshot.price());
         seeded.seal();
-        orderRepository.saveAll(List.of(seeded));
+        orderRepository.saveSubmission(new OrderSubmission("req-seeded", 11L, List.of(seeded)));
     }
 
     // ── 格式与长度 ─────────────────────────────────────────────────────────────
