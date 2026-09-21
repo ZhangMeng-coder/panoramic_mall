@@ -11,9 +11,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 商城**前台（C 端顾客）**的端 BFF，端口 **8085**，网关前缀 `/mall/**`（`StripPrefix=1`）。
 > 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff），签发**第三套身份** `type=user`。
 > 服务范围 = **顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料与收货地址**
-> （资料保存 / 地址增删改查 / 设默认）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）。
-> 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情）与 **customer-center**（顾客资料与收货地址）
-> 三个业务域（地址见 [customer-center.md](./customer-center.md)）；
+> （资料保存 / 地址增删改查 / 设默认）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）
+> + **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）。
+> 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情）与
+> **customer-center**（顾客资料与收货地址）三个业务域（地址见 [customer-center.md](./customer-center.md)）、
+> **trade-center**（购物车，见 [trade-center.md](./trade-center.md)）；
 > ⚠ 换绑手机号**不经任何域**——手机号是 `mall_user` 的列（本端独有），`customer_profile` 没有该字段；
 > 首页「热门商品列表」区块仍是静态 mock。
 
@@ -24,13 +26,14 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 类型 | 所在包 |
 |---|---|
-| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO` |
+| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO`；购物车：`MallCartItemAddDTO` / `MallCartItemUpdateDTO` / `MallCartSelectDTO` / `MallCartItemIdsDTO` / `MallCartVO` / `MallCartShopVO` / `MallCartItemVO` |
+| `TradeCartItemVO` 等 | `backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/`（购物车**域**的类型；⚠ 页面出参**不是**它——BFF 汇总成 `MallCartVO`，域类型不出网关） |
 | `CategoryTreeVO` | `backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/vo/` |
 | `SpecConfigItem` / `SpecAttr` | `backend/store-interface/src/main/java/com/panoramic/contract/store/dto/`（详情页的规格配置与 SKU 规格属性，**数据来自 store 域**）⚠ `contract.goods.dto` 下有同形同名的孪生类，**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包，本模块用的是 **store** 那个（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-## 二、接口清单（16 条）
+## 二、接口清单（24 条）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
@@ -50,6 +53,14 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | DELETE | /addresses/{id} | — | `Long` | `Void` | AddressController.java:71 | |
 | POST | /addresses/{id}/default | — | `Long` | `Void` | AddressController.java:80 | |
 | POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:86 | |
+| GET | /cart | — | — | `MallCartVO` | — | 待实现 |
+| GET | /cart/count | — | — | `Integer` | — | 待实现 |
+| POST | /cart/items | — | `MallCartItemAddDTO` | `Long` | — | 待实现 |
+| PUT | /cart/items/{id} | — | `Long`, `MallCartItemUpdateDTO` | `Void` | — | 待实现 |
+| PUT | /cart/items/{id}/selected | — | `Long`, `MallCartSelectDTO` | `Void` | — | 待实现 |
+| PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | — | 待实现 |
+| POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | — | 待实现 |
+| DELETE | /cart | — | — | `Void` | — | 待实现 |
 
 ⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
 登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
@@ -76,6 +87,13 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 登出 | 删除 Redis 快照即服务端下线；本地 token 由前端清除 |
 | 静默降级的例外 | ⚠ **凡「拿不到只是增强、拿不到也照常出页面」的读，都不走 `BffFeignCall`**，而是在各自 service 里 catch + `log.warn` 后降级（如 `/auth/me` 的顾客资料读 `CustomerProfileBffService#loadProfile`、商品分页/facets 用的分类树 `CatalogBffService#categoryTreeOrEmpty`）。**此清单不在此穷举**——新增这类降级时在**该类自己的注释里**写明「为什么这条读可以静默降级」，不要把清单抄到这里（穷举数字就是下一个会烂掉的东西）。判定标准：拿不到它，页面是「少一块增强」还是「主内容没了」——后者必须走 `BffFeignCall` 抛出去 |
 | 库存展示口径 | SKU 出参带 `availableStock`（可用库存 = `stock − locked_stock`，域侧同义；本期 `locked_stock` 恒 0），0 即售罄。⚠ **`warn_stock` 不进 C 端**；⚠ **库存不参与详情可见性**，售罄商品照常可打开、不 404；⚠ 该字段由 `toMallSku` **逐字段手工映射**，与 `description` 消毒同属出口处理 |
+| 购物车读口径 | `GET /cart` 一次编排 = trade-center 取行 + **store 批量详情一次调用**（`POST /goods/platform/spu/batch`）+ 可见性判定 + 按店铺分组汇总。⚠ **逐行调详情是 N+1，禁止**（加购物车行的第一步就是别把行数变成请求数） |
+| 购物车不可买口径 | 行的 `invalid` = **C 端商品可见性不变量**（[cross-cutting.md](./cross-cutting.md) 第 20 条）的**第三个落点**：店铺未审核 / SPU 已下架 / SPU 被锁定 / SPU 已删 → `invalid=true` 且 `purchasable=false`。⚠ **不从列表里删掉**（顾客要看得见才敢删它），但它**不计入** `totalQuantity` / `selectedQuantity` / `selectedAmount`（金额只算真能下单的行） |
+| `invalid` 与 `purchasable` 分工 | 两者**独立**：`invalid` = **商品本身**不可买（不可见）；`purchasable` = 商品可见但**这一行不能再加**（`invalid` 或 `quantity >= availableStock`）→ 前端禁「+」。⚠ 别把两者合成一个字段：合并后「已下架」与「已到库存上限」在页面上同形，提示语没法写对 |
+| 加购不校验库存 | `POST /cart/items` **只校验「该商品对 C 端可见」**（不可见 → `400` 中文提示，不落行），**不校验库存、不锁库存**：购物车是购买意向不是占位，库存只影响 `purchasable` 的展示。⚠ 数量上限（单行 999 / 单购物车 100 行）**在域侧**，超限 `400` 原样透传 |
+| 购物车写口径 | 改数量 / 改选中 / 删除 / 清空**一律经 `BffFeignCall.call` 直透 trade-center**（写路径不在 BFF 二次判定），失败降级文案「购物车暂不可用，请稍后重试」；⚠ **改/删单行命中 0 行（行不存在或不属于本人）是幂等 no-op，不报错**——前端因此不必处理「双击删除」的竞态 |
+| 徽标口径 | `GET /cart/count` = **购物车行数**（轻口径：域侧 `count(*)` + Redis 读穿透，**不做可见性判定**），供顶栏徽标。⚠ 它与购物车页的 `totalQuantity`（**有效行的件数之和**）**口径不同**，不是 bug：徽标数「车里有几项」，页脚算「能买几件、多少钱」 |
+| 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |
 
 ## 三、前端契约的**视觉与结构**基准
 

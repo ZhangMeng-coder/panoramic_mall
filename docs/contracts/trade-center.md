@@ -7,24 +7,68 @@ implScanDirs: backend/trade-center/src/main/java/com/panoramic/trade/controller
 typeDirs: backend/trade-center-interface/src/main/java
 -->
 
-# 交易域（trade-center）· 第 ② 层 —— **待建**
+# 交易域（trade-center）内部契约 · 第 ② 层
 
-> ⚠ **本服务尚不存在。** 此文件为占位，用于固定它在契约体系中的位置与既定约定。
-> 待建项记录在仓库根 `todo.md`。
+> 交易域：**购物车 `trade_cart_item`**。
+> **不暴露公网路由**，只被 mall-bff 经内部 Feign 调用。
+> 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-## 一、归属（术语防呆）
+**共 8 个接口**（全部为 C 端顾客自助购物车，无 owner / platform 分侧）。
 
-根 `CLAUDE.md` 已划定：**"顾客资料 / 收货地址"属 `customer-center`；"购物车 / 订单 / 评价"属本域**。
-⚠ 别把这些实体塞进 `goods-center`（标准商品模板库）或 `store`（店铺在售商品/库存/信誉）。
+## 一、归属与形状
 
-## 二、已确定、不可改的部分
+- **锚点 `customerId` = `mall_user.id`**：跨域 id 引用、**无外键**，与 `store_id` = 店主账号 id 同一手法。
+  所有方法**全按传入锚点过滤**，`customerId` 就是数据权限本身。
+- **无 owner / platform 分侧**：本期只做 **C 端自助**，没有平台侧能力，故不存在 store 那种
+  「owner / platform 分流由 BFF 调哪一侧决定」的形态（对比 [store.md](./store.md) 第三节）。
+- **域内不做任何身份判断**：不判 `X-User-Type`、不校验 token、无 `@PreAuthorize`；
+  身份头只读来填 `UserContext`，且**仅用于审计留痕**。
+  调用方传的 `customerId` 是否真是「本人」，**由 mall-bff 从登录态取**，域侧不校验 —— 防线在 BFF。
+- **形状**：**不包 `RespData`**，错误走 `{code,msg}` + 真实 HTTP 状态 —— 见 [cross-cutting.md](./cross-cutting.md) 第 2 条。
+- **前缀**：`/internal/trade`；拼法（不是 context-path、由 Controller 类级 `@RequestMapping` 写死）
+  见 [README.md](./README.md) 的「内部 Feign 的「路径」前缀怎么来的」。
+- ⚠ **本域是全仓库唯一加载 `datasource-redis.yml` 的域服务**（购物车的加购去重与计数缓存），
+  是 [cross-cutting.md](./cross-cutting.md) 第 12 条「Nacos 加载矩阵」的**登记例外**。
+  ⚠ 它**只把 Redis 当缓存/提示**，不改变「域内不鉴权」：Redis 里没有登录态，MySQL 始终是唯一事实源；
+  两个方向的错判（误报/漏报）都由写路径自愈，见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)。
+- ⚠ **购物车行是「C 端商品可见性」不变量（[cross-cutting.md](./cross-cutting.md) 第 20 条）的第三个落点**：
+  可见性判定（店铺已审核 + SPU 已上架 + 未锁定）**不在域内做**，域只按 `spuId` / `skuId` 出原始行；
+  「这一行还算不算可买」由 mall-bff 读时判定并打 `invalid` 标记。
 
-第 ② 层（纯域）的通用约定（不暴露公网路由、域内不鉴权、不包 `RespData`、类型放本域接口模块、
-熔断 4xx 不计失败率、Nacos 加载矩阵、前缀由类级 `@RequestMapping` 写死）**照第 ② 层既有各域执行**，
-见 [README.md](./README.md) 与 [cross-cutting.md](./cross-cutting.md) 第 2、6、7、12、13、14 条；
-本域与既有域的唯一差别是名字：模块 `trade-center` / `trade-center-interface`，包根 `com.panoramic.contract.trade`，
-前缀 `/internal/trade`。**建域时同步建 `-interface` 模块**（`common` 已收敛为纯基座、不含契约类型）。
+## 二、接口清单
 
-## 三、接口清单
+| Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
+|---|---|---|---|---|---|---|---|---|
+| listCartItems | GET | /cart/{customerId} | `Long` | `List<TradeCartItemVO>` | — | — | CartBffService(mall-bff) | 待实现 |
+| cartItemCount | GET | /cart/{customerId}/count | `Long` | `Integer` | — | — | CartBffService(mall-bff) | 待实现 |
+| addCartItem | POST | /cart/{customerId}/items | `Long`, `TradeCartItemAddDTO` | `Long` | — | — | CartBffService(mall-bff) | 待实现 |
+| updateCartItemQuantity | PUT | /cart/{customerId}/items/{id} | `Long`, `Long`, `TradeCartItemUpdateDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
+| setCartItemSelected | PUT | /cart/{customerId}/items/{id}/selected | `Long`, `Long`, `TradeCartSelectDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
+| setAllCartItemsSelected | PUT | /cart/{customerId}/selected | `Long`, `TradeCartSelectDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
+| removeCartItems | POST | /cart/{customerId}/items/remove | `Long`, `TradeCartItemIdsDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
+| clearCart | DELETE | /cart/{customerId} | `Long` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
 
-**待建** —— 服务创建后按 [README.md](./README.md) 的格式补齐本表，并同步更新索引里的条数。
+> 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`customerId`**（数据权限锚点），第二个是行 `id`。
+> 例：`updateCartItemQuantity` 的 `Long, Long, DTO` = `customerId, id, dto`。
+
+> 字段定义**不在本表**，去 `trade-center-interface`（包根 `com.panoramic.contract.trade`）的
+> `dto` / `vo` 包里看；表里只登记**有哪些接口、形状是什么、类型在哪、谁在调**，不抄字段。
+
+> 删除接口用 **`POST .../items/remove` + `@RequestBody`**（而非 `DELETE` 带 body，或逐个 `DELETE`）：
+> 批量删除口径与跨店通用侧同形，见 [cross-cutting.md](./cross-cutting.md) 第 18 条。
+
+## 三、类型所在包（全部在 `trade-center-interface`，两端引用同一份）
+
+包根：`backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/`
+
+| 包 | 类型 |
+|---|---|
+| `dto` | TradeCartItemAddDTO, TradeCartItemIdsDTO, TradeCartItemUpdateDTO, TradeCartSelectDTO |
+| `vo` | TradeCartItemVO |
+
+## 四、业务规则去哪看
+
+购物车行的落库口径（`(customer_id, sku_id)` 唯一键 + **物理删除**）、数量与行数上限（单行 ≤ 999、单购物车 ≤ 100 行）、
+加购的「查重 → 自增」双向回退、选中状态持久化、Redis 两处失效的可自愈性、
+以及为什么本域**只有购物车、没有下单**——见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)。
+本文件只写接口与形状。

@@ -350,8 +350,11 @@ function typesIn(cell) {
    3. 逐契约文件检查
    ═══════════════════════════════════════════════════════════════════════════ */
 
+// ⚠ README.md 是本目录的**索引页**，不是契约文件：它正文里的「契约表格式」示例含 `contract-meta`
+// 与列名表，会被 parseMeta / columnIndex 认成一份契约（此前只是恰好靠正文出现「待建」二字才没报错，
+// 那是个会烂掉的偶然）。按文件名排除，不靠正文措辞。
 const contractFiles = fs.existsSync(CONTRACTS_DIR)
-  ? fs.readdirSync(CONTRACTS_DIR).filter((f) => f.endsWith('.md')).map((f) => path.join(CONTRACTS_DIR, f))
+  ? fs.readdirSync(CONTRACTS_DIR).filter((f) => f.endsWith('.md') && f !== 'README.md').map((f) => path.join(CONTRACTS_DIR, f))
   : [];
 
 const summary = [];

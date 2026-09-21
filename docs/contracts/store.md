@@ -13,7 +13,7 @@ typeDirs: backend/store-interface/src/main/java
 > **不暴露公网路由**，只被 store-bff（owner 侧）、admin BFF（platform 侧）与 mall-bff（跨店通用侧）经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 22 个接口**（owner 13 + platform 7 + 跨店通用 2）。
+**共 23 个接口**（owner 13 + platform 8 + 跨店通用 2）。
 
 ## 一、前缀怎么拼上的
 
@@ -42,6 +42,7 @@ typeDirs: backend/store-interface/src/main/java
 | batchUpdateSkuStock | PUT | /goods/stock/batch | Long, StoreGoodsStockBatchUpdateDTO | void | StoreClient.java:171 | GoodsController.java:145 | StoreGoodsBffService(store-bff) |  |
 | pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:189 | GoodsController.java:160 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
 | platformStoreGoodsDetail | GET | /goods/platform/spu/{id} | Long | StoreGoodsSpuPlatformDetailVO | StoreClient.java:203 | GoodsController.java:178 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| platformSpuBatch | POST | /goods/platform/spu/batch | StoreGoodsSpuBatchQueryDTO | List<StoreGoodsSpuPlatformDetailVO> | — | — | CatalogBffService(mall-bff) | 待实现 |
 | lockStoreGoods | POST | /goods/platform/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:209 | GoodsController.java:187 | ShopGoodsBffService(admin) |  |
 | unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:215 | GoodsController.java:195 | ShopGoodsBffService(admin) |  |
 | listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:222 | ShopController.java:89 | ShopGoodsBffService(admin) |  |
@@ -55,11 +56,12 @@ typeDirs: backend/store-interface/src/main/java
 | 侧 | 条数 | 方法 |
 |---|:--:|---|
 | **owner** | 13 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock |
-| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions |
+| **platform** | 8 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, platformSpuBatch, lockStoreGoods, unlockStoreGoods, listShopOptions |
 | **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets |
 
 owner 侧**带 `storeId`**（只作用于「id == store_id 的店」，调用方 store-bff）；platform 侧**不带**（全量，
-调用方 admin BFF，`platformStoreGoodsDetail` 另被 mall-bff 消费）；跨店通用侧**连端别约束也不带**——
+调用方 admin BFF，其中 `platformStoreGoodsDetail` / `platformSpuBatch` 另被 mall-bff 消费——
+后者是购物车列表的**批量详情**，一次调用取回多个 SPU，避免逐行 N+1）；跨店通用侧**连端别约束也不带**——
 域只按传入条件过滤，**限定条件全由调用方自设**。域内**没有** `assertOwner` / `requirePlatformAdmin`
 之类的断言，**谁在什么权限下能调哪一侧完全是端 BFF 的职责**。跨店侧返回的 VO 是**管理端超集**，
 C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutting.md) 第 17、19、20 条。
@@ -76,7 +78,7 @@ C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutt
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO |
 | `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO |
 
 > ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem`（**跨域共享形状**，不在上表清单里），`contract.goods.dto`

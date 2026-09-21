@@ -31,10 +31,10 @@
 | [admin.md](./admin.md) | admin 端 BFF 对外接口 | 55 | ① |
 | [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 20 | ① |
 | [goods-center.md](./goods-center.md) | 标准商品域内部接口 | 19 | ② |
-| [store.md](./store.md) | 店铺域内部接口 | 22 | ② |
+| [store.md](./store.md) | 店铺域内部接口 | 23 | ② |
 | [customer-center.md](./customer-center.md) | 顾客域内部接口 | 8 | ② |
-| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 16 | ① |
-| [trade-center.md](./trade-center.md) | 交易域 | 待建 | ② |
+| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 24 | ① |
+| [trade-center.md](./trade-center.md) | 交易域内部接口（购物车） | 8 | ② |
 
 ## 契约表格式（硬约定，检查器依赖）
 
@@ -53,7 +53,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 ```
 
 - `scanDirs`：扫这个服务的 Controller 源码，用来和表比对端点（逗号分隔多个目录）。
-- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要给**它表里用到的**接口模块（现有 `goods-center-interface` / `store-interface` / `customer-center-interface`，**各端按需**——表里出现哪个模块的类型就列哪个）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
+- `typeDirs`：查表里入出参类型名是否存在时搜的目录。页面级要给**它表里用到的**接口模块（现有 `goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，**各端按需**——表里出现哪个模块的类型就列哪个）、`common`（基座类型）和**本服务自己的** dto/vo 目录（BFF 私有类型不在任何接口模块里）。
 
 **内部 Feign**（两端都要登记，所以既扫 Feign 声明也扫域实现）：
 
