@@ -400,11 +400,27 @@ public class JdbcOrderRepository implements OrderRepository {
      */
     private OrderPage page(LambdaQueryWrapper<TradeOrder> wrapper,
                            OrderPageQuery query) {
-        wrapper.eq(query.orderNo() != null, TradeOrder::getOrderNo, query.orderNo())
-                .eq(query.status() != null, TradeOrder::getStatus, query.status().name())
-                .orderByDesc(TradeOrder::getId);
+        applyCommonFilters(wrapper, query);
         Page<TradeOrder> page = orderService.page(new Page<>(query.pageNum(), query.pageSize()), wrapper);
         return new OrderPage(page.getTotal(), assemble(page.getRecords()));
+    }
+
+    /**
+     * 追加三侧共用的筛选与排序（{@code orderNo} / {@code status} 都是**可选**的：null = 不筛）
+     *
+     * <p>⚠ <b>状态名必须先取出来再进 {@code eq}</b>：{@code eq(condition, column, value)} 的 {@code value}
+     * 是**无条件求值**的实参，写成 {@code eq(query.status() != null, …, query.status().name())} 时，
+     * 「不筛状态」这条**默认路径**（{@code status == null}）会在进 {@code eq} 之前就 NPE——
+     * 条件为 {@code false} 也拦不住它，因为实参先算。⚠ 同一个坑：任何「先解引用、再当条件值传」的写法
+     * 都等价于把该条件删掉，只在 null 时变成 500。<br>
+     * 本方法只被三侧分页（顾客 / 商户 / 平台）经 {@link #page} 走到，故它是这三个接口唯一的
+     * 「可选筛选项 → SQL 条件」翻译点，单测 {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段。</p>
+     */
+    static void applyCommonFilters(LambdaQueryWrapper<TradeOrder> wrapper, OrderPageQuery query) {
+        String statusName = query.status() == null ? null : query.status().name();
+        wrapper.eq(query.orderNo() != null, TradeOrder::getOrderNo, query.orderNo())
+                .eq(statusName != null, TradeOrder::getStatus, statusName)
+                .orderByDesc(TradeOrder::getId);
     }
 
     /**

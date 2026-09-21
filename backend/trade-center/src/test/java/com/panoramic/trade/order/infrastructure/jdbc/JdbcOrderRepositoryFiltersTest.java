@@ -1,0 +1,76 @@
+package com.panoramic.trade.order.infrastructure.jdbc;
+
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.panoramic.trade.order.domain.OrderStatus;
+import com.panoramic.trade.order.domain.port.OrderQuery;
+import com.panoramic.trade.order.infrastructure.entity.TradeOrder;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+
+/**
+ * 三侧分页共用的筛选条件（{@code JdbcOrderRepository#applyCommonFilters}）：**可选筛选项翻成 SQL 条件**。
+ *
+ * <p>⚠ 为什么只钉这一小段、而不整条分页链路：本类的其余部分要么在内存仓储里有等价物
+ * （幂等键语义），要么只能在真库上验。只有这段是「契约可选字段 → SQL 条件」的**唯一**翻译点，
+ * 三侧分页（顾客 / 商户 / 平台）全走它，而它没有任何内存实现可对照。</p>
+ *
+ * <p>⚠ 它守的是一个**纯默认路径**的缺陷：{@code eq(condition, col, value)} 的 {@code value}
+ * 无条件求值，写成 {@code query.status().name()} 时「不筛状态」就 NPE 成 500。
+ * 2026-09-22 的 T15 运行验证里三侧分页全被打成 500，就是这一处——故这里同时断言
+ * 「不抛」与「SQL 里确实没有 status 条件」，只断言不抛会漏掉「条件恒 false」的改法。</p>
+ *
+ * <p>⚠ 表元数据要自己初始化（本类跑在纯 JUnit 下，没有 Spring 上下文，MP 的 lambda 缓存是空的，
+ * 否则 {@code TradeOrder::getStatus} 解析不出列名直接报 {@code can not find lambda cache}）。</p>
+ */
+class JdbcOrderRepositoryFiltersTest {
+
+    @BeforeAll
+    static void initLambdaCache() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), TradeOrder.class);
+    }
+
+    @Test
+    @DisplayName("status = null（不筛）不抛异常，且 SQL 段里没有 status 条件")
+    void nullStatusIsSkipped() {
+        LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
+        assertThatCode(() -> JdbcOrderRepository.applyCommonFilters(wrapper, new OrderQuery(null, null, 1, 10)))
+                .doesNotThrowAnyException();
+        assertThat(wrapper.getSqlSegment()).doesNotContain("status");
+    }
+
+    @Test
+    @DisplayName("status = PAID 时条件进 SQL，取值走占位符（不是拼字符串）")
+    void nonNullStatusBecomesCondition() {
+        LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
+        JdbcOrderRepository.applyCommonFilters(wrapper, new OrderQuery(null, OrderStatus.PAID, 1, 10));
+        assertThat(wrapper.getSqlSegment()).contains("status =").contains("MPGENVAL");
+    }
+
+    @Test
+    @DisplayName("orderNo = null（不筛）不进条件，非 null 时按精确匹配进条件")
+    void orderNoIsOptional() {
+        LambdaQueryWrapper<TradeOrder> blank = Wrappers.lambdaQuery();
+        JdbcOrderRepository.applyCommonFilters(blank, new OrderQuery(null, null, 1, 10));
+        assertThat(blank.getSqlSegment()).doesNotContain("order_no");
+
+        LambdaQueryWrapper<TradeOrder> exact = Wrappers.lambdaQuery();
+        JdbcOrderRepository.applyCommonFilters(exact, new OrderQuery("202609221200000001", null, 1, 10));
+        assertThat(exact.getSqlSegment()).contains("order_no =");
+    }
+
+    @Test
+    @DisplayName("无论筛选如何，排序恒为 id 倒序（三侧分页都是下单倒序）")
+    void orderByIdDescAlwaysApplied() {
+        LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
+        JdbcOrderRepository.applyCommonFilters(wrapper, new OrderQuery(null, null, 1, 10));
+        assertThat(wrapper.getSqlSegment()).containsIgnoringCase("order by id desc");
+    }
+}
