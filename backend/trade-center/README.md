@@ -142,14 +142,21 @@
 |---|---|---|
 | `GoodsQueryPort`（商品快照 + 可见性） | `InMemoryGoodsQueryPort` | store 域 `StoreClient`（Feign，带熔断降级） |
 | `StockPort`（扣减 + SKU 粒度出库记录） | `InMemoryStockPort` | store 域库存能力（`UPDATE ... WHERE stock >= ?` 的影响行数 + 同事务写出库记录） |
-| `OrderRepository`（订单与幂等查询） | `InMemoryOrderRepository` | `trade_order` / `trade_order_item` / 出库记录表 |
+| `OrderRepository`（订单 + **提交记录**，两级幂等的落点） | `InMemoryOrderRepository` | `trade_order` / `trade_order_item` / 提交记录表 / 出库记录表 |
 
 - **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
 - **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
 - **生成流水线**：`goods-check`（商品存在 + 店铺已审核 + SPU/SKU 已上架 + 未平台锁定，并把商品快照冻进订单项）→ `stock-check`（逐行原子扣减，成功即写一条 SKU 粒度出库记录）→ `price-compute`（取单价、算行小计与总价、`seal()` 封模型）。三步都是**可插拔实现**（`OrderCreateStep` bean），**启哪些、什么顺序由 `panoramic.trade.order.steps` 决定**，配了不存在的步骤名 → 装配即失败。⚠ 步骤间**只经 `OrderModel` 本体传参**；模型必须走完 `open → 补商品快照 → 补价 → seal` 才能被置为待支付——**顺序写反会直接抛错，不会静默出一张残单**
 - **一单一店**：一次提交按 `storeId` 拆成多笔订单（各店的金额 / 状态 / 扣减相互独立），按 `storeId` 升序处理
-- **重复提交（两级判定）**：`requestId`（整次提交）命中即返回整批；拆单后每笔再按 `fingerprint = sha256(customerId|source|storeId|排序后的 skuId:qty)` 在**窗口内**判定，命中则复用该笔。⚠ 复用笔属于**上一次提交**，它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
+- **订单号**：`yyyyMMddHHmmss` + 4 位序列，生成后查重、冲突则重试（上限 `panoramic.trade.order.order-no-max-retry`）；`Clock` 与序列源可注入——单测靠它钉死时间与「故意撞号」
+- **重复提交（两级判定）**：
+  - 一级 = **提交记录** `OrderSubmission{requestId, customerId, 整批订单}`：`requestId` 命中即按记录返回**首次那批**。⚠ 记录里**必须含复用笔**——不含的话，一次「部分复用 + 部分新建」的提交被重放时会少返回几笔（用户侧表现为「下单成功但少了一笔」）。⚠ 被复用笔的 `requestId` 字段保持**它原本的值**（记录的是「哪次提交创造了这笔单」），不要被后来的提交改写
+  - 一级的作用域是**顾客内**（`customerId + requestId`）：跨顾客不共享，否则 A 用过的 `requestId` 能把 A 的订单取给 B
+  - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`），命中则复用该笔。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
+  - ⚠ 提交记录与订单在**同一次写入**里落（D13），故不存在「订单落了、记录没落」的窗口；真实落库后若两者非原子，重放会**退化到二级指纹**（窗口内各笔仍能命中）→ 仍返回同一批。这条自愈性保持住就行，不必为它引入分布式事务
+  - ⚠ 代价（`requestId` 的定义使然，不是缺陷）：同一 `requestId` 被**换内容**复用（客户端 bug）时，返回的是首次那批，新内容不会被下单
 - **失败回滚**：任一笔失败即整次提交回滚，且**只回补本次新建的笔**。回补口径是「按出库流水汇总 `orderNo|skuId` 净额、只回补净额 > 0 的行」——⚠ **不得改成逐行回补**：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多、且不会报错（静默数据错）
+- ⚠ **回补的幂等由编排层承担、端口层不做去重**（`StockPort#revert` 调一次就还一次）：曾按 `orderNo + skuId` 在端口层去重，结果与「两次失败提交撞同一单号」叠加会**静默吞掉第二次回补**——库存净亏，而流水净额还显示 0（账实不符）。真实实现（store 域）**不要**把这层去重加回去：净额算法的第二次调用会自己算出 0，外层已经够了
 - **保存时机**：步骤链全部成功、状态已置待支付之后才一次性写入——**失败不留残单**，回滚只需回补库存
 - **Seata 落点**：`OrderCreateCoordinator#create` 的方法入口（将来在那里加 `@GlobalTransactional`），真实库存写入方在 store 域。本期**不引依赖、不加注解**——没有跨服务调用时它没有事务可管
 - **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
