@@ -30,6 +30,8 @@ import { trimNum } from '../utils/format'
  *    ⚠ 服务端可能仍把它标着 `selected=true`（全选是**整表**操作，含失效行），页面故意不显示——
  *    显示成勾选会让人以为它会算进金额；同理「删除选中」只删**页面上勾得到**的行（有效行），
  *    不顺手把看不见的失效行一起删掉（那是惊喜式删除）。
+ *    ⚠ 「清除失效商品」（顶部操作条）是**用户显式点的**动作，与上面不冲突：它删的**正是**这些
+ *    失效行。判据直接用服务端下发的 `invalid`，**页面不重判一遍可见性**（那等于把不变量抄第二份）。
  * ④ **全选勾选态按有效行推导**（全是失效行时不可点），点击走 `PUT /cart/selected`
  *    整表接口——**不在前端拆成逐行改**（那是 N 次请求）。
  * ⑤ **数量步进器**：`+` 在 `!purchasable` 时禁用（`purchasable` 由服务端给：
@@ -42,6 +44,9 @@ import { trimNum } from '../utils/format'
  * ⑦ **破坏性动作走行内两步确认**（本端没有模态层，也不用 `window.confirm`，同收货地址页）：
  *    行删除就地变成「确认删除？/ 确认删除 / 取消」；「删除选中」「清空购物车」共用一处
  *    待确认态（`pendingWipe`），同时只留一处确认，不并列弹两块。
+ *    ⚠ **唯一例外是「清除失效商品」**（顶部操作条，`invalidCount > 0` 才渲染，点了就删）：
+ *    它删掉的本就是**买不了**的行，误删的代价是「重新加购一次」，与「删掉一堆正常商品」
+ *    不对等——代价不对等，确认步骤就不该一样。⚠ 别顺手把它补进 `pendingWipe` 那套确认。
  */
 
 /** 单行数量上限（域侧口径的前端镜像，见文件头 ⑤）；只在 `+` 的禁用判据里用 */
@@ -53,8 +58,15 @@ const loadFailed = ref(false)
 
 /** 行内写操作进行中的行 id 集合（防连点；与收货地址页同一手法，用集合而非单一 id） */
 const busyIds = ref<number[]>([])
-/** 整批写操作（全选 / 删除选中 / 清空）进行中 —— 期间全表操作一起禁用 */
+/** 整批写操作（全选 / 删除选中 / 清空 / 清除失效）进行中 —— 期间全表操作一起禁用 */
 const busyAll = ref(false)
+
+/**
+ * 「清除失效商品」自己那一笔是否在跑。
+ * ⚠ 存在的唯一理由是**文案**：`busyAll` 也会被「全选」置起，若拿它当进行中文案的判据，
+ * 全选在飞的那一下这个按钮会显示成「清除中…」。禁用判据仍用 `busyAll`（互斥），文案用本标记。
+ */
+const busyInvalid = ref(false)
 
 /** 正在确认删除的那一行（同一时刻至多一行） */
 const confirmingId = ref<number | null>(null)
@@ -84,6 +96,15 @@ const selectedVisibleIds = computed(() => validItems.value.filter((i) => i.selec
 const selectedQuantity = computed(() => cart.value?.selectedQuantity ?? 0)
 const selectedAmount = computed(() => cart.value?.selectedAmount ?? 0)
 const invalidCount = computed(() => cart.value?.invalidCount ?? 0)
+
+/**
+ * 失效行的 id（「清除失效商品」的请求体）。
+ * ⚠ 判据是服务端下发的 `invalid`，不是页面自己够不够得着商品——与 `invalidCount` **同源同响应**
+ * （都来自这一次 `GET /cart`），故按钮上的数字与实际删掉的条数不会对不上。
+ */
+const invalidIds = computed(() =>
+  shops.value.flatMap((s) => s.items.filter((i) => i.invalid).map((i) => i.id))
+)
 
 /**
  * 拉列表。`hard = true`（首次进入 / 降级重试）显示加载态；写操作之后的刷新走 `hard = false`，
@@ -302,6 +323,36 @@ async function wipe(scope: 'selected' | 'all'): Promise<void> {
     pendingWipe.value = null
   }
 }
+
+/**
+ * 一键清除失效商品（顶部操作条，`invalidCount > 0` 才渲染）。
+ *
+ * ⚠ **不做两步确认**（文件头 ⑦ 的例外，理由在那边）；⚠ 也**不是新端点**——复用批量删除
+ * `POST /cart/items/remove`，后端与契约表都不动（「哪些行失效」由服务端的 `invalid` 说了算，
+ * 页面只负责把这些 id 递回去）。
+ *
+ * 与「删除选中 / 清空」共用 `busyAll`：三者都是整表级动作，同时只允许一个在跑。
+ * 成功后刷徽标——徽标口径是**行数**，这次删的确实都是行（与改数量不同，见 `step`）。
+ */
+async function removeInvalid(): Promise<void> {
+  const ids = invalidIds.value
+  if (!ids.length || busyAll.value) return
+
+  busyAll.value = true
+  busyInvalid.value = true
+  try {
+    await cartApi.removeItems(ids)
+    await load(false)
+    void refreshBadge()
+    showToast(`已清除 ${ids.length} 项失效商品`, 'success')
+  } catch {
+    // 拦截器已弹后端 msg；重拉把页面拉回与服务端一致（失败多半意味着服务端状态已变）
+    await load(false)
+  } finally {
+    busyInvalid.value = false
+    busyAll.value = false
+  }
+}
 </script>
 
 <template>
@@ -337,7 +388,8 @@ async function wipe(scope: 'selected' | 'all'): Promise<void> {
 
       <template v-else>
         <div class="cart__panel">
-          <!-- 顶部操作条：全选（勾选态按有效行推导）+ 删除选中 / 清空（各走行内两步确认） -->
+          <!-- 顶部操作条：全选（勾选态按有效行推导）+ 清除失效商品（有点就删）
+               + 删除选中 / 清空（这两个各走行内两步确认） -->
           <div class="cart__ops">
             <label class="cart-check">
               <input
@@ -377,6 +429,16 @@ async function wipe(scope: 'selected' | 'all'): Promise<void> {
               </template>
 
               <template v-else>
+                <!-- 清除失效商品：只在车里有失效行时出现；点了就删、不走 pendingWipe 那套确认（见文件头 ⑦ 的例外） -->
+                <button
+                  v-if="invalidCount"
+                  class="cart__link cart__link--danger"
+                  type="button"
+                  :disabled="busyAll"
+                  @click="removeInvalid"
+                >
+                  {{ busyInvalid ? '清除中…' : `清除失效商品 (${invalidCount})` }}
+                </button>
                 <button
                   class="cart__link"
                   type="button"
