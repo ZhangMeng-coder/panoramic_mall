@@ -53,14 +53,14 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | DELETE | /addresses/{id} | — | `Long` | `Void` | AddressController.java:71 | |
 | POST | /addresses/{id}/default | — | `Long` | `Void` | AddressController.java:80 | |
 | POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:86 | |
-| GET | /cart | — | — | `MallCartVO` | — | 待实现 |
-| GET | /cart/count | — | — | `Integer` | — | 待实现 |
-| POST | /cart/items | — | `MallCartItemAddDTO` | `Long` | — | 待实现 |
-| PUT | /cart/items/{id} | — | `Long`, `MallCartItemUpdateDTO` | `Void` | — | 待实现 |
-| PUT | /cart/items/{id}/selected | — | `Long`, `MallCartSelectDTO` | `Void` | — | 待实现 |
-| PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | — | 待实现 |
-| POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | — | 待实现 |
-| DELETE | /cart | — | — | `Void` | — | 待实现 |
+| GET | /cart | — | — | `MallCartVO` | CartController.java:59 | |
+| GET | /cart/count | — | — | `Integer` | CartController.java:67 | |
+| POST | /cart/items | — | `MallCartItemAddDTO` | `Long` | CartController.java:77 | |
+| PUT | /cart/items/{id} | — | `Long`, `MallCartItemUpdateDTO` | `Void` | CartController.java:85 | |
+| PUT | /cart/items/{id}/selected | — | `Long`, `MallCartSelectDTO` | `Void` | CartController.java:95 | |
+| PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | CartController.java:105 | |
+| POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | CartController.java:114 | |
+| DELETE | /cart | — | — | `Void` | CartController.java:123 | |
 
 ⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
 登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
@@ -90,8 +90,10 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 购物车读口径 | `GET /cart` 一次编排 = trade-center 取行 + **store 批量详情一次调用**（`POST /goods/platform/spu/batch`）+ 可见性判定 + 按店铺分组汇总。⚠ **逐行调详情是 N+1，禁止**（加购物车行的第一步就是别把行数变成请求数） |
 | 购物车不可买口径 | 行的 `invalid` = **C 端商品可见性不变量**（[cross-cutting.md](./cross-cutting.md) 第 20 条）的**第三个落点**：店铺未审核 / SPU 已下架 / SPU 被锁定 / SPU 已删 → `invalid=true` 且 `purchasable=false`。⚠ **不从列表里删掉**（顾客要看得见才敢删它），但它**不计入** `totalQuantity` / `selectedQuantity` / `selectedAmount`（金额只算真能下单的行） |
 | `invalid` 与 `purchasable` 分工 | 两者**独立**：`invalid` = **商品本身**不可买（不可见）；`purchasable` = 商品可见但**这一行不能再加**（`invalid` 或 `quantity >= availableStock`）→ 前端禁「+」。⚠ 别把两者合成一个字段：合并后「已下架」与「已到库存上限」在页面上同形，提示语没法写对 |
-| 加购不校验库存 | `POST /cart/items` **只校验「该商品对 C 端可见」**（不可见 → `400` 中文提示，不落行），**不校验库存、不锁库存**：购物车是购买意向不是占位，库存只影响 `purchasable` 的展示。⚠ 数量上限（单行 999 / 单购物车 100 行）**在域侧**，超限 `400` 原样透传 |
-| 购物车写口径 | 改数量 / 改选中 / 删除 / 清空**一律经 `BffFeignCall.call` 直透 trade-center**（写路径不在 BFF 二次判定），失败降级文案「购物车暂不可用，请稍后重试」；⚠ **改/删单行命中 0 行（行不存在或不属于本人）是幂等 no-op，不报错**——前端因此不必处理「双击删除」的竞态 |
+| 加购不校验库存 | `POST /cart/items` **只校验「该商品对 C 端可见」**（不可见 → `400`「该商品已下架或不可购买」，不落行），**不校验库存、不锁库存**：购物车是购买意向不是占位，库存只影响 `purchasable` 的展示。⚠ **还多校一条**：`skuId` 必须属于该 `spuId` 且在售（⚠ SPU 上架 ≠ 名下每个 SKU 都在售，域内不变量只保证「至少一个在售」），否则 `400`「该规格已下架，请重新选择」——这道校验只能在 BFF 做，域不持商品信息 |
+| 购物车上限 | 单行数量 999 / 单购物车 100 行，**都在域侧**。⚠ **两条路径的封顶方式不同，别按一条理解**：新增行与改数量走 DTO 校验（`@Max(999)`）→ 超限 `400` 原样透传，单车满 100 行再加 → `400`「购物车最多 100 种商品，请先清理」；**重复加购的累加路径**在 SQL 里 `LEAST(quantity + delta, 999)` 原地封顶、**不报错**（连点加购最多停在 999）。⚠ 100 行上限是**软上限**（并发两笔可双双通过检查而略微越界），与收货地址 20 条上限同口径 |
+| 购物车写口径 | 改数量 / 改选中 / 删除 / 清空**一律经 `BffFeignCall.call` 直透 trade-center**（写路径不在 BFF 二次判定），失败降级文案「购物车暂不可用，请稍后重试」 |
+| | ⚠ **单行与批量对「命中 0 行」的语义刻意不同，不要拉平**：`PUT /cart/items/{id}` 与 `PUT /cart/items/{id}/selected` 命中 0 行（行不存在 / 不属于本人）→ **`404`「购物车行不存在」**——「改成功」与「没这行」对调用方是两件事，回 200 就是**假成功**；`POST /cart/items/remove` 与 `DELETE /cart` 是**幂等 no-op**（批量语义下不该因某一行被并发删掉而让整批失败）。故前端**删除路径**不必处理「双击删除」的竞态，**改数量 / 改选中要按 `404` 处理**（重拉列表即可，那一行确实已经不在车里） |
 | 徽标口径 | `GET /cart/count` = **购物车行数**（轻口径：域侧 `count(*)` + Redis 读穿透，**不做可见性判定**），供顶栏徽标。⚠ 它与购物车页的 `totalQuantity`（**有效行的件数之和**）**口径不同**，不是 bug：徽标数「车里有几项」，页脚算「能买几件、多少钱」 |
 | 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |
 

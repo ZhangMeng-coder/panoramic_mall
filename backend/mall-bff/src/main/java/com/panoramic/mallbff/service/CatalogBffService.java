@@ -27,8 +27,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -81,10 +83,10 @@ public class CatalogBffService {
 
     /** C 端固定展示口径：已审核通过店铺（store_shop.status 契约：0草稿/1待审核/2已通过/3已驳回） */
     private static final Integer SHOP_STATUS_APPROVED = 2;
-    /** C 端固定展示口径：上架 */
-    private static final Integer SHELF_ON = 1;
-    /** C 端固定展示口径：未被平台锁定 */
-    private static final Integer LOCK_OFF = 0;
+    /** C 端固定展示口径：上架（包内可见：{@link CartBffService} 判购物车行可见性用同一个常量，不各写一份） */
+    static final Integer SHELF_ON = 1;
+    /** C 端固定展示口径：未被平台锁定（包内可见，理由同 {@link #SHELF_ON}） */
+    static final Integer LOCK_OFF = 0;
 
     private final GoodsCenterClient goodsCenterClient;
     private final StoreClient storeClient;
@@ -167,22 +169,107 @@ public class CatalogBffService {
      * <p><b>可见性口径与列表完全一致</b>（同一条不变量）：上架 + 未被平台锁定 + 店铺已审核通过，
      * 三者缺一即 404。⚠ 口径必须与 {@link #goods} 同进同退，否则会出现「列表里搜不到、
      * 却能靠直链打开」的商品（或反之），也会把未过审店铺 / 平台锁定商品漏到前台。</p>
-     * <p>只调用<b>已有</b>的域接口（{@code platformStoreGoodsDetail} + {@code shopDetail}），
-     * 不为 C 端新增域方法：域返回的是管理端超集，裁剪在 {@link #toMallDetail} 里做。</p>
+     * <p>判定本身不在这里：走 {@link #visibleDetailOrNull}（可见性的<b>唯一入口</b>，购物车也用同一个），
+     * 本方法只负责「不可见 → 404」这一步。只调用<b>已有</b>的域接口（{@code platformStoreGoodsDetail}
+     * + {@code shopDetail}），不为 C 端新增域方法：域返回的是管理端超集，裁剪在 {@link #toMallDetail} 里做。</p>
      *
      * @param id 店铺商品 id
      * @return C 端详情（见 {@link MallGoodsDetailVO}）
      */
     public MallGoodsDetailVO detail(Long id) {
-        StoreGoodsSpuPlatformDetailVO raw = platformDetailOrNull(id);
-        // 短路顺序即不变量：先判商品自身（不存在 / 已下架 / 被锁定），再问店铺是否过审
-        if (raw == null
-                || !SHELF_ON.equals(raw.getShelfStatus())
-                || !LOCK_OFF.equals(raw.getLockStatus())
-                || !shopApproved(raw.getStoreId())) {
+        StoreGoodsSpuPlatformDetailVO raw = visibleDetailOrNull(id);
+        if (raw == null) {
             throw notVisible();
         }
         return toMallDetail(raw);
+    }
+
+    /**
+     * 取「对 C 端可见」的跨店商品详情；<b>不可见或不存在一律返回 null</b>。
+     *
+     * <p>⚠ <b>这是 C 端商品可见性不变量在本端的唯一判定入口</b>（上架 + 未被平台锁定 + 店铺已审核通过，
+     * 三者缺一即不可见，见 docs/contracts/cross-cutting.md 第 20 条）：{@link #detail}（详情落点）与
+     * {@link CartBffService}（购物车行落点）都走它，<b>不各自再写一遍那三个条件</b>——
+     * 单边改动会让「列表 / 详情说能买、购物车说不能买」这类静默错漏出去。</p>
+     *
+     * <p>下游故障不吞：只有真正的业务 4xx（不存在）才算「不可见」，{@link BffFeignCall} 降级出来的
+     * {@code ServiceException}（500 + 降级文案）原样抛出，免得把「商品服务挂了」说成「商品已下架」。</p>
+     *
+     * @param id 店铺商品 id（可空）
+     * @return 可见的域详情；不可见 / 不存在为 null
+     */
+    public StoreGoodsSpuPlatformDetailVO visibleDetailOrNull(Long id) {
+        if (id == null) {
+            return null;
+        }
+        StoreGoodsSpuPlatformDetailVO raw = platformDetailOrNull(id);
+        return raw != null && isVisible(raw, new HashMap<>()) ? raw : null;
+    }
+
+    /**
+     * 从一批域详情里挑出「对 C 端可见」的 spuId（购物车列表用，一次性判定多行）。
+     *
+     * <p>与 {@link #visibleDetailOrNull} 是<b>同一处判定</b>（{@link #isVisible}），差别只在店铺状态
+     * <b>按 storeId 记进备忘录</b>：一批行里同一店铺只查一次，额外开销 = 去重后的店铺数
+     * （一个店铺一行 → 一次都不多查）。若日后单页店铺数成为瓶颈，加一个「批量店铺状态」域接口即可，
+     * 判定代码本身不用动。</p>
+     *
+     * <p>⚠ 本方法<b>只判不筛</b>：不可见的 SPU 留在入参里，由调用方决定怎么展示
+     * （购物车把它标成失效行照常下发，顾客得看得见才敢删它）。</p>
+     *
+     * @param details 域详情集合（可空 / 空表）
+     * @return 可见的 spuId 集合（不可空）
+     */
+    public Set<Long> visibleSpuIds(Collection<StoreGoodsSpuPlatformDetailVO> details) {
+        if (details == null || details.isEmpty()) {
+            return Collections.emptySet();
+        }
+        Map<Long, Integer> shopStatusMemo = new HashMap<>();
+        Set<Long> visible = new LinkedHashSet<>();
+        for (StoreGoodsSpuPlatformDetailVO detail : details) {
+            if (detail != null && detail.getId() != null && isVisible(detail, shopStatusMemo)) {
+                visible.add(detail.getId());
+            }
+        }
+        return visible;
+    }
+
+    /**
+     * 从域详情里按 skuId 找出该 SKU（纯函数，不做 IO）。
+     * <p>购物车行只存 skuId，规格 / 价格 / 库存 / 上下架都要从详情里回捞，故与
+     * {@link CartBffService} 共用这一处。⚠ 传进来的 skuId 若属于<b>别的</b> SPU，在<b>本 SPU 的</b>
+     * sku 列表里自然找不到——这正是「加购的 skuId 必须属于该 spuId」那道校验的实现方式。</p>
+     *
+     * @param detail 域详情（可空）
+     * @param skuId  SKU id（可空）
+     * @return 命中的 SKU；找不到为 null
+     */
+    static StoreGoodsSkuVO findSku(StoreGoodsSpuPlatformDetailVO detail, Long skuId) {
+        if (detail == null || skuId == null || detail.getSkus() == null) {
+            return null;
+        }
+        for (StoreGoodsSkuVO sku : detail.getSkus()) {
+            if (sku != null && skuId.equals(sku.getId())) {
+                return sku;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * C 端可见性判定（商品自身两条 + 店铺一条），{@link #visibleDetailOrNull} 与
+     * {@link #visibleSpuIds} 共用。
+     * <p>短路顺序即不变量：先判商品自身（已下架 / 被锁定），再问店铺是否过审——
+     * 商品自身就不合格的没必要再多问一次店铺。</p>
+     *
+     * @param raw            域详情（非空）
+     * @param shopStatusMemo 店铺状态备忘录（调用方持有，同一批判定里复用；单条判定传空表即可）
+     * @return 可见为 true
+     */
+    private boolean isVisible(StoreGoodsSpuPlatformDetailVO raw, Map<Long, Integer> shopStatusMemo) {
+        return SHELF_ON.equals(raw.getShelfStatus())
+                && LOCK_OFF.equals(raw.getLockStatus())
+                && shopApproved(raw.getStoreId(), shopStatusMemo);
     }
 
     /**
@@ -207,27 +294,34 @@ public class CatalogBffService {
     }
 
     /**
-     * 店铺是否「已审核通过」（C 端固定口径的一环）。
+     * 店铺是否「已审核通过」（C 端固定口径的一环）；结果按 storeId 记进备忘录，同一批判定里只查一次。
      * <p>店铺查询的业务 4xx（店铺不存在）同样按<b>不可见</b>处理——商品挂在一个查不到的店上，
-     * 对顾客而言与已下架无异；下游故障仍原样抛出。</p>
+     * 对顾客而言与已下架无异；下游故障仍原样抛出（<b>不记进备忘录</b>，免得一次故障被当成永久结论）。</p>
      *
      * @param storeId 店铺 id（可空）
+     * @param memo    店铺状态备忘录（调用方持有；查到即写回，null 值表示「查不到 = 未过审」）
      * @return 已审核通过为 true
      */
-    private boolean shopApproved(Long storeId) {
+    private boolean shopApproved(Long storeId, Map<Long, Integer> memo) {
         if (storeId == null) {
             return false;
         }
+        if (memo.containsKey(storeId)) {
+            return SHOP_STATUS_APPROVED.equals(memo.get(storeId));
+        }
+        Integer status;
         try {
             ShopVO shop = BffFeignCall.call("store", DOWN_MSG, () -> storeClient.shopDetail(storeId));
-            return shop != null && SHOP_STATUS_APPROVED.equals(shop.getStatus());
+            status = shop == null ? null : shop.getStatus();
         } catch (ServiceException e) {
             if (!isBusiness4xx(e)) {
                 throw e;
             }
             log.warn("店铺查询未命中（业务 4xx），按不可见处理: storeId={}, msg={}", storeId, e.getMessage());
-            return false;
+            status = null;
         }
+        memo.put(storeId, status);
+        return SHOP_STATUS_APPROVED.equals(status);
     }
 
     /** C 端「不可见」统一出口：不存在 / 已下架 / 被平台锁定 / 店铺未过审 一律同一个 404，不区分原因 */
