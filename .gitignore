@@ -40,6 +40,10 @@ temp/
 .superpowers/
 docs/superpowers/
 
+# mattpocock-skills 的本地 markdown issue tracker（`.scratch/<feature>/` 下的 spec 与工单）
+# 与上者同为机器本地 scratch，故同样不入库；约定见 docs/agents/issue-tracker.md
+.scratch/
+
 # hookify 本地规则（机器本地配置，按 hookify 约定不入库；同 .claude/settings.local.json）
 .claude/*.local.md
 .claude/*.local.json
