@@ -88,6 +88,11 @@ typeDirs: backend/trade-center-interface/src/main/java
 > ⚠ **三个动作（支付 / 发货 / 收货）出参是 `void`**：写接口只表达「命令已生效」，页面重拉列表或详情拿新状态。
 > 别再给它们各配一份订单 VO 出参——那是同一份形状的第二个出口。
 
+> ⚠ **三个动作不幂等，重复提交由状态机拒**：每个动作只推一格，第二次同动作就是「重复变更」
+> → `400`「订单状态不能从「已支付」重复变更到「已支付」」（提示语已带两侧文案，可直接展示）。
+> 端 BFF **原样透传**该 4xx（[cross-cutting.md](./cross-cutting.md) 第 13 条），不另译成「请勿重复操作」
+> ——同一句提示只此一份。前端**不必**为双击加特殊处理，但**不要**把这条 400 渲染成「系统异常」。
+
 ## 三、类型所在包（全部在 `trade-center-interface`，两端引用同一份）
 
 包根：`backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/`
@@ -105,9 +110,10 @@ typeDirs: backend/trade-center-interface/src/main/java
 > 顾客侧与商户侧只能用父类那份（**形态上就没有锚点字段**，端 BFF 想传也传不进来——锚点在路径里），
 > 平台侧才用子类做筛选。两个类而不是一个「可选锚点字段」，是为了让「哪些侧能筛锚点」在类型上就成立。
 
-> ⚠ `TradeOrderCreateDTO` 里的收货地址是**快照**（`TradeOrderAddressDTO`：收件人 / 电话 / 地区 / 详址），
+> ⚠ `TradeOrderCreateDTO` 里的收货地址是**快照**（`TradeOrderAddressDTO`：收件人 / 电话 / 地区 / 详址）、**必填**，
 > **不是 `addressId`**：trade-center **结构上不能调 customer-center**（每个域只依赖自己的 `<域>-interface`），
 > 归属校验与取地址由 **mall-bff** 做完再传快照（见 [mall-bff.md](./mall-bff.md) 与 [customer-center.md](./customer-center.md)）。
+> 快照是**下单当时的地址**，此后顾客改地址 / 删地址都不影响已下的单——这正是存快照而非存 id 的理由。
 
 ## 四、业务规则去哪看
 
