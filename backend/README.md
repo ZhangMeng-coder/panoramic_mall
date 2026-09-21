@@ -11,15 +11,17 @@
 | [goods-center-interface](goods-center-interface/) | 工具包（非服务） | — | 标准商品域**内部契约包**：`GoodsCenterClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.goods`）。**被 goods-center 与调用它的端 BFF 共用同一份**（不各抄一份，避免漂移） |
 | [store-interface](store-interface/) | 工具包（非服务） | — | 店铺域**内部契约包**：`StoreClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.store`）。**被 store 与调用它的端 BFF 共用同一份** |
 | [customer-center-interface](customer-center-interface/) | 工具包（非服务） | — | 顾客域**内部契约包**：`CustomerCenterClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.customer`）。**被 customer-center 与调用它的端 BFF 共用同一份** |
+| [trade-center-interface](trade-center-interface/) | 工具包（非服务） | — | 交易域**内部契约包**：`TradeCenterClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.trade`）。**被 trade-center 与调用它的端 BFF（mall-bff）共用同一份** |
 | [gateway](gateway/) | 网关服务 | 8080 | Spring Cloud Gateway 响应式网关，统一入口、路由转发与鉴权透传；公网只路由到端 BFF（`/admin`、`/store`、`/mall`），域服务一律 403 |
 | [goods-center](goods-center/) | 业务服务（下沉纯域） | 8081 | 标准商品平台：分类 / 品牌 / 标准 SPU-SKU 模板；不暴露公网路由，仅被 admin 等 BFF 内部 Feign 调用 |
 | [admin](admin/) | 业务服务（端 BFF） | 8082 | 平台管理：账号登录、RBAC（用户/角色/权限/菜单）、标准商品模板编排、店铺管理审核、**店铺商品管理**（跨店查询/详情/锁定解锁，内部 Feign → goods-center / store） |
 | [store](store/) | 业务服务（下沉纯域） | 8083 | 店铺域：店铺 `store_shop` + 审核状态机 + 店主在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock`（账号店同 ID，id==店主账号 id）；不暴露公网路由，仅被 store-bff / admin / mall-bff 内部 Feign 调用 |
 | [store-bff](store-bff/) | 业务服务（店铺端 BFF） | 8084 | 店主端：店主账号 `store_user`（注册即登录、签发 `type=store`）+ 店铺资料编排 + 在售商品与库存编排、中台版本比对（内部 Feign → store / goods-center） |
-| [mall-bff](mall-bff/) | 业务服务（商城前台 BFF） | 8085 | C 端顾客：顾客账号 `mall_user`（手机号 + 模拟短信验证码，注册即登录、签发 `type=user`）+ C 端商品浏览（分类树 / 商品分页 / 筛选聚合 / 详情）+ 顾客资料与收货地址（内部 Feign → goods-center / store / customer-center）。首页**热门商品列表**仍为静态 mock |
+| [mall-bff](mall-bff/) | 业务服务（商城前台 BFF） | 8085 | C 端顾客：顾客账号 `mall_user`（手机号 + 模拟短信验证码，注册即登录、签发 `type=user`）+ C 端商品浏览（分类树 / 商品分页 / 筛选聚合 / 详情）+ 顾客资料与收货地址 + 购物车（内部 Feign → goods-center / store / customer-center / trade-center）。首页**热门商品列表**仍为静态 mock |
 | [customer-center](customer-center/) | 业务服务（下沉纯域） | 8086 | 顾客域：顾客资料 `customer_profile` + 收货地址 `customer_address`；不暴露公网路由，仅被 mall-bff 内部 Feign 调用 |
+| [trade-center](trade-center/) | 业务服务（下沉纯域） | 8087 | 交易域：**本期只有购物车 `trade_cart_item`**（订单 / 结账 / 评价属后续期）；不暴露公网路由，仅被 mall-bff 内部 Feign 调用。⚠ 全仓**唯一加载 Redis 的域**（加购去重与计数缓存，MySQL 仍是唯一事实源） |
 
-> 📋 **各模块的对外接口清单不在此处，统一登记在 [`docs/contracts/`](../docs/contracts/)** —— 页面级（admin / store-bff / mall-bff）、内部 Feign（goods-center / store / customer-center）、跨服务隐式契约（[cross-cutting.md](../docs/contracts/cross-cutting.md)）三层。改动接口时**同一改动内**更新对应契约文件，提交前跑 `node docs/contracts/drift-check.mjs`。
+> 📋 **各模块的对外接口清单不在此处，统一登记在 [`docs/contracts/`](../docs/contracts/)** —— 页面级（admin / store-bff / mall-bff）、内部 Feign（goods-center / store / customer-center / trade-center）、跨服务隐式契约（[cross-cutting.md](../docs/contracts/cross-cutting.md)）三层。改动接口时**同一改动内**更新对应契约文件，提交前跑 `node docs/contracts/drift-check.mjs`。
 > 各模块 README 只写**服务说明**（职责 / 架构位置 / 实体标记 / 边界），不重复列接口。
 
 ## 技术栈
@@ -29,7 +31,7 @@
 - Spring Cloud Gateway、Spring Cloud LoadBalancer、OpenFeign（circuitbreaker 熔断）+ Resilience4j
 - Nacos 服务发现与注册（默认 `127.0.0.1:8848`，账号 `nacos/nacos`）
 - MyBatis-Plus 3.5.16（`mybatis-plus-spring-boot4-starter`，Spring Boot 4 专用）——逻辑删除 + 字段自动填充 + 分页插件
-- MySQL 8（库 `panoramic_mall`；表结构在各模块 `db/schema.sql`：`goods-center` 的 `goods_*`（含版本戳 `version`）、`admin` 的 `sys_*` 权限表 + 权限种子、`store` 的 `store_shop` + `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock`、`store-bff` 的 `store_user`、`mall-bff` 的 `mall_user`、`customer-center` 的 `customer_profile` / `customer_address`，均 IF NOT EXISTS 幂等）
+- MySQL 8（库 `panoramic_mall`；表结构在各模块 `db/schema.sql`：`goods-center` 的 `goods_*`（含版本戳 `version`）、`admin` 的 `sys_*` 权限表 + 权限种子、`store` 的 `store_shop` + `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock`、`store-bff` 的 `store_user`、`mall-bff` 的 `mall_user`、`customer-center` 的 `customer_profile` / `customer_address`、`trade-center` 的 `trade_cart_item`（**唯一键 `(customer_id, sku_id)` + 物理删除**，是唯一的逻辑删除例外），均 IF NOT EXISTS 幂等）
 - 鉴权：JWT（含 `userType` claim）+ Redis 会话（键 `{前缀}:{userType}:{userId}`），网关验签后向下游透传 `X-User-Id`/`X-User-Type`；`admin` / `store` / `user` 为三套隔离的 id 空间
 
 ## 快速开始
@@ -46,10 +48,10 @@
 ```bash
 cd backend
 
-# 安装父 POM 与五个工具包（common / common-auth / 三个 -interface）到本地仓库
+# 安装父 POM 与六个工具包（common / common-auth / 四个 -interface）到本地仓库
 # （新增/修改了父 POM 或这几个模块后需重跑）
 mvn -N install
-mvn -pl common,common-auth,goods-center-interface,store-interface,customer-center-interface install
+mvn -pl common,common-auth,goods-center-interface,store-interface,customer-center-interface,trade-center-interface install
 
 # 全量编译打包
 mvn clean package
@@ -57,7 +59,7 @@ mvn clean package
 
 ### 2. 启动（按依赖顺序，各开一个终端）
 
-> 首次运行前先建库建表：分别执行 `goods-center` / `admin` / `store` / `store-bff` / `mall-bff` / `customer-center` 下 `db/schema.sql`（IF NOT EXISTS 可重复执行）。各端账号表同库不同表，物理不分开。
+> 首次运行前先建库建表：分别执行 `goods-center` / `admin` / `store` / `store-bff` / `mall-bff` / `customer-center` / `trade-center` 下 `db/schema.sql`（IF NOT EXISTS 可重复执行）。各端账号表同库不同表，物理不分开。
 
 ```bash
 mvn -pl gateway spring-boot:run          # 网关 8080
@@ -67,11 +69,12 @@ mvn -pl store spring-boot:run            # 店铺域 8083
 mvn -pl store-bff spring-boot:run        # 店铺端 BFF 8084
 mvn -pl mall-bff spring-boot:run         # 商城前台 BFF（C 端）8085
 mvn -pl customer-center spring-boot:run  # 顾客域 8086
+mvn -pl trade-center spring-boot:run     # 交易域（购物车）8087
 ```
 
 > 配置说明：
 > - `application.yml` 中的 `@nacos.server-addr@` 等占位符由 Maven 资源过滤在构建时替换为父 POM properties 中集中定义的版本/地址。
-> - **多服务复用的配置**（数据源 / Redis / 鉴权 / Feign 熔断）收敛在 Nacos 共享配置，服务侧经 `spring.config.import` 引入，**不带 `optional:`**——配置中心不可用或任一 data-id 缺失则启动失败。各服务加载矩阵与发布方式见 [nacos-config/README.md](nacos-config/README.md)。
+> - **多服务复用的配置**（数据源 / Redis / 鉴权 / Feign 熔断）收敛在 Nacos 共享配置，服务侧经 `spring.config.import` 引入，**不带 `optional:`**——配置中心不可用或任一 data-id 缺失则启动失败。各服务加载矩阵见 [cross-cutting.md](../docs/contracts/cross-cutting.md) 第 12 条（⚠ `trade-center` 是唯一加载 `datasource-redis` 的域），发布方式见 [nacos-config/README.md](nacos-config/README.md)。
 
 ### 3. 验证
 
@@ -79,7 +82,7 @@ mvn -pl customer-center spring-boot:run  # 顾客域 8086
 curl http://localhost:8080/discovery/services   # 网关探活：查看已注册服务
 ```
 
-> goods-center / store / customer-center 已下沉纯域，**不再有公网路由**。
+> goods-center / store / customer-center / trade-center 已下沉纯域，**不再有公网路由**。
 
 ## 请求链路
 
@@ -93,7 +96,7 @@ mall  前台(5175) ──/mall───────────────┤
                          │                            │
                          └──── 内部 Feign（身份头 X-User-Id/X-User-Type + 熔断降级）────┘
                                │                              │
-             纯域：goods-center(8081) / store(8083) / customer-center(8086)
+             纯域：goods-center(8081) / store(8083) / customer-center(8086) / trade-center(8087)
                                         │
                                         └── Nacos(8848) 服务注册与发现 ──▶ MySQL(库 panoramic_mall)
 ```
@@ -103,7 +106,7 @@ mall  前台(5175) ──/mall───────────────┤
 - **响应形状**：页面 / 端 BFF 对外接口一律返回 `RespData{code,msg,data}`（成功 `200` / 业务失败 `400` 带中文提示 / 系统异常 `500`）；**下沉域的内部接口不包 `RespData`**，直接返回业务类型，错误转真实 HTTP 状态 + `{code,msg}`。
 - 数据表实体继承 `common` 的 `BaseEntity`（逻辑删除 + 审计字段自动填充），分页入参继承 `BasePageVO`；服务内跨实体只走对方 owner service（规约见 [common/README.md](common/README.md)）。
 - 页面只经网关路由到**端 BFF**（`/admin` → admin、`/store` → store-bff、`/mall` → mall-bff）；**业务域服务不暴露公网路由**，只被 BFF 经注册中心内部 Feign 调用（DTO 同源于各域的 `<域>-interface` 模块）。
-- **鉴权只到端 BFF**：域服务不装配认证链、不碰 Redis、不做任何权限判断。⚠ 域端口只在内网可达是前提。
+- **鉴权只到端 BFF**：域服务不装配认证链、不做任何权限判断。⚠ 域端口只在内网可达是前提。⚠ **唯一例外是 `trade-center` 加载了 Redis**（购物车加购去重与计数缓存）——但它只用 Redis 当缓存/提示：**Redis 里没有登录态**、MySQL 才是唯一事实源，域内**照旧不鉴权**（它仍不加载 `auth.yml`）。见 [cross-cutting.md](../docs/contracts/cross-cutting.md) 第 12 条加载矩阵的登记例外
 - **授权点是端 BFF 的 `@PreAuthorize`**（只有 admin 有 RBAC；店主端与 C 端登录后对自己数据全权限，**没有也不应有** `@PreAuthorize`）。平台店铺 / 店铺商品权限串与种子见 [admin/README.md](admin/README.md) 与 `admin/db/schema.sql`。
 - **以上这些跨服务约定（`RespData` 形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串一致性等）的完整登记与逐条核对方式见 [docs/contracts/cross-cutting.md](../docs/contracts/cross-cutting.md)** —— 共 21 条，每条标注定义位置、消费位置、破坏后果与静态核对方式。本节只讲原则，条目不在此重复（身份头见第 6、7 条，审计值格式见第 8 条，权限串见第 16 条）。
-- 详情见各模块 README：店铺域见 [store/README.md](store/README.md)、店铺端 BFF 见 [store-bff/README.md](store-bff/README.md)、商城前台 BFF 见 [mall-bff/README.md](mall-bff/README.md)、顾客域见 [customer-center/README.md](customer-center/README.md)。
+- 详情见各模块 README：店铺域见 [store/README.md](store/README.md)、店铺端 BFF 见 [store-bff/README.md](store-bff/README.md)、商城前台 BFF 见 [mall-bff/README.md](mall-bff/README.md)、顾客域见 [customer-center/README.md](customer-center/README.md)、交易域见 [trade-center/README.md](trade-center/README.md)。
