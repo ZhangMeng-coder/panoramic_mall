@@ -6,6 +6,7 @@ import com.panoramic.contract.store.dto.ShopSaveDTO;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
@@ -203,6 +204,21 @@ public interface StoreClient {
      */
     @GetMapping("/goods/platform/spu/{id}")
     StoreGoodsSpuPlatformDetailVO platformStoreGoodsDetail(@PathVariable("id") Long id);
+
+    /**
+     * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）。
+     * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次取回多个 SPU 的详情，避免逐行调
+     * {@link #platformStoreGoodsDetail} 造成 N+1。通用于管理端与 C 端，差别只在调用方传入的 id 集合。</p>
+     * <p>⚠ 查不到的 id（SPU 已删除）<b>跳过、不出现在出参里</b>，不抛异常——与单条版
+     * {@link #platformStoreGoodsDetail} 取不到即 404 的语义不同：批量场景逐行 404 会让整个列表
+     * 取不回来，故由调用方按「拿不到 = 商品不存在」处理。</p>
+     * <p>⚠ 出参是<b>管理端超集</b>（含 {@code lockUser} / {@code goodsSpuId} 等），C 端输出前必须由
+     * mall-bff 裁剪——见 docs/contracts/store.md 第三节与 cross-cutting 第 17/19/20 条。域内不做可见性判断。</p>
+     * <p>⚠ 用 {@code POST + @RequestBody} 而非 query 参数：{@code spuIds} 是集合，走 body 规避
+     * {@code @SpringQueryMap} 的集合序列化口径问题（与 {@link #pageStoreGoodsCrossShop} / {@link #crossShopFacets} 同口径）。</p>
+     */
+    @PostMapping("/goods/platform/spu/batch")
+    List<StoreGoodsSpuPlatformDetailVO> platformSpuBatch(@RequestBody StoreGoodsSpuBatchQueryDTO dto);
 
     /**
      * 锁定商品（原因必填）：写锁定字段 + 名下 SKU 级联下架 → SPU 推导为下架

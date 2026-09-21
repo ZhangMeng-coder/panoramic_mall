@@ -20,6 +20,8 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
 
+import java.util.List;
+
 /**
  * 店铺在售商品（SPU）服务（store 域下沉纯域）。
  * <p>own-entity CRUD 直接用 MyBatis-Plus 基类（IService）内置方法；本接口承载店铺商品的
@@ -179,6 +181,23 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @return 商品详情（平台侧）
      */
     StoreGoodsSpuPlatformDetailVO platformDetail(Long id);
+
+    /**
+     * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息），逐条回填所属店铺名。
+     * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次调用取回多个 SPU，替代逐行 {@link #platformDetail}。
+     * <b>SQL 条数与 {@code spuIds} 个数无关</b>（SPU / SKU / 可用库存 / 店铺名 各一次批量查询），
+     * SKU 取回后按 {@code spu_id} 内存分组。</p>
+     * <p>⚠ 查不到的 id（SPU 已删除）<b>跳过、不出现在出参里，不抛异常</b>。与单条版
+     * {@link #platformDetail}「取不到即报错（404）」的语义<b>刻意不同</b>：购物车行可能引用已被删除的
+     * 商品，逐行 404 会让整个列表取不回来，故由调用方按「拿不到 = 商品不存在」自行处理。</p>
+     * <p>出参与管理端详情同形（<b>管理端超集</b>，含 {@code lockUser} / {@code goodsSpuId} 等），
+     * <b>不做任何 C 端可见性裁剪</b>——那由 mall-bff 输出前完成（见 docs/contracts/store.md 第三节、
+     * cross-cutting 第 17/19/20 条）。{@code categoryPath} 同样由端 BFF 读时解析。</p>
+     *
+     * @param spuIds 店铺商品 id 集合（null / 空集合直接返回空列表）
+     * @return 商品详情列表（按查询返回顺序，不含查不到的 id；调用方按 id 索引，不依赖顺序）
+     */
+    List<StoreGoodsSpuPlatformDetailVO> platformDetails(List<Long> spuIds);
 
     /**
      * 锁定商品（平台）：写锁定状态/原因/锁定人/锁定时间，并把名下 SKU 全部级联下架，

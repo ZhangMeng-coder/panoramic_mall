@@ -3,6 +3,7 @@ package com.panoramic.store.service;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.panoramic.store.entity.StoreGoodsSku;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -22,6 +23,15 @@ public interface StoreGoodsSkuService extends IService<StoreGoodsSku> {
      * @return SKU 列表；无则空列表
      */
     List<StoreGoodsSku> listBySpuId(Long spuId);
+
+    /**
+     * 多个店铺商品下的全部 SKU（一次 {@code IN} 查询，按 id 升序，保证列表顺序稳定）
+     * <p>{@link #listBySpuId} 的批量版：供批量详情按 {@code spu_id} 内存分组用，避免逐 SPU 查询。</p>
+     *
+     * @param spuIds SPU id 集合
+     * @return SKU 列表；入参为 null / 空或无匹配时为空列表（<b>不会</b>拼出 {@code IN ()} 空条件查询）
+     */
+    List<StoreGoodsSku> listBySpuIds(Collection<Long> spuIds);
 
     /**
      * 批量统计各 SPU 的 SKU 数量（分页列表回填 skuCount 用，避免 N+1）

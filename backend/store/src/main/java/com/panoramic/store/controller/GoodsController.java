@@ -3,6 +3,7 @@ package com.panoramic.store.controller;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuPageQueryDTO;
@@ -31,6 +32,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 店铺在售商品内部领域接口（store 域下沉纯域）。
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/store/goods/**}）调用，不对页面暴露公网路由；
@@ -42,7 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <b>platform 侧</b>（{@code /platform/spu/**}，admin BFF 调用）：不带 storeId、跨店全量，
  * 供管理后台「店铺商品管理」查看 / 锁定解锁。两侧分流由端 BFF 调哪一侧决定，域内不做身份判断。
  * 分页已通用化为 {@code /cross-shop/spu/page}（跨店通用，admin BFF 与 mall-bff 共用、差别只在传入条件），
- * {@code /platform/spu/**} 仅剩详情与锁定解锁。</p>
+ * {@code /platform/spu/**} 仅剩详情（单条 / 批量，其中批量为 mall-bff 购物车列表消费）与锁定解锁。</p>
  */
 @RestController
 @RequestMapping("/internal/store/goods")
@@ -178,6 +181,23 @@ public class GoodsController {
     @GetMapping("/platform/spu/{id}")
     public StoreGoodsSpuPlatformDetailVO platformDetail(@PathVariable("id") Long id) {
         return storeGoodsSpuService.platformDetail(id);
+    }
+
+    /**
+     * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）。
+     * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次调用取回多个 SPU 的详情，替代逐行调单条详情
+     * （购物车行数上限 100，逐行即 100 次往返），消除 N+1。SQL 条数与 {@code spuIds} 个数无关。</p>
+     * <p>⚠ 查不到的 id（SPU 已删除）<b>跳过、不出现在出参里</b>，<b>不报 404</b>——与单条
+     * {@link #platformDetail} 的「取不到即报错」刻意不同：购物车行可能引用已被删除的商品，
+     * 逐行 404 会让整个列表取不回来，故由调用方按「拿不到 = 商品不存在」处理。</p>
+     * <p>⚠ 出参是<b>管理端超集</b>（含 {@code lockUser} / {@code goodsSpuId} 等），
+     * <b>C 端输出前由 mall-bff 裁剪</b>（见 docs/contracts/store.md 第三节、cross-cutting 第 17/19/20 条）。</p>
+     * <p>用 POST + body 而非 query 参数：{@code spuIds} 是集合（同 /cross-shop/spu/page 与 /facets 口径）。</p>
+     */
+    @PostMapping("/platform/spu/batch")
+    public List<StoreGoodsSpuPlatformDetailVO> platformSpuBatch(
+            @Validated @RequestBody StoreGoodsSpuBatchQueryDTO dto) {
+        return storeGoodsSpuService.platformDetails(dto.getSpuIds());
     }
 
     /**

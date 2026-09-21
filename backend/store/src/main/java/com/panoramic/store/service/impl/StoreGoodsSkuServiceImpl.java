@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,17 @@ public class StoreGoodsSkuServiceImpl extends ServiceImpl<StoreGoodsSkuMapper, S
     public List<StoreGoodsSku> listBySpuId(Long spuId) {
         List<StoreGoodsSku> skus = list(Wrappers.<StoreGoodsSku>lambdaQuery()
                 .eq(StoreGoodsSku::getSpuId, spuId)
+                .orderByAsc(StoreGoodsSku::getId));
+        return skus == null ? Collections.emptyList() : skus;
+    }
+
+    @Override
+    public List<StoreGoodsSku> listBySpuIds(Collection<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<StoreGoodsSku> skus = list(Wrappers.<StoreGoodsSku>lambdaQuery()
+                .in(StoreGoodsSku::getSpuId, spuIds)
                 .orderByAsc(StoreGoodsSku::getId));
         return skus == null ? Collections.emptyList() : skus;
     }

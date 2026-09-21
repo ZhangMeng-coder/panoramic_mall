@@ -70,7 +70,8 @@ import java.util.stream.Collectors;
  * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
  * <p><b>platform 侧（跨店通用，调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #facets} / {@link #platformDetail}
  * 不带 store_id 过滤——{@link #crossShopPage} 供 admin BFF「店铺商品管理」与 mall-bff C 端浏览共用（差别只在传入条件），
- * {@link #facets} 供 mall-bff C 端筛选面板，{@link #platformDetail} 供 admin BFF；
+ * {@link #facets} 供 mall-bff C 端筛选面板，{@link #platformDetail} / {@link #platformDetails} 供 admin BFF
+ * 与 mall-bff（后者是 mall-bff 购物车列表的批量详情，一次取回多个 SPU）；
  * {@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
  * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
@@ -480,6 +481,37 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     @Override
+    public List<StoreGoodsSpuPlatformDetailVO> platformDetails(List<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // ⚠ 四段查询，条数与 spuIds 个数无关（无 N+1）：SPU → SKU → 可用库存 → 店铺名，随后内存分组组装
+        List<StoreGoodsSpu> spus = listByIds(spuIds);
+        if (spus == null || spus.isEmpty()) {
+            // 查不到的 id 直接跳过（SPU 已删除），由调用方按「拿不到 = 商品不存在」处理，不抛异常
+            return Collections.emptyList();
+        }
+        List<Long> ids = spus.stream().map(StoreGoodsSpu::getId).collect(Collectors.toList());
+        Map<Long, String> shopNames = shopService.nameMap(spus.stream()
+                .map(StoreGoodsSpu::getStoreId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList()));
+        // SKU 一次 IN 取回后按 spu_id 分组；可用库存再对全量 SKU id 一次 IN（跨实体只走 owner service）
+        List<StoreGoodsSku> allSkus = skuService.listBySpuIds(ids);
+        Map<Long, List<StoreGoodsSku>> skuGroups = allSkus.stream()
+                .collect(Collectors.groupingBy(StoreGoodsSku::getSpuId));
+        Map<Long, Integer> availableMap = skuStockService.availableStockMapBySkuIds(
+                allSkus.stream().map(StoreGoodsSku::getId).collect(Collectors.toList()));
+        return spus.stream().map(spu -> {
+            StoreGoodsSpuPlatformDetailVO vo = new StoreGoodsSpuPlatformDetailVO();
+            // 字段映射复用单条路径同一份 buildDetail，SKU 与库存由批量结果传入
+            buildDetail(spu, vo, skuGroups.getOrDefault(spu.getId(), Collections.emptyList()), availableMap);
+            vo.setStoreName(shopNames.getOrDefault(spu.getStoreId(), ""));
+            return vo;
+        }).collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void lock(Long id, StoreGoodsLockDTO dto) {
         StoreGoodsSpu spu = getByIdOrThrow(id);
@@ -533,14 +565,27 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
      * @param vo  目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
      */
     private void buildDetail(StoreGoodsSpu spu, StoreGoodsSpuDetailVO vo) {
+        // 单条路径保持自己的 SQL 形状（SKU 一条 + 可用库存一条，共 2 条），不借用批量路径的取数方式
+        List<StoreGoodsSku> skuRows = skuService.listBySpuId(spu.getId());
+        Map<Long, Integer> availableMap = skuStockService.availableStockMapBySkuIds(
+                skuRows.stream().map(StoreGoodsSku::getId).collect(Collectors.toList()));
+        buildDetail(spu, vo, skuRows, availableMap);
+    }
+
+    /**
+     * 组装详情出参（字段映射的唯一实现，单条路径与批量路径共用，避免复制一份映射代码）。
+     *
+     * @param spu          店铺商品实体（已确权）
+     * @param vo           目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
+     * @param skuRows      该 SPU 名下的 SKU 列表（单条路径按 SPU 查得；批量路径由全量结果内存分组得到）
+     * @param availableMap skuId -> 可用库存（{@code stock − locked_stock}）；缺行按 0 计
+     */
+    private void buildDetail(StoreGoodsSpu spu, StoreGoodsSpuDetailVO vo, List<StoreGoodsSku> skuRows,
+                             Map<Long, Integer> availableMap) {
         // imageList/specConfig 实体为 String(JSON)、VO 为 List，类型不一致需排除后手动转换
         BeanUtils.copyProperties(spu, vo, "imageList", "specConfig");
         vo.setImageList(readJsonList(spu.getImageList(), new TypeReference<List<String>>() {}));
         vo.setSpecConfig(readJsonList(spu.getSpecConfig(), new TypeReference<List<SpecConfigItem>>() {}));
-        // 可用库存批量回填（一次 IN 查询，非逐 SKU 查；无库存行按 0 计）
-        List<StoreGoodsSku> skuRows = skuService.listBySpuId(spu.getId());
-        Map<Long, Integer> availableMap = skuStockService.availableStockMapBySkuIds(
-                skuRows.stream().map(StoreGoodsSku::getId).collect(Collectors.toList()));
         vo.setSkus(skuRows.stream()
                 .map(s -> toSkuVO(s, availableMap.get(s.getId())))
                 .collect(Collectors.toList()));
