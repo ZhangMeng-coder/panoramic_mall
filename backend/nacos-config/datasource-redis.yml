@@ -1,6 +1,9 @@
 # ============================================================
 # Nacos 共享配置：Redis（data-id: datasource-redis.yml, GROUP: DEFAULT_GROUP）
 # 由 admin / gateway / store-bff / mall-bff 四个服务经 spring.config.import 加载（登录态缓存同实例）。
+# ⚠ 另有 trade-center 域服务加载本文件 —— 唯一的域例外（购物车加购去重与计数缓存）。
+#   它用 Redis 只当缓存/提示，MySQL 始终是唯一事实源；Redis 里没有登录态，域内仍不鉴权。
+#   加载矩阵见 docs/contracts/cross-cutting.md 第 12 条。
 # 连接信息可用环境变量覆盖（默认值即当前部署实例）；不设 database，走默认 0。
 # ============================================================
 spring:

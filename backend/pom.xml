@@ -33,6 +33,8 @@
         <module>store-interface</module>
         <module>customer-center</module>
         <module>customer-center-interface</module>
+        <module>trade-center</module>
+        <module>trade-center-interface</module>
     </modules>
 
     <properties>

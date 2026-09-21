@@ -82,11 +82,11 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 网关验签后注入身份头，端 BFF 经 Feign **原样透传**，域直取填 `UserContext`；**仅用于审计填充与 `audit_by` 留痕，读 ≠ 判断** |
-| 定义位置 | `X-User-Type` 有常量 `LoginUser.HEADER_USER_TYPE`（:35）；⚠ `X-User-Id` **无 Java 常量**，头名只由 Nacos `auth.yml` 的 `panoramic.auth.header-name` 提供，且默认值散落在 5 处 `@Value` |
+| 定义位置 | `X-User-Type` 有常量 `LoginUser.HEADER_USER_TYPE`（:35）；⚠ `X-User-Id` **无 Java 常量**，头名只由 Nacos `auth.yml` 的 `panoramic.auth.header-name` 提供，且默认值 `X-User-Id` 在 **11 处 `@Value`（散在 10 个文件）**里各自兜底——2026-09-21 按 grep 实数校准过一次（此前记作 5 处，是当时漏数的） |
 | 注入位置（唯一） | `gateway/filter/AuthGlobalFilter.java:89-90` |
-| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59`、`customer-center-interface/.../contract/customer/api/CustomerFeignConfiguration.java:31-58` |
-| 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`customer-center/config/CustomerUserIdentityFilter.java:36,56`、`common-auth/AuthTokenFilter.java:71` |
-| ⚠ 已知风险 | **三个**同职责的 Feign 配置**行为不对称**，是**三种**行为：`GoodsFeignConfiguration:55` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57` **不做回退**；`CustomerFeignConfiguration:56-59` **不做回退，且 `userType` 为空时干脆不发该头**——这是有意的选择（理由写在代码里：C 端身份一旦被盖成 `admin`，域内审计留痕就失真），**新域照哪个抄要自己判，别默认跟 goods 那份**。⚠ 新增域时**必须**同步登记本枚举（漏登记等于把这个刻意选择埋掉） |
+| 透传位置 | `goods-center-interface/.../contract/goods/api/GoodsFeignConfiguration.java:30-56`、`store-interface/.../contract/store/api/StoreFeignConfiguration.java:32-59`、`customer-center-interface/.../contract/customer/api/CustomerFeignConfiguration.java:31-58`、`trade-center-interface/.../contract/trade/api/TradeFeignConfiguration.java:31-58` |
+| 消费位置 | `store/config/StoreUserIdentityFilter.java:36,56`、`goods-center/config/GoodsUserIdentityFilter.java:36,56`、`customer-center/config/CustomerUserIdentityFilter.java:36,56`、`trade-center/config/TradeUserIdentityFilter.java:38,58`、`common-auth/AuthTokenFilter.java:71` |
+| ⚠ 已知风险 | **四个**同职责的 Feign 配置**行为不对称**，是**四种**行为：`GoodsFeignConfiguration:55-56` 缺 `X-User-Type` 时**回退为 `admin`**；`StoreFeignConfiguration:57-60` **不做回退**；`CustomerFeignConfiguration:56-58` **不做回退，且 `userType` 为空时干脆不发该头**；`TradeFeignConfiguration:56-58` **照 `CustomerFeignConfiguration` 那份抄**（不做回退、空值不发头）——C 端身份一旦被盖成 `admin`，域内审计留痕就失真。这是有意的选择（理由写在代码里），**新域照哪个抄要自己判，别默认跟 goods 那份**。⚠ 新增域时**必须**同步登记本枚举（漏登记等于把这个刻意选择埋掉） |
 | 破坏后果 | 头名不一致 → 域取不到身份 → 审计字段静默留空（不报错，最难发现的一类） |
 | 核对方式 | 哨兵 `X-User-Type`、`X-User-Id`、`panoramic.auth.header-name` |
 
@@ -96,7 +96,7 @@ layer: cross-cutting
 |---|---|
 | 契约 | 域内身份过滤器在缺 `X-User-Id` 时**直接放行**（审计留空），**不得回 401** —— 那等于在域内做鉴权 |
 | 定义位置 | `CLAUDE.md`「信任与防线 · 缺头即不填充、不拦截」 |
-| 消费位置 | `StoreUserIdentityFilter`、`GoodsUserIdentityFilter`、`CustomerUserIdentityFilter`（缺 `X-User-Id` 时直接放行、审计留空） |
+| 消费位置 | `StoreUserIdentityFilter`、`GoodsUserIdentityFilter`、`CustomerUserIdentityFilter`、`TradeUserIdentityFilter`（缺 `X-User-Id` 时直接放行、审计留空） |
 | 破坏后果 | 域内回 401 → 直连调用（无网关头）全部失败，破坏"域不做鉴权"的分层 |
 | 核对方式 | 人工核对（静态哨兵无法表达"缺头时不拦截"这一语义） |
 
@@ -165,16 +165,18 @@ layer: cross-cutting
 
 **加载矩阵**：
 
-| data-id | 网关 | admin | store-bff | mall-bff | goods-center | store | customer-center |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — |
-| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — | — |
+| data-id | 网关 | admin | store-bff | mall-bff | goods-center | store | customer-center | trade-center |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ |
+| `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
+| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — | — | — |
 
-> 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务（goods-center / store / customer-center）只依赖 `common`，结构上拿不到认证链与 Redis，所以不加载 `auth` / `redis` / 熔断配置。
+> 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务只依赖 `common`，结构上拿不到认证链，所以不加载 `auth` / 熔断配置。
 >
 > ⚠ mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），其 `feign-circuitbreaker.yml` **不再是空转**——三端 BFF 都已在调域，「端 BFF 一律加载四个」的规律不变。
+>
+> ⚠ **`trade-center` 是唯一加载 `datasource-redis` 的域**（购物车加购去重与计数缓存），这是**有意的登记例外**，不是「域也开始依赖 Redis」的转向：它用 Redis 只做**缓存与提示**，MySQL 始终是唯一事实源、两个方向的错判都由写路径自愈（见 [trade-center.md](./trade-center.md) 第一节）。⚠ 但它**仍不加载 `auth.yml`**——Redis 不等于登录态：域内不做鉴权、不校验 token，身份头只读来填 `UserContext`（第 6、7 条）。⚠ 新增域时若也要 Redis，**同样要在此矩阵补列并说明用途**，别让「域不加载 redis」这条规律被静默打破。
 
 ### 13. 熔断契约：4xx 不计失败率，5xx 计入
 
@@ -191,9 +193,9 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface` / `customer-center-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
+| 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
 | 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 公共类型」 |
-| 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java`、`customer-center-interface/.../contract/customer/api/CustomerCenterClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
+| 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java`、`customer-center-interface/.../contract/customer/api/CustomerCenterClient.java`、`trade-center-interface/.../contract/trade/api/TradeCenterClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
 | 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在该服务 `contract-meta` 的 `typeDirs` 里找到对应 `.java` |
 | 结构保障 | 各域模块只依赖**自己那个** `-interface`（`common` 里没有契约类型），跨域引用会**当场编译失败**；新建域时必须同步建 `<域>-interface` 模块 |
@@ -202,10 +204,10 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | 域服务（goods-center 8081 / store 8083 / customer-center 8086）**不做任何鉴权**，其安全性完全依赖"端口只在内网可达" |
-| 定义位置 | 各域 `application.yml` 注释；`goods-center/config/GoodsSecurityConfig.java:16`、`store/config/StoreSecurityConfig.java:17`、`customer-center/config/CustomerSecurityConfig.java:17` |
+| 契约 | 域服务（goods-center 8081 / store 8083 / customer-center 8086 / trade-center 8087）**不做任何鉴权**，其安全性完全依赖"端口只在内网可达" |
+| 定义位置 | 各域 `application.yml` 注释；`goods-center/config/GoodsSecurityConfig.java:16`、`store/config/StoreSecurityConfig.java:17`、`customer-center/config/CustomerSecurityConfig.java:17`、`trade-center/config/TradeSecurityConfig.java:19` |
 | 消费位置 | 全部部署环境 |
-| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏）。⚠ **customer-center 上这条更硬**：域侧 `customerId` **直接取自请求路径且不做任何鉴权**（「锚点即数据权限」，见 [customer-center.md](./customer-center.md)），**能连到 8086 的人就能读写任意顾客的资料与地址簿**——该口径只在「路径上的 `customerId` 由端 BFF 从登录态填」+「8086 不可从公网抵达」两条**同时**成立时才成立 |
+| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏）。⚠ **「锚点即数据权限」的两个域上这条更硬**（customer-center 8086 / trade-center 8087）：域侧 `customerId` **直接取自请求路径且不做任何鉴权**（见 [customer-center.md](./customer-center.md) 与 [trade-center.md](./trade-center.md) 第一节），**能连到这两个端口的人就能读写任意顾客的资料、地址簿与购物车**——该口径只在「路径上的 `customerId` 由端 BFF 从登录态填」+「该端口不可从公网抵达」两条**同时**成立时才成立。⚠ trade-center 的 Redis 不改变这一点：那两个键只存 sku 与行数，**没有登录态**，抄不走任何身份 |
 | 核对方式 | **无法静态核对**。本页仅登记，属部署/运维前提 |
 
 ### 16. 权限串与前端路由一致性
@@ -254,13 +256,14 @@ layer: cross-cutting
 
 ---
 
-### 20. 商品详情：可见性由端 BFF **读时重判**（与列表同一不变量）
+### 20. C 端商品可见性：端 BFF **读时重判**（列表 / 详情 / 购物车同一不变量）
 
 | | |
 |---|---|
-| 契约 | C 端「商品可见」只有**一个口径**：店铺 `status=2`（已审核通过）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。⚠ **列表与详情的判定位置不同**：列表把这三个条件**当查询参数传给域**（跨店通用接口，域只做等值/IN 过滤）；详情按 id 取一条（域侧 `platformStoreGoodsDetail`，**本身不含任何可见性约束**），必须取回后**在端 BFF 逐条重判**。两处是同一不变量的两个落点，**单边改动不会编译报错**，只会让「列表搜得到、点进去说下架」或反之 |
-| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）与 `#detail` → `#shopApproved`（取回后重判）；域侧 `store-interface/.../contract/store/api/StoreClient.java#platformStoreGoodsDetail` + `store/controller/GoodsController.java` |
-| 消费位置 | mall-bff `CatalogController` 的 `/catalog/goods`、`/catalog/goods/{id}`；同一个域方法另有 admin BFF 消费（管理端不走 C 端口径） |
+| 契约 | C 端「商品可见」只有**一个口径**：店铺 `status=2`（已审核通过）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。⚠ **三处落点、判定位置各不相同，别只改一处**：① **列表**把这三个条件**当查询参数传给域**（跨店通用接口，域只做等值/IN 过滤）；② **详情**按 id 取一条（域侧 `platformStoreGoodsDetail`，**本身不含任何可见性约束**）与 ③ **购物车行**（域侧 `trade-center` 只回 `spuId` / `skuId` 原始行）都必须取回后**在端 BFF 逐条重判**。三处是同一不变量的三个落点，**单边改动不会编译报错**，只会让「列表搜得到、点进去说下架」或「车里还留着已下架商品」 |
+| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）；判定的**实现只有一处**：`#isVisible`（+ 店铺状态按 `storeId` 记忆化的 memo），由 `#visibleDetailOrNull`（单条：详情 `#detail` 与加购校验共用）与 `#visibleSpuIds`（批量：购物车列表用）两个出口复用 —— ⚠ **新增需要判可见性的读，一律走这两个出口，不要再写第三份判定**；域侧 `store-interface/.../contract/store/api/StoreClient.java#platformStoreGoodsDetail` / `#platformSpuBatch` + `store/controller/GoodsController.java` |
+| 消费位置 | mall-bff `CatalogController` 的 `/catalog/goods`、`/catalog/goods/{id}`，`CartController` 的 `/cart`（购物车读）与 `POST /cart/items`（加购前置校验）；同一个域方法另有 admin BFF 消费（管理端不走 C 端口径） |
+| ⚠ 购物车行的差异 | 购物车的不可见行**不 404、也不从列表里删掉**：打 `invalid` 标记后**照常下发**（顾客要看得见才敢删它），只是不进件数与金额——见 [mall-bff.md](./mall-bff.md)「购物车不可买口径」。⚠ **SPU 上架 ≠ 名下每个 SKU 都在售**（第 20 条的不变量只保证「至少一个在售」），故购物车行与加购**还要**多判一条「该 SKU 在售」 |
 | 不可见响应 | 不存在 / 已下架 / 被锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因**（区分了就等于给外人一个探测商品是否存在 / 是否被锁的接口） |
 | 4xx/5xx 分野 | **只有业务 4xx**（400/403/404）才转成 404；熔断 / 连接降级是 5xx，**照抛**——否则下游一抖，「商品服务挂了」会被伪装成「商品已下架」（第 13 条在本场景的落点） |
 | 破坏后果 | 详情漏判某一条件 → 平台锁定 / 未过审店铺的商品可被 `/goods/{id}` 直接打开（列表搜不到，但 id 可枚举）；把 5xx 也当 404 → 下游故障时全站商品看起来都下架了 |
@@ -300,7 +303,7 @@ layer: cross-cutting
     { "literal": "CLAIM_USER_TYPE", "in": ["backend/common/src/main/java/com/panoramic/common/security/LoginUser.java"], "why": "JWT type claim 常量定义处（第 4 条）" },
     { "literal": "panoramic:login", "in": ["backend/nacos-config", "backend/gateway", "backend/common-auth"], "why": "Redis 登录态键前缀，网关↔端 BFF 共享（第 5 条）" },
     { "literal": "X-User-Id", "in": ["backend/nacos-config"], "why": "X-User-Id 头名的唯一权威源（第 6 条）" },
-    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api", "backend/store-interface/src/main/java/com/panoramic/contract/store/api", "backend/customer-center-interface/src/main/java/com/panoramic/contract/customer/api"], "why": "身份头注入与透传（第 6 条）；⚠ 三个域客户端都要在此枚举里，漏一个则从该客户端删掉透传时检查器看不见" },
+    { "literal": "X-User-Type", "in": ["backend/gateway", "backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api", "backend/store-interface/src/main/java/com/panoramic/contract/store/api", "backend/customer-center-interface/src/main/java/com/panoramic/contract/customer/api", "backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/api"], "why": "身份头注入与透传（第 6 条）；⚠ 每个域客户端都要在此枚举里，漏一个则从该客户端删掉透传时检查器看不见" },
     { "literal": "bff-services", "in": ["backend/gateway"], "why": "网关 BFF 白名单键（第 10 条）" },
     { "literal": "${panoramic.auth.user-type}", "in": ["backend/common-auth"], "why": "端 BFF 身份类型绑定的消费处（第 9 条）；⚠ 必须带 ${} 占位符形式——裸属性名会被类注释里的散文假性满足" },
     { "literal": "user-type:", "in": ["backend/admin", "backend/store-bff", "backend/mall-bff"], "why": "三端 BFF 各须显式声明本端身份类型（第 9 条）" },

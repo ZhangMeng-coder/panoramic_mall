@@ -39,14 +39,14 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| listCartItems | GET | /cart/{customerId} | `Long` | `List<TradeCartItemVO>` | — | — | CartBffService(mall-bff) | 待实现 |
-| cartItemCount | GET | /cart/{customerId}/count | `Long` | `Integer` | — | — | CartBffService(mall-bff) | 待实现 |
-| addCartItem | POST | /cart/{customerId}/items | `Long`, `TradeCartItemAddDTO` | `Long` | — | — | CartBffService(mall-bff) | 待实现 |
-| updateCartItemQuantity | PUT | /cart/{customerId}/items/{id} | `Long`, `Long`, `TradeCartItemUpdateDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
-| setCartItemSelected | PUT | /cart/{customerId}/items/{id}/selected | `Long`, `Long`, `TradeCartSelectDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
-| setAllCartItemsSelected | PUT | /cart/{customerId}/selected | `Long`, `TradeCartSelectDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
-| removeCartItems | POST | /cart/{customerId}/items/remove | `Long`, `TradeCartItemIdsDTO` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
-| clearCart | DELETE | /cart/{customerId} | `Long` | `void` | — | — | CartBffService(mall-bff) | 待实现 |
+| listCartItems | GET | /cart/{customerId} | `Long` | `List<TradeCartItemVO>` | TradeCenterClient.java:52 | CartController.java:44 | CartBffService(mall-bff) |  |
+| cartItemCount | GET | /cart/{customerId}/count | `Long` | `Integer` | TradeCenterClient.java:61 | CartController.java:52 | CartBffService(mall-bff) |  |
+| addCartItem | POST | /cart/{customerId}/items | `Long`, `TradeCartItemAddDTO` | `Long` | TradeCenterClient.java:72 | CartController.java:60 | CartBffService(mall-bff) |  |
+| updateCartItemQuantity | PUT | /cart/{customerId}/items/{id} | `Long`, `Long`, `TradeCartItemUpdateDTO` | `void` | TradeCenterClient.java:83 | CartController.java:69 | CartBffService(mall-bff) |  |
+| setCartItemSelected | PUT | /cart/{customerId}/items/{id}/selected | `Long`, `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:95 | CartController.java:79 | CartBffService(mall-bff) |  |
+| setAllCartItemsSelected | PUT | /cart/{customerId}/selected | `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:108 | CartController.java:89 | CartBffService(mall-bff) |  |
+| removeCartItems | POST | /cart/{customerId}/items/remove | `Long`, `TradeCartItemIdsDTO` | `void` | TradeCenterClient.java:118 | CartController.java:98 | CartBffService(mall-bff) |  |
+| clearCart | DELETE | /cart/{customerId} | `Long` | `void` | TradeCenterClient.java:127 | CartController.java:107 | CartBffService(mall-bff) |  |
 
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`customerId`**（数据权限锚点），第二个是行 `id`。
 > 例：`updateCartItemQuantity` 的 `Long, Long, DTO` = `customerId, id, dto`。
