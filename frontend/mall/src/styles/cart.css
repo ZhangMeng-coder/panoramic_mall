@@ -1,0 +1,473 @@
+/* ============================================================================
+   Cart — 购物车页（CartView）
+   ----------------------------------------------------------------------------
+   只消费 tokens.css 的令牌：**禁止硬编码色值 / 圆角 / 阴影**。
+   只做宽屏：容器沿用 base.css 的 .container（1280px），不写媒体查询。
+   ⚠ 类名一律 `cart-*` 前缀，与首页 .goods__* / 列表 .cat-card__* / 账号 .acct__*
+     都分开——各页样式互不串（本仓库既有约定），视觉语言仍沿用同一套：
+     面板 = 白底 + n200 细边 + r-lg（照 .usercard / .acct__main），
+     行内轻按钮 = 无底色无边框、hover 起主色（照 .acct__link），
+     次级胶囊按钮 = 柔色底 + 主色字（照 .acct__retry）。
+
+   类名清单：
+     页面骨架 .cart / .cart__head / .cart__title / .cart__desc / .cart__state /
+              .cart__fallback / .cart__retry / .cart__empty
+     操作与列表 .cart__panel / .cart__ops / .cart-check / .cart__link /
+              .cart-shop / .cart-item（7 列栅格）/ .cart-qty（步进器）
+     汇总栏   .cart-sum / .cart-sum__*（吸底）
+   ========================================================================== */
+
+.cart {
+  padding: var(--s-6) 0 var(--s-16);
+  background: var(--n50);
+}
+
+/* ---- 页头：标题 + 「共 N 项（其中 M 项已失效）」 ---- */
+
+.cart__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+}
+
+.cart__title {
+  color: var(--n900);
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.3px;
+}
+
+.cart__desc {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.cart__desc b {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+/* 加载中的整块占位（与列表页 .catalog__state 同一形状） */
+.cart__state {
+  padding: var(--s-16) 0;
+  color: var(--n500);
+  font-size: var(--t-base);
+  text-align: center;
+}
+
+/* ---- 降级块（读不到）与空态（车里没东西）**刻意不同形**，别合成一块 ---- */
+
+.cart__fallback {
+  padding: var(--s-10) var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.cart__fallback-text {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+.cart__empty {
+  padding: var(--s-16) var(--s-5);
+  border: 1px dashed var(--n300);
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.cart__empty-text {
+  color: var(--n800);
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+}
+
+.cart__empty-hint {
+  margin-top: var(--s-2);
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+/* 空态的入口做成主色胶囊按钮（比一行文字更像「下一步该点这里」）。
+   回首页的链接只此一处，顶栏那一处是常驻的全局落点 */
+.cart__empty-link {
+  display: inline-block;
+  height: 40px;
+  margin-top: var(--s-6);
+  padding: 0 var(--s-8);
+  line-height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+  transition: background var(--dur) var(--ease);
+}
+
+.cart__empty-link:hover {
+  background: var(--brand-grad-hover);
+}
+
+/* 次级胶囊（降级块的重试；形状照 .acct__retry） */
+.cart__retry {
+  height: 36px;
+  margin-top: var(--s-4);
+  padding: 0 var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-medium);
+  transition: background var(--dur) var(--ease);
+}
+
+.cart__retry:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+/* ============================================================================
+   列表：面板 + 顶部操作条 + 按店铺分组
+   ========================================================================== */
+
+.cart__panel {
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.cart__ops {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--n200);
+}
+
+.cart__ops-right {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* 两步确认里的问句（行内与整批共用） */
+.cart__confirm {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* ---- 勾选框：原生控件 + accent-color 上主色，不自造一套 ---- */
+
+.cart-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--n700);
+  font-size: var(--t-sm);
+  cursor: pointer;
+}
+
+.cart-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.cart-check input:disabled {
+  cursor: not-allowed;
+}
+
+/* ---- 行内轻按钮（删除 / 确认删除 / 取消 / 删除选中 / 清空）：无底色无边框 ---- */
+
+.cart__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.cart__link:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+/* 破坏性动作：常态即主色字（tokens 里 `--danger` 与 `--brand` 同为橙红，
+   前台没有一套与主色分得开的破坏色，故 hover 只能往主色暗档走 —— 同 .acct__link--danger） */
+.cart__link--danger {
+  color: var(--danger);
+  font-weight: var(--w-medium);
+}
+
+.cart__link--danger:hover:not(:disabled) {
+  color: var(--brand-hover);
+}
+
+.cart__link:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+/* ---- 店铺分组 ---- */
+
+.cart-shop + .cart-shop {
+  border-top: 1px solid var(--n200);
+}
+
+.cart-shop__name {
+  padding: var(--s-3) var(--s-5);
+  color: var(--n800);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+  background: var(--n50);
+}
+
+/* ============================================================================
+   商品行：勾选 / 图 / 信息 / 单价 / 数量 / 小计 / 操作 —— 七列固定栅格
+   （信息列吃剩余宽度；其余定宽，行与行的各列左边缘对齐）
+   ========================================================================== */
+
+.cart-item {
+  display: grid;
+  grid-template-columns: 20px 72px minmax(0, 1fr) 96px 128px 104px 190px;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+}
+
+.cart-item + .cart-item {
+  border-top: 1px solid var(--n200);
+}
+
+.cart-item__check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.cart-item__check:disabled {
+  cursor: not-allowed;
+}
+
+.cart-item__thumb {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+.cart-item__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cart-item__ph {
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
+}
+
+.cart-item__info {
+  min-width: 0;
+}
+
+.cart-item__name {
+  color: var(--n800);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.cart-item__link:hover {
+  color: var(--brand);
+}
+
+/* 「已失效」标记：中性灰底（不抢主色——它不是促销标签，是「这行买不了」） */
+.cart-item__tag {
+  display: inline-block;
+  margin-left: var(--s-2);
+  padding: 1px var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--n200);
+  color: var(--n600);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+}
+
+.cart-item__spec {
+  margin-top: var(--s-1);
+  overflow: hidden;
+  color: var(--n500);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cart-item__price {
+  color: var(--n700);
+  font-size: var(--t-sm);
+}
+
+/* 行小计：这一行唯一的加粗数字（汇总在底部栏，不在这里） */
+.cart-item__sub {
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+}
+
+/* 失效行的「—」占位：数量与小计两列共用 */
+.cart-item__na {
+  color: var(--n400);
+  font-size: var(--t-sm);
+}
+
+.cart-item__ops {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-4);
+  white-space: nowrap;
+}
+
+/* ---- 失效行：整行灰显（图降透明度、字压到灰档），只保留勾选框（禁用）与删除 ---- */
+
+.cart-item.is-invalid .cart-item__thumb {
+  opacity: 0.55;
+}
+
+.cart-item.is-invalid .cart-item__name,
+.cart-item.is-invalid .cart-item__price,
+.cart-item.is-invalid .cart-item__sub {
+  color: var(--n500);
+}
+
+/* ---- 数量步进器 ---- */
+
+.cart-qty {
+  display: inline-flex;
+  align-items: center;
+  width: 128px;
+  border: 1px solid var(--n300);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.cart-qty__btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  color: var(--n700);
+  font-size: var(--t-md);
+  line-height: 1;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.cart-qty__btn:hover:not(:disabled) {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* 到边界（- 到 1 / + 到库存上限或 999）就地禁用：灰底灰字，不换主色系（同规格行的售罄态） */
+.cart-qty__btn:disabled {
+  color: var(--n400);
+  background: var(--n100);
+  cursor: not-allowed;
+}
+
+.cart-qty__num {
+  flex: 1;
+  min-width: 0;
+  color: var(--n900);
+  font-size: var(--t-sm);
+  text-align: center;
+}
+
+/* ============================================================================
+   底部汇总栏：吸底（长列表滚动时「已选 N 件 / 合计 ¥X / 去结算」始终在视野里）
+   ========================================================================== */
+
+.cart-sum {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-top: var(--s-6);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+}
+
+.cart-sum__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+}
+
+.cart-sum__lead {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+.cart-sum__lead b {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+.cart-sum__right {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.cart-sum__label {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 合计金额：与详情页价格带同一读法（¥ 小、整数大），但只用两档——汇总栏不该比商品页更吵 */
+.cart-sum__amount {
+  color: var(--brand);
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  line-height: 1;
+}
+
+.cart-sum__sym {
+  font-size: var(--t-md);
+}
+
+/* 结算按钮：**恒禁用**（后端没有下单 / 结算接口，见 CartView.vue 文件头 ⑥）。
+   故它的禁用态是它的**常态**，按主按钮的形做出来（不是灰扑扑的「坏掉的按钮」），
+   但降低不透明度 + 禁手型，配上右侧那行说明 —— 用户一眼能看出「还不能点、原因是开发中」 */
+.cart-sum__btn {
+  height: 44px;
+  padding: 0 var(--s-10);
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.cart-sum__hint {
+  color: var(--n500);
+  font-size: var(--t-xs);
+}

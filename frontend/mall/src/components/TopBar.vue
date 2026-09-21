@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { clearAuth, getToken, getUser } from '../store/auth'
 import { authApi } from '../api/auth'
 import { showToast } from '../composables/useToast'
+import {
+  clear as clearCartBadge,
+  count as cartCount,
+  refresh as refreshCartBadge
+} from '../store/cart'
 
 const route = useRoute()
 
@@ -18,7 +23,27 @@ const isHome = computed(() => route.path === '/')
 const loggedIn = computed(() => Boolean(getToken()))
 const nickname = computed(() => getUser()?.nickname || '')
 
-/** 退出：先请服务端下线（删 Redis 快照），**接口失败也照样本地清**（token 失效时本来就没得清） */
+/**
+ * 购物车徽标数（**购物车行数**，口径见 store/cart.ts）。
+ * >99 折叠成「99+」：三位数会把 34px 高的顶栏那枚胶囊撑宽，把「我的订单」挤走。
+ */
+const badgeText = computed(() => (cartCount.value > 99 ? '99+' : String(cartCount.value)))
+
+/**
+ * 挂载时对一次数。顶栏是**每页各挂一个**的（首页 / 列表 / 详情 / 账号页都各写了一个
+ * `<TopBar />`），所以「进入任一页面」就等于「重新对一次数」——加购后从详情页走到任何
+ * 一页、或购物车页改完回来，数字都不会停在旧值上。
+ * 未登录时 `refresh()` 自己不发请求（见 store/cart.ts，那里也写了为什么）。
+ */
+onMounted(() => {
+  void refreshCartBadge()
+})
+
+/**
+ * 退出：先请服务端下线（删 Redis 快照），**接口失败也照样本地清**（token 失效时本来就没得清）。
+ * ⚠ 徽标必须在本地一起清掉：它是「这个人的车里有多少项」，留着会让下一个人（或未登录态的
+ * 顶栏）挂着上一个人的数字。
+ */
 async function logout(): Promise<void> {
   try {
     await authApi.logout()
@@ -26,6 +51,7 @@ async function logout(): Promise<void> {
     // 忽略：本地登出照样生效
   }
   clearAuth()
+  clearCartBadge()
   showToast('已退出登录', 'success')
 }
 </script>
@@ -64,7 +90,9 @@ async function logout(): Promise<void> {
           首页
         </router-link>
         <span class="topbar__divider"></span>
-        <a class="topbar__link" href="#">
+        <!-- 购物车：**真实路由 + 真实计数**（原来是死链 + 写死的 3）。
+             徽标只在有东西时出现；计数归 store/cart.ts 一处管（加购 / 登出都要动它） -->
+        <router-link class="topbar__link" to="/cart">
           <svg class="topbar__icon" viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M3 4h2l2.4 11.2A2 2 0 0 0 9.36 17h8.5a2 2 0 0 0 1.96-1.6L21.5 7H6"
@@ -78,8 +106,8 @@ async function logout(): Promise<void> {
             <circle cx="18" cy="20" r="1.3" fill="currentColor" />
           </svg>
           购物车
-          <span class="topbar__count tnum">3</span>
-        </a>
+          <span v-if="cartCount > 0" class="topbar__count tnum">{{ badgeText }}</span>
+        </router-link>
         <span class="topbar__divider"></span>
         <a class="topbar__link" href="#">
           <svg class="topbar__icon" viewBox="0 0 24 24" aria-hidden="true">

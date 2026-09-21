@@ -612,10 +612,88 @@
   border-radius: var(--r-sm);
 }
 
-.detail__note {
+/* ---- 购买区：数量步进器 + 加入购物车（**不做「立即购买」**，见 GoodsDetailView.vue 文件头 ③）---- */
+
+.detail__buy {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
   margin-top: var(--s-6);
-  color: var(--n500);
-  font-size: var(--t-xs);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--n200);
+}
+
+/* 步进器：与购物车页的 .cart-qty 同一形状（同一控件两处出现，观感必须一致） */
+.detail__qty {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--n300);
+  border-radius: var(--r-md);
+}
+
+.detail__qty-btn {
+  flex: none;
+  width: 38px;
+  height: 44px;
+  color: var(--n700);
+  font-size: var(--t-md);
+  line-height: 1;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.detail__qty-btn:hover:not(:disabled) {
+  color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* 到边界（- 到 1 / + 到库存上限）就地禁用：灰底灰字，不换主色系（同规格行的售罄态） */
+.detail__qty-btn:disabled {
+  color: var(--n400);
+  background: var(--n100);
+  cursor: not-allowed;
+}
+
+.detail__qty-num {
+  min-width: 48px;
+  color: var(--n900);
+  font-size: var(--t-base);
+  text-align: center;
+}
+
+/* 主按钮三态照 .btn-primary / .search__btn；禁用态（未选规格 / 售罄）降低不透明度 */
+.detail__add {
+  height: 44px;
+  padding: 0 var(--s-10);
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.detail__add:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.detail__add:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.detail__add:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* 按钮不可用的理由（请先选择规格 / 该规格已售罄） */
+.detail__buy-hint {
+  margin-top: var(--s-3);
+  color: var(--n600);
+  font-size: var(--t-sm);
 }
 
 /* ---- 商品详情正文（纯文本，white-space 保换行）---- */

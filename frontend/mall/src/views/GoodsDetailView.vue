@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 import SearchBar from '../components/SearchBar.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 import { catalogApi } from '../api/catalog'
+import { cartApi } from '../api/cart'
+import { LOGIN_REQUIRED_MSG } from '../api/request'
+import { getToken } from '../store/auth'
+import { refresh as refreshCartBadge } from '../store/cart'
+import { showToast } from '../composables/useToast'
 import type { GoodsDetail, GoodsDetailSku } from '../types/catalog'
 import { grad } from '../utils/gradient'
 import { priceParts, trimNum } from '../utils/format'
@@ -22,11 +27,14 @@ import { priceParts, trimNum } from '../utils/format'
  *    （剥脚本 / 事件属性 / 样式；白名单只此一份，admin 端同字段共用），本页**不需要、也不得**
  *    自己再拼一遍 HTML。
  *    ⚠ 别改回 `{{ }}` 插值：那样店主写的 `<p>` 会原样露在页面上。
- * ③ **不做「加入购物车 / 立即购买」**：后端没有购物车与下单接口（顶栏那两个入口也还是死链），
- *    摆一个点了没反应的按钮比不摆更糟，故只在信息区写一行说明。
+ * ③ **「加入购物车」已接入，不做「立即购买」**：购物车接口已就绪（契约 docs/contracts/mall-bff.md
+ *    的 `/cart` 八行），本页规格区下方摆数量 + 加入购物车；**下单 / 结算仍没有接口**，
+ *    故不摆「立即购买」——摆一个点了没反应的按钮比不摆更糟（购物车页的「去结算」也是
+ *    禁用按钮 + 一行「结算功能开发中」）。
  */
 
 const route = useRoute()
+const router = useRouter()
 
 /**
  * 路由参数是外部输入（手改地址栏、老链接）：解析不出正整数就**不发请求**，
@@ -201,9 +209,85 @@ function selectSku(id: number): void {
   selectedSkuId.value = selectedSkuId.value === id ? null : id
 }
 
+/* ---- 购买区：数量 + 加入购物车 ---- */
+
+/**
+ * 单行加购上限的**前端镜像**（域侧上限 999，超限必然 400）。
+ * 前端夹一道只是免得点出一个注定失败的请求，真正的上限判定在域侧，不在这里。
+ */
+const MAX_BUY_QUANTITY = 999
+
+const buyQty = ref(1)
+const adding = ref(false)
+
+/** 加购上限 = min(999, 所选 SKU 的可用库存)；未选中规格时为 0（步进器与按钮都不可用） */
+const maxBuyQty = computed(() => {
+  const sku = activeSku.value
+  return sku ? Math.min(MAX_BUY_QUANTITY, sku.availableStock) : 0
+})
+
+/**
+ * 「加入购物车」可点：选中了规格（无规格商品由 `activeSku` 自动选中那一个）、
+ * 该 SKU 未售罄、且没有请求在途。**不看登录态**——未登录点它也能进（提示后带去登录页），
+ * 把按钮灰掉而不说理由才是更差的处理。
+ */
+const canAdd = computed(() => {
+  const sku = activeSku.value
+  return sku !== null && sku.availableStock > 0 && !adding.value
+})
+
+/** 按钮不可用时的理由（别让用户猜为什么点不动） */
+const buyHint = computed<string>(() => {
+  if (!activeSku.value) return '请先选择规格'
+  return activeSku.value.availableStock <= 0 ? '该规格已售罄' : ''
+})
+
+/** 步进：`-` 到 1、`+` 到上限即止（模板已把按钮禁用，这里再兜一层） */
+function stepBuyQty(delta: number): void {
+  const next = buyQty.value + delta
+  if (next < 1 || next > maxBuyQty.value) return
+  buyQty.value = next
+}
+
+/**
+ * 加入购物车。未登录 → 提示并去登录页（带回跳参数，登录后回本页）；
+ * 加购**不校验库存**（契约口径）：库存只影响这行之后还能不能再加（`purchasable`），
+ * 真正拦库存的是下单，而下单还没有接口。
+ *
+ * ⚠ 成功后刷的是**行数徽标**（`GET /cart/count` 口径），故重拉而不是本地 `buyQty` 相加——
+ * 那会把「件数」当「行数」记进徽标（见 store/cart.ts）。
+ */
+async function addToCart(): Promise<void> {
+  const sku = activeSku.value
+  const spu = goods.value
+  if (!sku || !spu) return
+
+  if (!getToken()) {
+    showToast(LOGIN_REQUIRED_MSG, 'info')
+    await router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+
+  adding.value = true
+  try {
+    await cartApi.addItem({ spuId: spu.id, skuId: sku.id, quantity: buyQty.value })
+    showToast('已加入购物车', 'success')
+    void refreshCartBadge()
+  } catch {
+    // 拦截器已弹后端 msg（商品对 C 端不可见 → 400 中文提示原样透传）
+  } finally {
+    adding.value = false
+  }
+}
+
 /** 换图重试一次：上一张图的加载失败态不该粘到新图上（与 CatalogCard 同款处理） */
 watch(activeImage, () => {
   stageFailed.value = false
+})
+
+/** 换规格：数量重置为 1（不同 SKU 库存不同，继承上一个规格的数量会得到「一选就超上限」的怪状态） */
+watch(activeSku, () => {
+  buyQty.value = 1
 })
 
 /**
@@ -331,7 +415,36 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               </button>
             </div>
 
-            <p class="detail__note">演示环境：购物车与下单接口尚未开放，本页只展示商品信息。</p>
+            <!-- 购买区：数量步进器 + 加入购物车（**不做「立即购买」**，见文件头 ③）。
+                 未选规格 / 已售罄时按钮禁用，理由写在下面那行，别让用户猜 -->
+            <div class="detail__buy">
+              <div class="detail__qty" role="group" aria-label="购买数量">
+                <button
+                  class="detail__qty-btn"
+                  type="button"
+                  :disabled="!activeSku || buyQty <= 1"
+                  aria-label="减少数量"
+                  @click="stepBuyQty(-1)"
+                >
+                  −
+                </button>
+                <span class="detail__qty-num tnum" aria-live="polite">{{ buyQty }}</span>
+                <button
+                  class="detail__qty-btn"
+                  type="button"
+                  :disabled="!activeSku || buyQty >= maxBuyQty"
+                  aria-label="增加数量"
+                  @click="stepBuyQty(1)"
+                >
+                  +
+                </button>
+              </div>
+
+              <button class="detail__add" type="button" :disabled="!canAdd" @click="addToCart">
+                {{ adding ? '加入中…' : '加入购物车' }}
+              </button>
+            </div>
+            <p v-if="buyHint" class="detail__buy-hint">{{ buyHint }}</p>
           </div>
         </div>
 

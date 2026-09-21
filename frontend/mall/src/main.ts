@@ -1,11 +1,12 @@
 import { createApp } from 'vue'
-// 载入顺序：令牌 → 基线 → 首页区块 → 账号页与提示条 → 商品列表页（catalog）
+// 载入顺序：令牌 → 基线 → 首页区块 → 账号页与提示条 → 商品列表页（catalog）→ 购物车页（cart）
 // ⚠ tokens.css 必须留在第一个（base.css 及后续样式都依赖它的令牌）
 import './styles/tokens.css'
 import './styles/base.css'
 import './styles/mall.css'
 import './styles/account.css'
 import './styles/catalog.css'
+import './styles/cart.css'
 import App from './App.vue'
 import router from './router'
 

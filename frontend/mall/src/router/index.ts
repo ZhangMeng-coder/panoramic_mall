@@ -54,6 +54,14 @@ const routes = [
     component: () => import('../views/GoodsDetailView.vue'),
     meta: { title: '商品详情', requiresAuth: true }
   },
+  // 购物车：顾客自己的数据（车里的东西就是他的），与商品查询同级——**要登录态**。
+  // 不挂在 /account 下：它是独立一级页（顶栏直达），不是「个人中心」的一个子页
+  {
+    path: '/cart',
+    name: 'cart',
+    component: () => import('../views/CartView.vue'),
+    meta: { title: '购物车', requiresAuth: true }
+  },
   // 个人中心：**二级结构**——父路由挂「左菜单 + 右内容」的外壳，内容各页是它的 children。
   // 顾客自己的数据一律要登录态（与「一涉及顾客数据就要登录」一致），故父子两级都标 requiresAuth。
   {
