@@ -3,7 +3,7 @@ service: admin
 layer: page
 baseUrl: /admin
 scanDirs: backend/admin/src/main/java/com/panoramic/admin/controller
-typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/common/src/main/java, backend/admin/src/main/java
+typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/src/main/java, backend/trade-center-interface/src/main/java, backend/common/src/main/java, backend/admin/src/main/java
 -->
 
 # 平台管理端 BFF（admin）对外契约 · 第 ① 层
@@ -12,7 +12,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > `/auth/**`、`/roles/**`、`/users/**`、`/permissions/**`、`/shop/**`、`/goods/**`）。
 > 签发 `type=admin` 的登录令牌；是本仓库**接口最多的服务**，也是 `@PreAuthorize` 授权的**唯一位置**。
 
-**共 55 个接口 / 9 个 Controller。**
+**共 57 个接口 / 10 个 Controller**（已实现 55 + **待实现 2**：订单查询，见下 `order/OrderController`）。
 
 ## 一、接口清单
 
@@ -116,6 +116,24 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | PUT | /goods/brands/{id} | goods:brand:edit | Long, BrandUpdateDTO | RespData<Void> | GoodsBrandController.java:77 |  |
 | DELETE | /goods/brands/{id} | goods:brand:delete | Long | RespData<Void> | GoodsBrandController.java:88 |  |
 
+### order/OrderController — `/orders`（2，**待实现**）
+
+| 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
+|---|---|---|---|---|---|---|
+| GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | — | 待实现 |
+| GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | — | 待实现 |
+
+> ⚠ **管理端对订单只读**——只有这两个查询端点，**没有任何写动作**（改状态 / 改单 / 删单都不做）。
+> 订单的状态流转入口只在两端：C 端 `pay` / `receive`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。
+
+> ⚠ 平台侧**没有锚点**（管理端是全量视角）：筛选（`storeId` / `customerId` / `orderNo` / `status`）走
+> `OrderPageQueryDTO`（**admin 本地**编排查询对象，与 `ShopGoodsPageQueryDTO` 同款做法）；
+> 自增 id **不出现在契约里**，路径标识用 **`orderNo`**。出参 `TradeOrderVO` 是域契约类型，直接下发。
+
+> ⚠ **实现期需补 `trade:order:list` 的三方一致**：`sys_permission` 种子（含菜单，按「目录 X → 页 X1 → 按钮 X11+」）
+> ↔ 前端 `v-perm` ↔ 本行——见 [cross-cutting.md](./cross-cutting.md) 第 16 条。契约先行的行**不查**权限种子，
+> 故这一条现在还是空的，实现对不上检查器会报出来。
+
 > 「路径」列不带网关前缀 `/admin`。例：`/shop/goods/page` 对外完整路径是 `/admin/shop/goods/page`。
 
 ## 二、权限串族
@@ -132,7 +150,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 ## 四、形状规则
 
-- ✅ **必包 `RespData`**（55/55）；✅ 授权**只在此层**（`@PreAuthorize`）——见 [cross-cutting.md](./cross-cutting.md) 第 1、2 条。
+- ✅ **必包 `RespData`**（57/57）；✅ 授权**只在此层**（`@PreAuthorize`）——见 [cross-cutting.md](./cross-cutting.md) 第 1、2 条。
 - ⚠ 本层**只编排，不持域实体**（`/goods/**` 与 `/shop/**` 全部经内部 Feign 下沉到 goods-center / store）。
 - ⚠ 本层编排与出口口径：分类子树展开、分类全路径补全、锁定人渲染、店铺商品描述消毒、身份类型绑定 ——
   规则本体见 [`backend/admin/README.md`](../../backend/admin/README.md) 与
@@ -142,7 +160,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 来源 | 类型 |
 |---|---|
-| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO |
+| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO |
+| `trade-center-interface`（`com.panoramic.contract.trade.vo`） | 订单（**待实现**）：TradeOrderVO |
 | 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺类型清单见 [store.md](./store.md) 第五节 |
 
 > `LoginResultVO` / `CurrentUserVO` 两端**各持一份**（不共享，身份空间不同）——见 [store-bff.md](./store-bff.md) 第四节。
@@ -154,6 +173,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 |---|---|---|
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD；分类树与分类全路径 |
 | store(8083) | Feign `StoreClient`（**platform 侧**方法） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉 |
+| trade-center(8087) | Feign `TradeCenterClient`（**待实现**） | 平台侧订单分页 / 详情（**只读**，无写动作） |
 
 全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 `ShopGoodsBffService` 与 `StoreShopBffService` 是本层两个主要编排类。

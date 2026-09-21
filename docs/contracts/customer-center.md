@@ -33,7 +33,7 @@ typeDirs: backend/customer-center-interface/src/main/java
 | getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | CustomerCenterClient.java:46 | ProfileController.java:34 | CustomerProfileBffService(mall-bff) |  |
 | saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | CustomerCenterClient.java:55 | ProfileController.java:42 | CustomerProfileBffService(mall-bff) |  |
 | listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | CustomerCenterClient.java:64 | AddressController.java:38 | CustomerAddressBffService(mall-bff) |  |
-| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | CustomerCenterClient.java:74 | AddressController.java:46 | —（本期未编排） |  |
+| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | CustomerCenterClient.java:74 | AddressController.java:46 | OrderBffService(mall-bff)（下单取地址快照，**待实现**） |  |
 | saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | CustomerCenterClient.java:85 | AddressController.java:55 | CustomerAddressBffService(mall-bff) |  |
 | updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `void` | CustomerCenterClient.java:96 | AddressController.java:64 | CustomerAddressBffService(mall-bff) |  |
 | deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `void` | CustomerCenterClient.java:107 | AddressController.java:74 | CustomerAddressBffService(mall-bff) |  |

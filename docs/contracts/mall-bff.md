@@ -12,7 +12,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff），签发**第三套身份** `type=user`。
 > 服务范围 = **顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料与收货地址**
 > （资料保存 / 地址增删改查 / 设默认）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）
-> + **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）。
+> + **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）
+> + **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 —— ⚠ **本轮为契约先行，尚未实现**，见第二节订单小节）。
 > 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情）与
 > **customer-center**（顾客资料与收货地址）三个业务域（地址见 [customer-center.md](./customer-center.md)）、
 > **trade-center**（购物车，见 [trade-center.md](./trade-center.md)）；
@@ -26,14 +27,14 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 类型 | 所在包 |
 |---|---|
-| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO`；购物车：`MallCartItemAddDTO` / `MallCartItemUpdateDTO` / `MallCartSelectDTO` / `MallCartItemIdsDTO` / `MallCartVO` / `MallCartShopVO` / `MallCartItemVO` |
+| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO`；购物车：`MallCartItemAddDTO` / `MallCartItemUpdateDTO` / `MallCartSelectDTO` / `MallCartItemIdsDTO` / `MallCartVO` / `MallCartShopVO` / `MallCartItemVO`；**订单（待实现）**：`MallOrderCreateDTO` / `MallOrderPageQueryDTO` / `MallOrderPayDTO` / `MallOrderVO` |
 | `TradeCartItemVO` 等 | `backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/`（购物车**域**的类型；⚠ 页面出参**不是**它——BFF 汇总成 `MallCartVO`，域类型不出网关） |
 | `CategoryTreeVO` | `backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/vo/` |
 | `SpecConfigItem` / `SpecAttr` | `backend/store-interface/src/main/java/com/panoramic/contract/store/dto/`（详情页的规格配置与 SKU 规格属性，**数据来自 store 域**）⚠ `contract.goods.dto` 下有同形同名的孪生类，**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包，本模块用的是 **store** 那个（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-## 二、接口清单（24 条）
+## 二、接口清单（29 条 = 已实现 24 + **待实现 5**）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
@@ -61,6 +62,18 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | CartController.java:105 | |
 | POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | CartController.java:114 | |
 | DELETE | /cart | — | — | `Void` | CartController.java:123 | |
+| POST | /orders | — | `MallOrderCreateDTO` | `List<MallOrderVO>` | — | 待实现 |
+| POST | /orders/page | — | `MallOrderPageQueryDTO` | `PageResult<MallOrderVO>` | — | 待实现 |
+| GET | /orders/{orderNo} | — | `String` | `MallOrderVO` | — | 待实现 |
+| POST | /orders/{orderNo}/pay | — | `String`, `MallOrderPayDTO` | `Void` | — | 待实现 |
+| POST | /orders/{orderNo}/receive | — | `String` | `Void` | — | 待实现 |
+
+> ⚠ **订单 5 条整列标 `待实现`**（契约先行：后端接口层还没写，前端可照表先写页面）；
+> `声明位置` 列填 `—` 而不是写计划落点——写一个尚不存在的文件只会变成新的漂移点。
+> 实现完成后**同一改动内把状态摘回留空**（不摘检查器报错）。
+> 订单的域侧契约（三侧锚点 / 出参类型）见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
+
+> ⚠ 订单**路径标识用 `orderNo`（业务可读单号）**，不是自增 id——理由与形状见 [trade-center.md](./trade-center.md)。
 
 ⚠ **权限串一律为空**：C 端顾客**不接 RBAC**（与店主端同理），本模块没有、也不应有任何 `@PreAuthorize`。
 登录后顾客对自己的数据全权限——**这是预期状态，不是漏登记**。
@@ -95,6 +108,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 购物车写口径 | 改数量 / 改选中 / 删除 / 清空**一律经 `BffFeignCall.call` 直透 trade-center**（写路径不在 BFF 二次判定），失败降级文案「购物车暂不可用，请稍后重试」 |
 | | ⚠ **单行与批量对「命中 0 行」的语义刻意不同，不要拉平**：`PUT /cart/items/{id}` 与 `PUT /cart/items/{id}/selected` 命中 0 行（行不存在 / 不属于本人）→ **`404`「购物车行不存在」**——「改成功」与「没这行」对调用方是两件事，回 200 就是**假成功**；`POST /cart/items/remove` 与 `DELETE /cart` 是**幂等 no-op**（批量语义下不该因某一行被并发删掉而让整批失败）。故前端**删除路径**不必处理「双击删除」的竞态，**改数量 / 改选中要按 `404` 处理**（重拉列表即可，那一行确实已经不在车里） |
 | 徽标口径 | `GET /cart/count` = **购物车行数**（轻口径：域侧 `count(*)` + Redis 读穿透，**不做可见性判定**），供顶栏徽标。⚠ 它与购物车页的 `totalQuantity`（**有效行的件数之和**）**口径不同**，不是 bug：徽标数「车里有几项」，页脚算「能买几件、多少钱」 |
+| 下单入参 | `MallOrderCreateDTO` = `source`（`DIRECT` / `CART`）+ `requestId`（客户端生成）+ `addressId` + `items[{skuId, quantity}]`。⚠ **传 `addressId` 而不是地址快照**：地址由本层经 customer-center 取回（顺带校验归属）后组装成快照传给 trade-center —— **trade-center 结构上调不到 customer-center**（每个域只依赖自己的 `<域>-interface`） |
+| 下单出参 | 一次提交会按 `storeId` **拆成多笔**（一单一店），故出参是 `List<MallOrderVO>`，顺序 = `storeId` 升序（确定）。页面按「一笔一单」展示与支付 |
+| 重复提交 | `requestId` **必填**（客户端每次提交生成一个）；命中即**原样返回首次那批**——不重建、不二次扣库存、连商品都不再校验。两级幂等（请求级 + 指纹窗口）口径见 [trade-center.md](./trade-center.md) 与 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节 |
+| 假支付 | `MallOrderPayDTO.amount` 必须**等于订单总额**才算支付成功。⚠ **校验落在域内**（金额是领域规则，本层只透传），不一致回 `400`「支付金额与订单金额不符」 |
+| 订单状态文案 | 状态名与文案**由域下发**（枚举名 + `mallLabel`）。⚠ **本层不重写文案**——两端各写一份必漂移；商户端用的是同一枚举的另一个字段（`storeAdminLabel`），如 `PAID` 在 C 端叫「已支付」、商户端叫「待发货」 |
 | 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |
 
 ## 三、前端契约的**视觉与结构**基准
