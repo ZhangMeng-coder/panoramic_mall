@@ -45,6 +45,7 @@
 - **store_id 通用数据权限（D5）**：owner 侧方法必带 `store_id`、只作用于「store_id == 传入值」的行；platform 侧方法不带 `store_id`、全量。
   - 在售商品（`store_goods_*`）owner 侧以「id + store_id」双条件取行（`StoreGoodsSpuServiceImpl#getOwnedOrThrow`）：他人商品与不存在的商品**同样报「商品不存在」**，不泄露存在性；SKU 不持 `store_id`，先校验其 SPU 归属再操作。
   - **owner / platform 的分流由「哪个 BFF 调哪一侧接口」决定，域内不做身份断言**（原 `assertOwner` / `requirePlatformAdmin` 已删）：store-bff 调 owner 侧并从登录态取 store_id，admin 调 platform 侧并由 `@PreAuthorize` 把关。
+  - **新增方法按什么选侧**：看**作用对象表是否带 `store_id` 列** + 调用意图——带则该操作只能限定「本店」，走 owner 侧（方法必带 `store_id`、只作用于 `store_id == 传入值` 的行）；表不带 `store_id`（如 SKU，经其 SPU 归属）或意图就是全量，走 platform 侧。两侧都不合适（要跨店、又不想带端别约束）才用跨店通用侧。
   - `audit_by` 直取 `X-User-Id` 仅留痕（不与平台账号联查，D6）。
 
 ### 2. 店铺审核状态机
