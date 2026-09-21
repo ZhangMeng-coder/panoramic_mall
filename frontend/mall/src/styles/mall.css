@@ -670,7 +670,7 @@
   aspect-ratio: 16 / 10;
 }
 
-/* 占位文字的颜色由 main.js 按同色相压暗后内联设置（浅底上保证可读） */
+/* 占位文字的颜色由 GoodsCard.vue 按同色相压暗后内联设置（:style 绑 hsl(hue 42% 32%)，浅底上保证可读） */
 .goods__thumb-label {
   font-size: var(--t-md);
   font-weight: var(--w-semibold);

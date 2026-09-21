@@ -46,9 +46,11 @@ function handleUnauthorized(): void {
  * - code=403 → 提示“无权限”；
  * - 其余 → 弹后端 msg。
  *
- * ⚠ 与 `frontend/mall/src/api/request.ts` 结构同源、**错误策略刻意不同**：
- * 本端是管理后台，每个页面都要登录，因此 401 直接跳登录页；
- * mall 前台首页公开，401 只清态不跳转（免得把带过期 token 的游客弹走）。**别把两边改成一样。**
+ * ⚠ 与 `frontend/mall/src/api/request.ts` 的关系：**401 出口三端一致**——清本地登录态 + 带 `redirect` 跳登录页
+ * （mall 另会先弹一句「请先登录」，本端不弹、直接跳）。
+ * 本端是管理后台，每个页面都要登录，因此**没有** mall 的 `silent401` 静默开关——那一个仅供路由守卫
+ * 刷新重建登录态的 `authApi.me()`（mall 首页对游客开放，本端没有这种页面）。
+ * **别去掉 mall 的 `silent401`、也别扩大这个静默面**（口径见 CLAUDE.md「mall 前台（用户端）」与 cross-cutting 第 11 条）。
  *
  * ⚠ 本文件与 `frontend/store/src/api/request.ts` 的**代码部分逐字相同**（历史上就是两份复制，
  * 只有头部注释里各自指认「本端是哪一端」的两行不同）。本次拉平**只加类型、不做去重**
