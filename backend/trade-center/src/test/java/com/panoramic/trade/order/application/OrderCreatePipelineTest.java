@@ -3,6 +3,7 @@ package com.panoramic.trade.order.application;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.domain.OrderLine;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
@@ -29,6 +30,10 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 class OrderCreatePipelineTest {
 
     private static final LocalDateTime CREATE_TIME = LocalDateTime.of(2026, 9, 21, 12, 0, 0);
+
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
 
     /** 记录调用序的假步骤（可选：抛错 / 只记录） */
     private static final class RecordingStep implements OrderCreateStep {
@@ -67,7 +72,7 @@ class OrderCreatePipelineTest {
 
     /** 只用来喂给流水线的最小订单（假步骤不碰它，故不需要 seal） */
     private static OrderModel anyOrder() {
-        return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+        return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
                 "req-1", "fp-1", CREATE_TIME, List.of(new OrderLine(10L, 1)));
     }
 

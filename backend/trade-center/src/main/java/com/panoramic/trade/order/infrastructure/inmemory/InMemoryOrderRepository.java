@@ -1,79 +1,127 @@
 package com.panoramic.trade.order.infrastructure.inmemory;
 
 import com.panoramic.trade.order.domain.OrderModel;
+import com.panoramic.trade.order.domain.port.OccupyResult;
+import com.panoramic.trade.order.domain.port.OrderPage;
+import com.panoramic.trade.order.domain.port.OrderPageQuery;
+import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
-import com.panoramic.trade.order.domain.port.OrderSubmission;
+import com.panoramic.trade.order.domain.port.PlatformOrderQuery;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
- * {@link OrderRepository} 的内存实现（本期不落库，裁定 D1）。
+ * {@link OrderRepository} 的内存实现（先占键形状的参照实现）。
  *
- * <p>⚠ {@link #saveSubmission} 在同步块里**一次性**写入订单与幂等映射：对应 D13 的口径——库存扣减与
- * 订单写入不是逐笔提交，要么都在、要么都不在（失败路径下这个方法根本不会被调用，故「失败不留残单」
- * 是免费的）。真实实现里这个「一次」是一次事务（订单行 + 提交记录同事务提交）。</p>
+ * <p>⚠ <b>临时脚手架</b>：真实落库已是 {@code JdbcOrderRepository}（默认），本类保留下来是给
+ * 单测与「无数据源」场景用的（{@code panoramic.trade.order.repository=memory}）。
+ * 商品 / 库存两个下游同样是内存脚手架，store 域落地后随 T4b 一起删除（todo 残留 9）。</p>
  *
- * <p>⚠ 写入时**按单号幂等**（已存在即忽略）：一次提交的整批里可能含复用笔（上一次提交留下的订单），
- * 它们已经在这个列表里了，再插一遍就会把订单条数、指纹判重、单号查重全部搅乱。</p>
+ * <p>⚠ <b>它必须能表达「未提交的占位」</b>，否则先占键的语义在单测里就不成立：真实实现里
+ * 键与订单在同一个事务里——业务失败则**键随事务一起消失**。内存实现没有事务，于是用一个
+ * 两段式的写法把同一件事演出来：{@link #occupy} 只登记一个**占位**（不写进「已提交的键」），
+ * 直到 {@link #saveAll} 才把它提升为已提交。于是：</p>
+ * <ul>
+ *   <li>占位后业务失败（{@code saveAll} 从未被调用）→ 该键不在已提交集合里，下次同键的
+ *       {@code occupy} 正常拿到 {@code created=true}（= 键被释放）；</li>
+ *   <li>占位后 {@code saveAll} → 键进入已提交集合，之后再 {@code occupy} 同键得到
+ *       {@code created=false} + 先到者的 {@code submissionId}（= 幂等命中）。</li>
+ * </ul>
+ * <p>⚠ <b>并发不在本类的保证范围内</b>：真实实现的并发由唯一索引的行锁串行化（后到者阻塞到先到者
+ * 提交，再拿到重复键），内存实现只保证单线程下的语义一致，不做阻塞模拟——见
+ * {@link OrderRepository#occupy} 的契约，那才是唯一的并发口径来源。</p>
  *
- * <p>⚠ <b>只保证单线程安全，并发下有计划内的缺口</b>：每个方法各自同步，但
- * 「{@link #findSubmission} → 下单扣库存 → {@link #saveSubmission}」这段跨方法的过程**不是原子的**。
- * 两个线程同时提交同一个 {@code customerId + requestId} 时会各下各的单，而 {@code putIfAbsent} 只留下首批，
- * 另一批订单就成了「一级幂等永远取不到的孤儿单」（库存已扣、重放却看不到它）。
- * 这是**有意不在这里修**的：修法是「占用幂等键先于执行业务」+ 键上的唯一约束，属**落库期**的设计，
- * 见 {@link OrderRepository#saveSubmission} 的接口注释。本实现是端口语义的占位，不是并发安全的参照实现。</p>
- *
- * <p>⚠ {@link #findByFingerprint} 的窗口过滤是**闭区间**（{@code createTime >= since}）：
- * 窗口的边界口径只有一处定义（在 {@code OrderRepository} 的接口注释里），本类只如实实现它，
- * 不在这里另立一套「到底含不含边界」的算法。</p>
+ * <p>⚠ 批次里存的是**活引用不是快照**：重放返回的是那批订单的当前状态（订单生命周期自己会推进，
+ * 重放看到最新真相，不会拿到过期状态）。代价是「这份记录是唯一凭证」只成立于**没人改它**的前提下——
+ * 返回值与仓库里是同一批对象，谁改了返回值就等于改了凭证。</p>
  */
 public class InMemoryOrderRepository implements OrderRepository {
 
-    /** 已写入的订单（写入顺序 = 拆单顺序；不排序，读接口各自过滤） */
+    /** 已写入的订单（写入顺序 = 拆单顺序；读接口各自过滤与排序） */
     private final List<OrderModel> orders = new ArrayList<>();
 
-    /** 「顾客 + 请求 id」→ 那次提交返回的整批（第一级幂等的唯一凭证） */
-    private final Map<String, OrderSubmission> submissions = new HashMap<>();
+    /** 占位/提交记录：submissionId → 幂等键（{@code null} = 这次提交没带 requestId，不做请求级去重） */
+    private final Map<Long, String> keyBySubmission = new LinkedHashMap<>();
+
+    /** **已提交**的幂等键 → submissionId（第一级幂等的唯一凭证） */
+    private final Map<String, Long> committedKeys = new LinkedHashMap<>();
+
+    /** **已提交**的批次：submissionId → 那次提交返回的整批（含复用笔，顺序即首次返回顺序） */
+    private final Map<Long, List<OrderModel>> committedBatches = new LinkedHashMap<>();
+
+    private long nextSubmissionId = 1;
+
+    // ── 写侧 ────────────────────────────────────────────────────────────────────
 
     @Override
-    public synchronized void saveSubmission(OrderSubmission submission) {
-        if (submission == null) {
-            return;
+    public synchronized OccupyResult occupy(Long customerId, String requestId) {
+        String key = submissionKey(customerId, requestId);
+        if (key != null) {
+            Long committed = committedKeys.get(key);
+            if (committed != null) {
+                return new OccupyResult(committed, false);
+            }
         }
-        // 先落订单、再落映射，且都在同一把锁里：不存在「订单落了而映射没落」的中间态可被读到
-        for (OrderModel order : submission.orders()) {
+        // 无论是「首次占位」还是「上一次的占位没提交（业务失败）后重来」，都发一个新 id：
+        // 未提交的占位不被承认，故它不会被回读到，也就不需要显式释放
+        long submissionId = nextSubmissionId++;
+        keyBySubmission.put(submissionId, key);
+        return new OccupyResult(submissionId, true);
+    }
+
+    @Override
+    public synchronized void saveAll(long submissionId, List<OrderModel> batch) {
+        for (OrderModel order : batch) {
+            // 按单号幂等：一批里可能含复用笔（上一次提交留下的订单），它们已经在列表里了
             if (!existsByOrderNo(order.getOrderNo())) {
                 orders.add(order);
             }
         }
-        String requestId = submission.requestId();
-        if (requestId != null && !requestId.isBlank()) {
-            // putIfAbsent 而不是 put：同一键上「首次那批」才是唯一凭证，后到的提交不得覆盖它
-            submissions.putIfAbsent(submissionKey(submission.customerId(), requestId), submission);
+        committedBatches.put(submissionId, List.copyOf(batch));
+        String key = keyBySubmission.get(submissionId);
+        if (key != null) {
+            // putIfAbsent：同一键上「首次那批」才是唯一凭证，后到的提交不得覆盖它
+            committedKeys.putIfAbsent(key, submissionId);
         }
     }
 
     @Override
-    public synchronized Optional<OrderSubmission> findSubmission(Long customerId, String requestId) {
-        if (requestId == null || requestId.isBlank()) {
-            return Optional.empty();
+    public synchronized void update(OrderModel order) {
+        Objects.requireNonNull(order, "订单不能为空");
+        // 内存实现里仓库持有的是**同一个对象**，状态迁移在聚合上发生时这里就已经是新的了；
+        // 方法仍然要有，且要断言这笔单确实在仓库里——否则「更新了一笔不存在的单」会静默通过
+        if (!existsByOrderNo(order.getOrderNo())) {
+            throw new IllegalStateException("订单 " + order.getOrderNo() + " 不在仓库里，无法更新");
         }
-        return Optional.ofNullable(submissions.get(submissionKey(customerId, requestId)));
+        // ⚠ 真实实现（JdbcOrderRepository）在这里还做一次**条件更新**：库里必须仍是「来时状态」，
+        //    否则抛 400（重复动作 / 被别的动作抢先）。本类**表达不了**它——仓库持的是活引用，
+        //    状态在聚合上已经改完，「来时状态」根本读不到了。故「丢失更新 / 并发重复动作 → 400」
+        //    这一条在内存实现下验不到，只能在真库上验（T15 用顺序重复动作覆盖同一句提示）；
+        //    把本类当成「先占键与三侧读」的参照实现，别当成并发语义的参照实现。
+    }
+
+    // ── 读侧 ────────────────────────────────────────────────────────────────────
+
+    @Override
+    public synchronized List<OrderModel> findBySubmissionId(long submissionId) {
+        return committedBatches.getOrDefault(submissionId, List.of());
     }
 
     @Override
-    public synchronized Optional<OrderModel> findByFingerprint(String fingerprint, LocalDateTime since) {
+    public synchronized Optional<OrderModel> findRecentByFingerprint(String fingerprint, LocalDateTime since) {
         if (fingerprint == null || since == null) {
             return Optional.empty();
         }
         return orders.stream()
                 .filter(order -> fingerprint.equals(order.getFingerprint()))
-                // 闭区间：窗口起点那一刻算「窗口内」（与仓库接口注释同口径）
+                // 闭区间：窗口起点那一刻算「窗口内」（口径定义在 OrderRepository 的接口注释里）
                 .filter(order -> !order.getCreateTime().isBefore(since))
                 .findFirst();
     }
@@ -86,13 +134,92 @@ public class InMemoryOrderRepository implements OrderRepository {
         return orders.stream().anyMatch(order -> orderNo.equals(order.getOrderNo()));
     }
 
+    @Override
+    public synchronized Optional<OrderModel> findByOrderNo(String orderNo) {
+        return find(order -> orderNo != null && orderNo.equals(order.getOrderNo()));
+    }
+
+    @Override
+    public synchronized Optional<OrderModel> findByCustomerOrderNo(Long customerId, String orderNo) {
+        return find(order -> Objects.equals(customerId, order.getCustomerId())
+                && orderNo != null && orderNo.equals(order.getOrderNo()));
+    }
+
+    @Override
+    public synchronized Optional<OrderModel> findByStoreOrderNo(Long storeId, String orderNo) {
+        return find(order -> Objects.equals(storeId, order.getStoreId())
+                && orderNo != null && orderNo.equals(order.getOrderNo()));
+    }
+
+    @Override
+    public synchronized OrderPage pageCustomerOrders(Long customerId, OrderQuery query) {
+        return page(order -> Objects.equals(customerId, order.getCustomerId()), query);
+    }
+
+    @Override
+    public synchronized OrderPage pageStoreOrders(Long storeId, OrderQuery query) {
+        return page(order -> Objects.equals(storeId, order.getStoreId()), query);
+    }
+
+    @Override
+    public synchronized OrderPage pagePlatformOrders(PlatformOrderQuery query) {
+        // 平台侧无锚点，但两个筛选都是可选的：null = 不筛（与落库实现的「条件不入 SQL」同口径）
+        return page(order -> (query.storeId() == null || Objects.equals(order.getStoreId(), query.storeId()))
+                        && (query.customerId() == null || Objects.equals(order.getCustomerId(), query.customerId())),
+                query);
+    }
+
+    // ── 内部 ────────────────────────────────────────────────────────────────────
+
+    private Optional<OrderModel> find(Predicate<OrderModel> predicate) {
+        return orders.stream().filter(predicate).findFirst();
+    }
+
+    /**
+     * 锚点过滤 + 条件筛选 + **下单倒序**分页
+     *
+     * <p>倒序与真实实现的 {@code ORDER BY id DESC} 同口径：最新的订单排在最前面，
+     * 页面的「我的订单」第一眼看到的就是刚下的那笔。</p>
+     *
+     * <p>⚠ 入参是 {@link OrderPageQuery} 而不是某个具体的 record：三侧的两个**共同**字段（订单号 / 状态）
+     * 与分页在这里只处理一遍，平台侧那两个可选筛选由调用方并进 {@code anchor} 谓词
+     * ——它们的「不筛」语义与落库实现的条件拼接同口径。</p>
+     */
+    private OrderPage page(Predicate<OrderModel> anchor, OrderPageQuery query) {
+        List<OrderModel> matched = new ArrayList<>(orders.size());
+        for (int i = orders.size() - 1; i >= 0; i--) {   // 倒序收集，省一次 reverse
+            OrderModel order = orders.get(i);
+            if (!anchor.test(order)) {
+                continue;
+            }
+            if (query.orderNo() != null && !query.orderNo().equals(order.getOrderNo())) {
+                continue;
+            }
+            if (query.status() != null && query.status() != order.getStatus()) {
+                continue;
+            }
+            matched.add(order);
+        }
+        int from = (query.pageNum() - 1) * query.pageSize();
+        if (from >= matched.size()) {
+            return new OrderPage(matched.size(), List.of());
+        }
+        int to = Math.min(from + query.pageSize(), matched.size());
+        return new OrderPage(matched.size(), matched.subList(from, to));
+    }
+
     /**
      * 幂等键：顾客 id 与 requestId 一起拼
      *
      * <p>⚠ 只用 requestId 会让「A 顾客的订单被 B 顾客用同一个键捞走」；{@code customerId} 为 null 时
      * 退化成 {@code null|xxx}——那是「没带顾客身份」的自成一格，仍不会跨顾客串到别人的订单上。</p>
+     *
+     * @return 幂等键；{@code requestId} 为空时返回 {@code null}（表示这次提交不做请求级去重）
      */
     private static String submissionKey(Long customerId, String requestId) {
+        if (requestId == null || requestId.isBlank()) {
+            return null;
+        }
         return customerId + "|" + requestId;
     }
 
@@ -102,11 +229,14 @@ public class InMemoryOrderRepository implements OrderRepository {
      * 清空仓库（测试入口）
      *
      * <p>每个用例从一个空仓库开始，跨用例残留会让「仓库条数不变」这类断言失去意义。
-     * 幂等映射与订单一并清掉：只清一半会让下一个用例意外命中上一个用例的提交记录。</p>
+     * 占位、已提交批次、订单一并清掉：只清一半会让下一个用例意外命中上一个用例的提交记录。</p>
      */
     public synchronized void clear() {
         orders.clear();
-        submissions.clear();
+        keyBySubmission.clear();
+        committedKeys.clear();
+        committedBatches.clear();
+        nextSubmissionId = 1;
     }
 
     /**
@@ -121,5 +251,22 @@ public class InMemoryOrderRepository implements OrderRepository {
      */
     public synchronized List<OrderModel> all() {
         return List.copyOf(orders);
+    }
+
+    /**
+     * 按「顾客 + 请求 id」查**已提交**的那一批（测试入口）
+     *
+     * <p>⚠ 生产路径上没有这个方法：幂等命中是通过 {@link #occupy} 的返回值 + {@link #findBySubmissionId}
+     * 表达的（两个来回变一个来回）。测试用它直接断言「首次那批是唯一凭证」这类不变量。</p>
+     *
+     * @return 已提交的那批订单；没提交过（含只占位未提交）则空
+     */
+    public synchronized Optional<List<OrderModel>> findCommittedBatch(Long customerId, String requestId) {
+        String key = submissionKey(customerId, requestId);
+        if (key == null) {
+            return Optional.empty();
+        }
+        Long submissionId = committedKeys.get(key);
+        return submissionId == null ? Optional.empty() : Optional.of(findBySubmissionId(submissionId));
     }
 }

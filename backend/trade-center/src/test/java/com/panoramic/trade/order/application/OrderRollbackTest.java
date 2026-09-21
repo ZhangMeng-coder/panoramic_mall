@@ -10,11 +10,12 @@ import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
-import com.panoramic.trade.order.domain.port.StockOutboundRecord;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.port.StockPort;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
+import com.panoramic.trade.order.infrastructure.inmemory.StockOutboundRecord;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryStockPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -93,8 +94,12 @@ class OrderRollbackTest {
                 new DefaultOrderNoGenerator(clock, sequence::getAndIncrement), pipeline, properties, clock);
     }
 
+    /** 收货地址与各用例的断言无关，取一份合法值即可（地址校验在 {@code OrderAddress} 自己那侧） */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
     private static OrderCreateCommand command(String requestId, OrderCreateCommand.Line... lines) {
-        return new OrderCreateCommand(11L, OrderSource.CART, requestId, List.of(lines));
+        return new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, requestId, List.of(lines));
     }
 
     private static OrderCreateCommand.Line line(Long skuId, int quantity) {
@@ -129,7 +134,7 @@ class OrderRollbackTest {
 
         assertThat(orderRepository.count()).isZero();
         // 幂等映射也没落：否则「这次提交已经成功过」会被记下来，重放会返回一个根本不存在的批次
-        assertThat(orderRepository.findSubmission(11L, "req-1")).isEmpty();
+        assertThat(orderRepository.findCommittedBatch(11L, "req-1")).isEmpty();
     }
 
     // ── ② 多店：前一笔（本次新建）也被回补，没扣过的行不留记录 ──────────────────
@@ -202,10 +207,12 @@ class OrderRollbackTest {
     // ── ④ 回补自身的边界：幂等 + 次生错误不吞主异常 ────────────────────────────
 
     @Test
-    @DisplayName("净额为 0 的行不回调 revert：整次回滚只对「确实扣过」的行下手")
+    @DisplayName("按单回补：一笔订单只调一次 revertByOrder，其中没扣成的行不产生反向流水")
     void linesWithZeroNetDeductionAreNotReverted() {
-        // ⚠ 端口层已不去重（见 StockPort#revert 契约），故「该还谁、还多少」全压在这一层的净额算式上：
-        // 二号店两行里 SKU_B 扣成、SKU_B2 库存为 0 压根没扣，只有前者该被还
+        // ⚠ 「该还谁、还多少」不再由编排层按行算净额（见 StockPort#revertByOrder 契约）：编排层只交出
+        // 订单号，净额算式在实现侧。故这里分开验两件事——调用**粒度**是「单」而不是「行」；
+        // 而「没扣过的行不会被还」是**可观察结果**（没有它的反向流水、库存没被冲成正数）。
+        // 二号店两行里 SKU_B 扣成、SKU_B2 库存为 0 压根没扣，只有前者该被还。
         CountingStockPort counting = new CountingStockPort(stockPort);
 
         Throwable thrown = catchThrowable(() -> coordinator(goodsQueryPort, counting)
@@ -213,12 +220,14 @@ class OrderRollbackTest {
 
         assertThat(thrown).isInstanceOf(ServiceException.class);
         assertThat(thrown.getMessage()).isEqualTo("库存不足");
-        assertThat(counting.revertedSkuIds()).containsExactly(SKU_B);
+        assertThat(counting.revertedOrderNos()).hasSize(1);
         assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK);
         assertThat(stockPort.available(SKU_B2)).isZero();   // 没扣过 → 没还，也就不会把库存冲成 1
+        assertThat(stockPort.outboundRecords()).extracting(StockOutboundRecord::skuId)
+                .containsExactly(SKU_B, SKU_B);             // 只有扣成过的那一行有「正 + 负」两条
     }
 
-    // ── ⑤ 跨 episode 撞同一单号：回补必须真的发生（端口不去重，账靠本层净额算法兜） ──
+    // ── ⑤ 跨 episode 撞同一单号：回补必须真的发生（同一单号被复用也不许被当成「还过了」） ──
 
     @Test
     @DisplayName("两次失败提交拿到同一单号 + 含同一 skuId → 两次都真的回补（库存回原值、流水净额 0）")
@@ -233,8 +242,10 @@ class OrderRollbackTest {
                 .create(command("req-2", line(SKU_A, 2))))
                 .isInstanceOf(IllegalStateException.class);
 
-        // ⚠ 若库存端口按 orderNo+skuId 去重，第二次回补会被当成「重复调用」静默吃掉：
+        // ⚠ 若回补按 orderNo+skuId 去重（「这个键我调过」），第二次回补会被当成重复调用静默吃掉：
         // 库存永久少 2 件，而出库流水净额却显示 0——账实不符，且不报任何错。
+        // 现行口径按**流水净额**判（见 StockPort#revertByOrder）：第一次已把净额还成 0，
+        // 第二次重新扣了 +2，净额又是 +2 → 照样该还。判据是记账事实，不是调用痕迹。
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
         assertThat(netOutbound()).isZero();
         assertThat(stockPort.outboundRecords()).hasSize(4);   // 两次「+2 扣 / −2 还」
@@ -246,6 +257,27 @@ class OrderRollbackTest {
                 new GoodsCheckStep(goods), new StockCheckStep(stockPort), new PriceComputeStep(goods)), properties);
         return new OrderCreateCoordinator(orderRepository, goods, stockPort,
                 new DefaultOrderNoGenerator(clock, () -> 0), pipeline, properties, clock);
+    }
+
+    @Test
+    @DisplayName("revertByOrder 幂等：同一单回补两次，第二次是 no-op（不会重复加库存、不追加流水）")
+    void revertingTheSameOrderTwiceIsANoOp() {
+        // ⚠ 幂等由**实现侧**按流水净额保证（StockPort#revertByOrder 契约），故这条断言直接打在实现上：
+        // 编排层的失败回滚会被重复触发（同一失败 episode 重放、将来 Seata 补偿重试），
+        // 若每次调用都无条件加库存，那是一次就翻倍的超卖。
+        assertThat(stockPort.deduct(SKU_A, 2, "202609211200000001")).isTrue();
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 2);
+
+        stockPort.revertByOrder("202609211200000001");
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
+
+        stockPort.revertByOrder("202609211200000001");   // 第二次
+
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
+        assertThat(stockPort.outboundRecords()).hasSize(2);   // 只有「+2 扣 / −2 还」两条，没有多余的负流水
+        // 没扣过的单号也照样 no-op（补偿路径宁可不做也不能炸，R19）
+        stockPort.revertByOrder("202609211200000999");
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
     }
 
     @Test
@@ -278,8 +310,8 @@ class OrderRollbackTest {
         assertThat(orderRepository.count()).isZero();
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
         assertThat(netOutbound()).isZero();
-        assertThat(orderRepository.findSubmission(11L, "req-1")).isEmpty();
-        assertThat(orderRepository.findSubmission(11L, "req-2")).isEmpty();
+        assertThat(orderRepository.findCommittedBatch(11L, "req-1")).isEmpty();
+        assertThat(orderRepository.findCommittedBatch(11L, "req-2")).isEmpty();
     }
 
     /**
@@ -308,11 +340,11 @@ class OrderRollbackTest {
         }
     }
 
-    /** 记录「哪些 skuId 被回补过」的库存端口包装：回补的幂等只在编排层，故谁被还了必须看得见 */
+    /** 记录「回补被调用了几次、分别针对哪一单」的库存端口包装：调用**粒度**（单 vs 行）必须看得见 */
     private static final class CountingStockPort implements StockPort {
 
         private final StockPort delegate;
-        private final List<Long> revertedSkuIds = new ArrayList<>();
+        private final List<String> revertedOrderNos = new ArrayList<>();
 
         private CountingStockPort(StockPort delegate) {
             this.delegate = delegate;
@@ -324,9 +356,9 @@ class OrderRollbackTest {
         }
 
         @Override
-        public void revert(Long skuId, int quantity, String orderNo) {
-            revertedSkuIds.add(skuId);
-            delegate.revert(skuId, quantity, orderNo);
+        public void revertByOrder(String orderNo) {
+            revertedOrderNos.add(orderNo);
+            delegate.revertByOrder(orderNo);
         }
 
         @Override
@@ -334,13 +366,8 @@ class OrderRollbackTest {
             return delegate.available(skuId);
         }
 
-        @Override
-        public List<StockOutboundRecord> outboundRecords() {
-            return delegate.outboundRecords();
-        }
-
-        private List<Long> revertedSkuIds() {
-            return List.copyOf(revertedSkuIds);
+        private List<String> revertedOrderNos() {
+            return List.copyOf(revertedOrderNos);
         }
     }
 
@@ -359,18 +386,13 @@ class OrderRollbackTest {
         }
 
         @Override
-        public void revert(Long skuId, int quantity, String orderNo) {
+        public void revertByOrder(String orderNo) {
             throw new IllegalStateException("回补失败：库存服务不可用");
         }
 
         @Override
         public int available(Long skuId) {
             return delegate.available(skuId);
-        }
-
-        @Override
-        public List<StockOutboundRecord> outboundRecords() {
-            return delegate.outboundRecords();
         }
     }
 }

@@ -10,7 +10,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * {@link GoodsQueryPort} 的内存实现（本期没有真实跨域调用，裁定 D1）。
+ * {@link GoodsQueryPort} 的内存实现（阶段一的临时下游：真实商品数据源是 store 域，阶段二接）。
+ *
+ * <p>⚠ <b>临时脚手架</b>：本包（`infrastructure/inmemory`）随 T4b 一起删除（todo 残留 9）——
+ * 届时商品 / 库存改由 store 域的真实适配器提供，单测改用 `src/test` 下的轻量假实现。
+ * 之所以现在还在 `main` 而不是 `test`：阶段一要**起真实服务打接口**，
+ * 它得作为「商品 / 库存来自哪」的临时答案参与装配（R20）。</p>
  *
  * <p>⚠ 它同时是**测试夹具的落点**：商品不可购买的四个开关（店铺未审核 / SPU 未上架 / SKU 未上架 / 被平台锁定）
  * 分属四个不同事实，goods-check 的拒绝分支必须在四个开关上各验一条，故这里提供

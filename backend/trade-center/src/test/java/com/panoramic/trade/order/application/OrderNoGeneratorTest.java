@@ -9,7 +9,7 @@ import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderNoGenerator;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
-import com.panoramic.trade.order.domain.port.OrderSubmission;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
@@ -54,6 +54,10 @@ class OrderNoGeneratorTest {
     private static final Long SKU_A = 10L;
     private static final Long SKU_B = 20L;
 
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
     private MutableClock clock;
     private InMemoryGoodsQueryPort goodsQueryPort;
     private InMemoryStockPort stockPort;
@@ -86,22 +90,27 @@ class OrderNoGeneratorTest {
     }
 
     private static OrderCreateCommand command(String requestId, OrderCreateCommand.Line... lines) {
-        return new OrderCreateCommand(11L, OrderSource.CART, requestId, List.of(lines));
+        return new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, requestId, List.of(lines));
     }
 
     private static OrderCreateCommand.Line line(Long skuId, int quantity) {
         return new OrderCreateCommand.Line(skuId, quantity);
     }
 
-    /** 预置一笔「占了某个单号」的订单，用来构造单号冲突 */
+    /**
+     * 预置一笔「占了某个单号」的订单，用来构造单号冲突
+     *
+     * <p>⚠ 走的是仓储的**真实写入路径**（{@code occupy} 占键 → {@code saveAll} 落批），与下单同一套：
+     * 若这里另开一条「直接塞进内存」的测试专用入口，占号这件事在测试里成立、在生产上却可能不成立。</p>
+     */
     private void seedOrderWithOrderNo(String orderNo) {
-        OrderModel seeded = OrderModel.open(orderNo, 11L, STORE_A, "一号店", OrderSource.CART,
+        OrderModel seeded = OrderModel.open(orderNo, 11L, STORE_A, "一号店", OrderSource.CART, ADDRESS,
                 "req-seeded", "fp-seeded", LocalDateTime.now(clock), List.of(new OrderLine(SKU_B, 1)));
         SkuSnapshot snapshot = goodsQueryPort.mapBySkuIds(List.of(SKU_B)).get(SKU_B);
         seeded.applyGoodsSnapshot(SKU_B, snapshot);
         seeded.applyPrice(SKU_B, snapshot.price());
         seeded.seal();
-        orderRepository.saveSubmission(new OrderSubmission("req-seeded", 11L, List.of(seeded)));
+        orderRepository.saveAll(orderRepository.occupy(11L, "req-seeded").submissionId(), List.of(seeded));
     }
 
     // ── 格式与长度 ─────────────────────────────────────────────────────────────

@@ -9,10 +9,11 @@ import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
  * 交易域（下沉纯域）启动类
  * <p>scanBasePackages=com.panoramic 加载 common 的全局异常处理、分页插件、
  * 字段自动填充与安全链；MapperScan 仅扫本服务 mapper。
- * trade-center 本期仅持 trade_cart_item（购物车），不启用 Feign 客户端扫描（纯被调方）。</p>
+ * trade-center 持 trade_cart_item（购物车）与订单 5 张表（trade_order 等），
+ * 不启用 Feign 客户端扫描（纯被调方）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.panoramic")
-@MapperScan("com.panoramic.trade.mapper")
+@MapperScan({"com.panoramic.trade.mapper", "com.panoramic.trade.order.infrastructure.mapper"})
 @EnableDiscoveryClient
 public class TradeCenterApplication {
 

@@ -4,6 +4,7 @@ import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.application.step.GoodsCheckStep;
 import com.panoramic.trade.order.application.step.PriceComputeStep;
 import com.panoramic.trade.order.application.step.StockCheckStep;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
@@ -80,8 +81,13 @@ class OrderIdempotencyTest {
 
     private OrderCreateCommand command(Long customerId, OrderSource source, String requestId,
                                        OrderCreateCommand.Line... lines) {
-        return new OrderCreateCommand(customerId, source, requestId, List.of(lines));
+        return new OrderCreateCommand(customerId, source, ADDRESS, requestId, List.of(lines));
     }
+
+
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
 
     private static OrderCreateCommand.Line line(Long skuId, int quantity) {
         return new OrderCreateCommand.Line(skuId, quantity);
@@ -162,10 +168,8 @@ class OrderIdempotencyTest {
         assertThat(orderRepository.count()).isEqualTo(2);
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 4);
         // A 的提交记录没被 B 顶掉，A 重放拿到的仍是自己那一笔
-        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
-                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(aBatch));
-        assertThat(orderRepository.findSubmission(99L, "req-1")).get()
-                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(bBatch));
+        assertThat(orderRepository.findCommittedBatch(11L, "req-1").orElseThrow()).containsExactlyElementsOf(aBatch);
+        assertThat(orderRepository.findCommittedBatch(99L, "req-1").orElseThrow()).containsExactlyElementsOf(bBatch);
     }
 
     @Test
@@ -193,8 +197,7 @@ class OrderIdempotencyTest {
         assertThat(allReused).containsExactlyElementsOf(first);
 
         // ⚠ 记录里必须有 req-2 这条：若把它「优化」成「created 为空就不写」，重放会查不到记录、返回空批
-        assertThat(orderRepository.findSubmission(11L, "req-2")).get()
-                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(first));
+        assertThat(orderRepository.findCommittedBatch(11L, "req-2").orElseThrow()).containsExactlyElementsOf(first);
         assertThat(coordinator.create(command(11L, OrderSource.CART, "req-2", line(SKU_A, 2), line(SKU_B, 1))))
                 .containsExactlyElementsOf(first);
         // 复用不落库、不扣库存：全程只有首批那两笔与那一次扣减
@@ -217,8 +220,7 @@ class OrderIdempotencyTest {
         // 副作用为零：B 店既没下单也没扣库存，凭证也没被新内容顶掉
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK);
-        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
-                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(first));
+        assertThat(orderRepository.findCommittedBatch(11L, "req-1").orElseThrow()).containsExactlyElementsOf(first);
     }
 
     // ── 第二级：指纹 + 时间窗口 ─────────────────────────────────────────────────

@@ -11,7 +11,8 @@ import com.panoramic.trade.order.domain.OrderLine;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
-import com.panoramic.trade.order.domain.port.StockOutboundRecord;
+import com.panoramic.trade.order.domain.OrderAddress;
+import com.panoramic.trade.order.infrastructure.inmemory.StockOutboundRecord;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
@@ -43,6 +44,10 @@ class OrderSplitTest {
     private static final Long STORE_B = 8L;
     private static final Long SKU_A = 10L;
     private static final Long SKU_B = 20L;
+
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
 
     private MutableClock clock;
     private InMemoryGoodsQueryPort goodsQueryPort;
@@ -79,7 +84,7 @@ class OrderSplitTest {
     @Test
     @DisplayName("多店购物车 → 两笔，按 storeId 升序，各店金额 / 店铺名 / 指纹 / 单号互不相同")
     void cartFromTwoStoresSplitsIntoTwoOrders() {
-        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, "req-1",
+        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "req-1",
                 List.of(new OrderCreateCommand.Line(SKU_A, 2), new OrderCreateCommand.Line(SKU_B, 3))));
 
         assertThat(created).hasSize(2);
@@ -110,7 +115,7 @@ class OrderSplitTest {
     @Test
     @DisplayName("各笔状态彼此独立：都是「待支付」且轨迹各自只有初始状态")
     void eachOrderHasItsOwnStatusTrail() {
-        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, "req-1",
+        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "req-1",
                 List.of(new OrderCreateCommand.Line(SKU_A, 1), new OrderCreateCommand.Line(SKU_B, 1))));
 
         assertThat(created).allSatisfy(order -> {
@@ -126,7 +131,7 @@ class OrderSplitTest {
     @Test
     @DisplayName("各店库存各自扣：A 店扣 2、B 店扣 3，出库记录各一条且挂在各自的单号上")
     void stockIsDeductedPerStore() {
-        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, "req-1",
+        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "req-1",
                 List.of(new OrderCreateCommand.Line(SKU_A, 2), new OrderCreateCommand.Line(SKU_B, 3))));
 
         assertThat(stockPort.available(SKU_A)).isEqualTo(3);
@@ -147,7 +152,7 @@ class OrderSplitTest {
     @Test
     @DisplayName("入参行顺序颠倒不影响返回顺序（仍按 storeId 升序）")
     void returnOrderIsIndependentOfInputOrder() {
-        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, "req-1",
+        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "req-1",
                 List.of(new OrderCreateCommand.Line(SKU_B, 1), new OrderCreateCommand.Line(SKU_A, 1))));
 
         assertThat(created).extracting(OrderModel::getStoreId).containsExactly(STORE_A, STORE_B);
@@ -156,7 +161,7 @@ class OrderSplitTest {
     @Test
     @DisplayName("单店 → 一笔（不因为多行而拆开）")
     void singleStoreStaysOneOrder() {
-        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.DIRECT, "req-1",
+        List<OrderModel> created = coordinator.create(new OrderCreateCommand(11L, OrderSource.DIRECT, ADDRESS, "req-1",
                 List.of(new OrderCreateCommand.Line(SKU_A, 2))));
 
         assertThat(created).hasSize(1);
@@ -169,7 +174,7 @@ class OrderSplitTest {
         goodsQueryPort.put(InMemoryGoodsQueryPort.locked(SKU_B, STORE_B, "二号店", "5.00"));
 
         assertThatThrownBy(() -> coordinator.create(
-                        new OrderCreateCommand(11L, OrderSource.CART, "req-1",
+                        new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "req-1",
                                 List.of(new OrderCreateCommand.Line(SKU_A, 2), new OrderCreateCommand.Line(SKU_B, 1)))))
                 .isInstanceOf(ServiceException.class)
                 .hasMessage("商品已下架或不可购买");

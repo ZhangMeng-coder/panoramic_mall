@@ -3,21 +3,20 @@ package com.panoramic.trade.order.application;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.domain.OrderFingerprint;
-import com.panoramic.trade.order.domain.OrderItem;
 import com.panoramic.trade.order.domain.OrderLine;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderNoGenerator;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
+import com.panoramic.trade.order.domain.port.OccupyResult;
 import com.panoramic.trade.order.domain.port.OrderRepository;
-import com.panoramic.trade.order.domain.port.OrderSubmission;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
-import com.panoramic.trade.order.domain.port.StockOutboundRecord;
 import com.panoramic.trade.order.domain.port.StockPort;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,31 +26,30 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 下单编排器：一次提交 → 按店铺拆成 N 笔订单 → 两级幂等 → 跑流水线 → 一次性落库，失败即整次回滚。
+ * 下单编排器：一次提交 → 占幂等键 → 按店铺拆成 N 笔订单 → 跑流水线 → 一次性落库，失败即整次回滚。
  *
  * <p>它承载 todo 里「商城端不管是从页面详情端直接下单还是从购物车点击结算，都直接生成订单」的全部编排，
  * 以及「需要考虑订单重复提交的问题」的两级幂等（裁定 D6）。它是唯一知道「一次提交由哪些笔组成」的地方。</p>
  *
- * <h3>为什么事务边界在这里（裁定 D4）</h3>
- * <p>todo 要求「订单创建过程中使用 seata 保证分布式事务」，本期**不引依赖、不加注解**，
- * 但把边界先立在这里：将来接 Seata 的落点 = **本方法入口加 {@code @GlobalTransactional}**，
- * 库存的真实写入方在 store 域（本域只经 {@code StockPort} 调它）。本类现在做的事，
- * 正是那个全局事务要保证的事——任一笔失败，整次提交不留痕：库存回补 + 追加反向出库记录 + 不落单。</p>
+ * <h3>为什么事务边界在这个方法上（裁定 D4 + 先占键）</h3>
+ * <p>todo 要求「订单创建过程中使用 seata 保证分布式事务」，本期**不引依赖**，但边界已经立在这里：
+ * 将来接 Seata 的落点 = **本方法入口再加 {@code @GlobalTransactional}**（与本地 {@code @Transactional}
+ * 并存：本地事务仍是本地库的那一半，全局事务管跨域的库存写入）。</p>
+ * <p>⚠ <b>本轮起它不再只是「将来的落点」，而是先占键语义的必要条件</b>：{@code occupy} 与 {@code saveAll}
+ * 必须在**同一个事务**里，否则键会先落地——先到者随后业务失败时键残留，重放会回读到一个**空批次**；
+ * 反之键与订单一并回滚，**失败不留残键**这件事就免费得到了，不需要任何清理补偿。</p>
  *
  * <h3>为什么库存扣减与订单写入不是逐笔提交（裁定 D13）</h3>
- * <p>全部步骤跑完、状态已是「待支付」、每笔都封存后，才 {@link OrderRepository#saveSubmission} 一次写进去
- * ——订单与「本次提交返回了哪一批」的映射**一并**落库（两者必须原子，理由见该方法的注释）。
- * 于是「失败不留残单」这件事不需要靠删数据实现——失败时订单**从来没被写过**，只剩「回补库存」要还。
+ * <p>全部步骤跑完、状态已是「待支付」、每笔都封存后，才 {@link OrderRepository#saveAll} 一次写进去
+ * ——订单与「本次提交返回了哪一批」的关联**一并**落库。于是「失败不留残单」不需要靠删数据实现：
+ * 失败时订单**从来没被写过**（库内写入随事务回滚），只剩「回补库存」要还——
+ * 而库存在阶段一/二都是**外部资源**（内存脚手架 / store 域），不随本地事务回滚，必须显式归还。
  * 反过来若逐笔提交，中途失败就留下一批半成品残单，得再写一套补偿把它们删掉，那是第二条会出错的路。</p>
- *
- * <p>⚠ 落库后若两者在真实实现里不是原子的（跨表 / 跨库），第一级幂等会**自愈着退化**：订单在、映射丢了时，
- * 重放会走第二级指纹复用——窗口内各笔都还能命中，仍返回同一批；但窗口外就没有任何东西挡得住它，
- * 会真的再下一单。故「退化」只在窗口内无害，映射本身不是缓存、不能省。</p>
  *
  * <h3>两级幂等的键各自的作用域</h3>
  * <p>{@code requestId} 的作用域是**顾客内**：它由客户端生成，不同顾客之间不共享，
- * 故第一级查询必须连 {@code customerId} 一起收窄——只按键查会让 A 顾客的订单被 B 顾客用同一个键捞走
- * （订单号 / 金额 / 门店全外泄）。第二级的指纹里本来就含顾客 id，天然不跨顾客。</p>
+ * 故占键与回读都以 {@code (customerId, requestId)} 为键——只按键查会让 A 顾客的订单被 B 顾客
+ * 用同一个键捞走（订单号 / 金额 / 门店全外泄）。第二级的指纹里本来就含顾客 id，天然不跨顾客。</p>
  *
  * <h3>为什么回补只针对「本次新建」的笔</h3>
  * <p>「复用」（指纹命中）的那一笔属于**上一次提交**，它的库存在上一次就已经扣过；
@@ -88,35 +86,40 @@ public class OrderCreateCoordinator {
      * 创建订单（一次提交可能拆出多笔，一单一店）
      *
      * @param command 下单入参（已合并同 SKU 行）
-     * @return **本次提交涉及的全部订单**（新建 + 复用的），按 `storeId` 升序排列；
-     *         {@code requestId} 命中时返回的是**首次那次提交返回过的整批**（条数与订单号逐一致）
+     * @return **本次提交涉及的全部订单**（新建 + 复用的），按 {@code storeId} 升序排列；
+     *         请求级幂等命中时返回的是**首次那次提交返回过的整批**（条数与订单号逐一致）
      * @throws ServiceException       商品不存在 / 不可购买 / 库存不足（HTTP 400，可原样透传页面）
      * @throws IllegalStateException  订单号连续冲突超过重试上限（生成器或环境出了问题）
      */
+    @Transactional(rollbackFor = Exception.class)
     public List<OrderModel> create(OrderCreateCommand command) {
         Objects.requireNonNull(command, "下单入参不能为空");
         List<OrderLine> lines = toOrderLines(command.lines());
 
-        // ① 第一级幂等：requestId 命中就整批原样返回——不重建、不再扣库存、不校验商品。
-        //    连商品都不校验是刻意的：那批订单是在商品当时可买的前提下成立的，用此刻的商品状态去否掉它，
-        //    只会让「重放同一个请求」比第一次更早失败——重放应当幂等，不该有副作用也不该有新判据。
-        //    ⚠ 返回的是**那次提交返回过的整批**（提交记录说了算），不是「按 requestId 查到的订单行」：
-        //    一批里可能有指纹命中的复用笔，它们的 requestId 是上一次提交的，按行查会少返回几笔。
-        //    ⚠ 查询按 customerId 收窄：requestId 的作用域是顾客内，否则 B 顾客能拿 A 的键捞走 A 的订单。
+        // ① 先占键（第一级幂等）：往提交记录的 (customer_id, request_id) 唯一键上插一行。
+        //    并发提交同一个请求时，后来者阻塞在唯一索引的行锁上；先到者提交 → 后来者拿到重复键，
+        //    回读**先到者那一批**原样返回；先到者失败回滚 → 键随事务消失，后来者成为新的「第一个」。
+        //    ⚠ 占键必须先于一切业务动作：放到后面就又变回「查 → 做 → 写」，并发双击会各下各的单。
         String requestId = normalizeRequestId(command.requestId());
-        if (requestId != null) {
-            Optional<OrderSubmission> previous = orderRepository.findSubmission(command.customerId(), requestId);
-            if (previous.isPresent()) {
-                return previous.get().orders();
-            }
+        OccupyResult occupy = orderRepository.occupy(command.customerId(), requestId);
+        if (!occupy.created()) {
+            // 命中：连商品都不校验是刻意的——那批订单是在商品当时可买的前提下成立的，用此刻的商品状态去否掉它，
+            // 只会让「重放同一个请求」比第一次更早失败；重放应当幂等，不该有副作用也不该有新判据。
+            // ⚠ 返回的是**那次提交返回过的整批**（提交关联说了算），不是「按 requestId 查到的订单行」：
+            // 一批里可能有指纹命中的复用笔，它们的 requestId 是上一次提交的，按行查会少返回几笔。
+            return orderRepository.findBySubmissionId(occupy.submissionId());
         }
 
         // ② 取一次商品快照，**只为按 storeId 分组**（拆单的键在商品归属上，裁定 D3）；步骤链内会再各查一次
         Map<Long, SkuSnapshot> snapshots = goodsQueryPort.mapBySkuIds(lines.stream().map(OrderLine::skuId).toList());
         Map<Long, List<OrderLine>> linesByStore = groupByStore(lines, snapshots);
 
-        // 整次提交共用一个下单时刻：一次请求里各笔的时间一致，测试与重放都可预测
-        LocalDateTime createTime = LocalDateTime.now(clock);
+        // 整次提交共用一个下单时刻：一次请求里各笔的时间一致，测试与重放都可预测。
+        // ⚠ **截到秒**：create_time 列是 DATETIME(0)，MySQL 会把小数秒**四舍五入**再存，
+        //    于是「模型里的时刻」与「库里的时刻」最多差 1 秒；而 L2 窗口正是拿这一列与下面的 since
+        //    比对（闭区间）——两边精度不同时，窗口最后一秒内同指纹的提交会被判成「窗口外 → 又下一单」，
+        //    落库实现与内存实现的判定结果不一致。在同一处把基准落到秒，落库值、since、内存值才是同一个值。
+        LocalDateTime createTime = LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
         LocalDateTime since = createTime.minusSeconds(properties.getIdempotencyWindowSeconds());
 
         List<OrderModel> result = new ArrayList<>(linesByStore.size());   // 返回顺序 = 分组顺序（storeId 升序）
@@ -130,7 +133,7 @@ public class OrderCreateCoordinator {
                 // ③ 第二级幂等：拆单后**每笔**再按指纹在窗口内判重（裁定 D6）。窗口外的同指纹是新单——
                 //    「同一顾客过一会儿又买同一批东西」是真实需求，不是重复提交。
                 String fingerprint = OrderFingerprint.of(command.customerId(), command.source(), storeId, storeLines);
-                Optional<OrderModel> reused = orderRepository.findByFingerprint(fingerprint, since);
+                Optional<OrderModel> reused = orderRepository.findRecentByFingerprint(fingerprint, since);
                 if (reused.isPresent()) {
                     result.add(reused.get());
                     continue;
@@ -139,7 +142,8 @@ public class OrderCreateCoordinator {
                 String orderNo = nextOrderNo(orderNosInBatch);
                 orderNosInBatch.add(orderNo);
                 OrderModel order = OrderModel.open(orderNo, command.customerId(), storeId,
-                        storeNameOf(storeLines, snapshots), command.source(), requestId, fingerprint, createTime, storeLines);
+                        storeNameOf(storeLines, snapshots), command.source(), command.address(),
+                        requestId, fingerprint, createTime, storeLines);
                 // ⚠ 入列必须在跑流水线**之前**：stock-check 可能已经扣了几行才失败，
                 //    失败时这笔也得回补（它不在仓库里，但库存已经动了）
                 created.add(order);
@@ -147,12 +151,11 @@ public class OrderCreateCoordinator {
                 // 状态在 open 时就是 PENDING_PAYMENT（statusTrail 初始即含它），这里不需要、也不该再迁移一次
                 result.add(order);
             }
-            // ④ 一次性落库（D13）：订单 + 本次提交的幂等映射。**整批 result 都要进映射**（含复用笔）——
-            //    重放这个请求时要返回的是「首次返回过的那一批」，少一笔就等于丢单。
-            //    复用笔的 requestId 保持它原本的值，这里不改写：它记的是「哪次提交创造了这笔单」。
-            //    ⚠ 无条件调用（哪怕 created 为空）：一批全是复用笔时，映射本身仍必须记下来。
-            orderRepository.saveSubmission(
-                    new OrderSubmission(requestId, command.customerId(), List.copyOf(result)));
+            // ④ 一次性落库（D13）：订单 + 明细 + 初始状态轨迹 + 本次提交的关联。
+            //    **整批 result 都要进关联**（含复用笔）——重放这个请求时要返回的是「首次返回过的那一批」，
+            //    少一笔就等于丢单。复用笔的 requestId 保持它原本的值，这里不改写。
+            //    ⚠ 无条件调用（哪怕 created 为空）：一批全是复用笔时，关联本身仍必须记下来。
+            orderRepository.saveAll(occupy.submissionId(), List.copyOf(result));
             return List.copyOf(result);
         } catch (RuntimeException e) {
             revertCreated(created, e);
@@ -214,23 +217,19 @@ public class OrderCreateCoordinator {
     }
 
     /**
-     * 回滚本次新建的笔：**逆序**逐行回补库存
+     * 回滚本次新建的笔：**逆序**逐单回补库存
      *
-     * <p>⚠ 回补前先看一遍出库流水，只还「确实扣过的行」——<b>这一段是本层唯一的回补幂等保证</b>：
-     * {@link StockPort#revert} 不做任何去重（调一次就还一次），既不能靠它挡住重复回补，
-     * 也不能靠它判断「这笔到底扣没扣」。两个错误方向都由净额算式兜住：</p>
-     * <ul>
-     *   <li><b>别还多</b>：失败可能发生在 stock-check **之前或之中**——那时这一行根本没扣，
-     *       盲目回补会把库存**冲多**（超卖的镜像错误：不报错、只写坏数据）。净额 {@code <= 0} 即跳过。</li>
-     *   <li><b>别漏还</b>：失败提交不落库 → 同一单号可能被两次失败提交复用 → 若端口那边再按
-     *       {@code orderNo + skuId} 去重，第二次**真实**回补会被静默吃掉（库存永久少扣、流水却显示净 0）。
-     *       故去重只发生在这一层，且判据是「流水净额」而不是「我是不是调过」。</li>
-     * </ul>
-     * <p>净额算法天然自愈：本方法若被重复进入（同一失败 episode 第二次），流水里已有一条负记录，
-     * 净额归零 → 自然跳过。真实实现下这一遍可换成「按订单号查出库记录」的窄查询。</p>
+     * <p>⚠ 只补 {@code created}（本次新建）而**不含复用笔**：复用笔的库存在上一次提交就扣过了，
+     * 对它回补等于把上次真实下单占用的库存还回货架——超卖。这条是「幂等复用」与「整次提交回滚」
+     * 的交汇点，也有一条多店用例专门钉它。</p>
+     *
+     * <p>⚠ 回补的是**外部资源**（阶段一是内存脚手架、阶段二是 store 域），它不随本地事务回滚，
+     * 故必须在这里显式归还；而库内的订单写入会随事务一起消失，不需要也不该去删。这正是
+     * 「失败不留残单 + 库存要还」两件事的分工。</p>
      *
      * <p>⚠ 逆序是刻意的：正序扣、逆序还，回补顺序与库存被占用的顺序相反，
-     * 未来接入「按订单回补」的真实库存实现时，这一顺序与事务的回滚顺序一致。</p>
+     * 将来接入真实库存实现时，这一顺序与事务的回滚顺序一致。回补本身**按单幂等**
+     * （{@link StockPort#revertByOrder} 按流水净额归还），故重复进入同一个失败 episode 也不会多还。</p>
      *
      * <p>⚠ 本方法**不吞主异常**：回补过程中的次生错误挂到 {@code addSuppressed} 上，
      * 抛出去的仍是原始异常（原始类型与消息必须原样到达 BFF——4xx 要原样透传给页面，5xx 要计入熔断）。</p>
@@ -239,45 +238,13 @@ public class OrderCreateCoordinator {
      * @param primary 触发回滚的原始异常
      */
     private void revertCreated(List<OrderModel> created, RuntimeException primary) {
-        if (created.isEmpty()) {
-            return;
-        }
-        Map<String, Integer> pending = pendingDeductions();
         for (int i = created.size() - 1; i >= 0; i--) {
-            OrderModel order = created.get(i);
-            for (OrderItem item : order.getItems()) {
-                Integer deducted = pending.get(deductionKey(order.getOrderNo(), item.getSkuId()));
-                if (deducted == null || deducted <= 0) {
-                    continue;
-                }
-                try {
-                    stockPort.revert(item.getSkuId(), deducted, order.getOrderNo());
-                } catch (RuntimeException secondary) {
-                    primary.addSuppressed(secondary);
-                }
+            try {
+                stockPort.revertByOrder(created.get(i).getOrderNo());
+            } catch (RuntimeException secondary) {
+                primary.addSuppressed(secondary);
             }
         }
-    }
-
-    /**
-     * 汇总「订单号 + skuId → 净出库量」，作为回补的判据与数量来源
-     *
-     * <p>取净量而不是逐条记录：同一 {@code orderNo + skuId} 若已有过回补，净量自然变小/归零，
-     * 于是「回补已经发生过」与「这一行压根没扣过」用同一套算式就都覆盖了。</p>
-     */
-    private Map<String, Integer> pendingDeductions() {
-        Map<String, Integer> net = new HashMap<>();
-        for (StockOutboundRecord record : stockPort.outboundRecords()) {
-            if (record.orderNo() == null || record.skuId() == null) {
-                continue;
-            }
-            net.merge(deductionKey(record.orderNo(), record.skuId()), record.quantity(), Integer::sum);
-        }
-        return net;
-    }
-
-    private static String deductionKey(String orderNo, Long skuId) {
-        return orderNo + "|" + skuId;
     }
 
     /**

@@ -8,6 +8,7 @@ import com.panoramic.trade.order.application.step.StockCheckStep;
 import com.panoramic.trade.order.domain.OrderFingerprint;
 import com.panoramic.trade.order.domain.OrderItem;
 import com.panoramic.trade.order.domain.OrderLine;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
@@ -79,8 +80,12 @@ class OrderCreateCoordinatorTest {
         return props;
     }
 
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
     private static OrderCreateCommand command(OrderSource source, String requestId, OrderCreateCommand.Line... lines) {
-        return new OrderCreateCommand(11L, source, requestId, List.of(lines));
+        return new OrderCreateCommand(11L, source, ADDRESS, requestId, List.of(lines));
     }
 
     private static OrderCreateCommand.Line line(Long skuId, int quantity) {
@@ -126,9 +131,9 @@ class OrderCreateCoordinatorTest {
     @Test
     @DisplayName("空行 / null → 400「下单商品不能为空」（空车不该变成一笔空订单）")
     void emptyLinesRejected() {
-        assertThatThrownBy(() -> new OrderCreateCommand(11L, OrderSource.CART, "r", List.of()))
+        assertThatThrownBy(() -> new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "r", List.of()))
                 .isInstanceOf(ServiceException.class).hasMessageContaining("下单商品不能为空");
-        assertThatThrownBy(() -> new OrderCreateCommand(11L, OrderSource.CART, "r", null))
+        assertThatThrownBy(() -> new OrderCreateCommand(11L, OrderSource.CART, ADDRESS, "r", null))
                 .isInstanceOf(ServiceException.class).hasMessageContaining("下单商品不能为空");
     }
 
@@ -251,13 +256,9 @@ class OrderCreateCoordinatorTest {
 
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(orderRepository.all()).containsExactly(order);
-        // 第一级幂等的凭证是**提交记录**（含整批），不是「按 requestId 查订单行」
-        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
-                .satisfies(submission -> {
-                    assertThat(submission.customerId()).isEqualTo(11L);
-                    assertThat(submission.requestId()).isEqualTo("req-1");
-                    assertThat(submission.orders()).containsExactly(order);
-                });
+        // 第一级幂等的凭证是**本次提交落下的那一批**（含复用笔），不是「按 requestId 查订单行」：
+        // 一批里可能有指纹命中的复用笔，它们的 requestId 是上一次提交的，按行查会少返回几笔。
+        assertThat(orderRepository.findCommittedBatch(11L, "req-1").orElseThrow()).containsExactly(order);
     }
 
     @Test
@@ -288,7 +289,7 @@ class OrderCreateCoordinatorTest {
         assertThat(created).hasSize(1);
         assertThat(created.get(0).getRequestId()).isNull();
         // requestId 为空 → 不记幂等映射（这次提交不做请求级去重），但订单照常落库
-        assertThat(orderRepository.findSubmission(11L, null)).isEmpty();
+        assertThat(orderRepository.findCommittedBatch(11L, null)).isEmpty();
         assertThat(orderRepository.count()).isEqualTo(1);
     }
 }

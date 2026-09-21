@@ -1,6 +1,7 @@
 package com.panoramic.trade.order.application;
 
 import com.panoramic.common.exception.ServiceException;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderItem;
 import com.panoramic.trade.order.domain.OrderSource;
 
@@ -15,7 +16,7 @@ import java.util.TreeMap;
  *
  * <p>⚠ 为什么入参里没有店铺、没有价格、没有金额：店铺由商品归属推出（一单一店，裁定 D3），
  * 价格必须由服务端从商品域读（顾客改包就能改价的那类字段一律不进 DTO）。入参只保留
- * 「谁、从哪来、买什么、买几件、以及一个幂等键」。</p>
+ * 「谁、从哪来、寄到哪儿、买什么、买几件、以及一个幂等键」。</p>
  *
  * <p>⚠ <b>为什么在这里就把同一 skuId 的行合并（裁定 D14）</b>：聚合根 {@code OrderModel.open} 明确拒绝
  * 「同一 skuId 出现多行」（多行会让 {@code applyPrice(skuId, ...)} 指不明确，属静默写坏数据）。
@@ -33,10 +34,12 @@ import java.util.TreeMap;
  *
  * @param customerId 顾客 id（锚点，由 mall-bff 从登录态取；域内不校验归属）
  * @param source     订单来源（详情页直购 / 购物车结算），是指纹的敏感维度之一
+ * @param address    收货地址**快照**（必填；由 mall-bff 从顾客地址取好传来，域内不查顾客域）
  * @param requestId  请求级幂等键（裁定 D6 第一级）；可为 null——为空表示这次提交不做请求级去重
  * @param lines      商品行（**已按 skuId 合并、升序**；合并后为空即拒绝）
  */
-public record OrderCreateCommand(Long customerId, OrderSource source, String requestId, List<Line> lines) {
+public record OrderCreateCommand(Long customerId, OrderSource source, OrderAddress address,
+                                 String requestId, List<Line> lines) {
 
     /**
      * 紧凑构造器：合并 + 校验（D14），保证任何一个 {@code OrderCreateCommand} 实例都自洽
@@ -44,6 +47,7 @@ public record OrderCreateCommand(Long customerId, OrderSource source, String req
     public OrderCreateCommand {
         Objects.requireNonNull(customerId, "下单入参的顾客 id 不能为空");
         Objects.requireNonNull(source, "下单入参的订单来源不能为空");
+        Objects.requireNonNull(address, "下单入参的收货地址不能为空");
         lines = mergeAndValidate(lines);
     }
 

@@ -2,9 +2,9 @@
 
 全景商城**交易域**（Servlet 技术栈，2026-09-21 新建），端口 **8087**。
 
-本域持**购物车 `trade_cart_item`**，另有**订单领域模型**（`com.panoramic.trade.order`，DDD 三层）。
-⚠ **本期订单只有模型——没有接口、也不落库**（只由单测验证，见「三、职责与边界」第 7 节）；
-订单**接口**、订单**落库**、结账、评价与 Seata 接入**都不在本期**，计划见仓库根 [`todo.md`](../../todo.md)。
+本域持**购物车 `trade_cart_item`** 与**订单**（`trade_order` 等 5 张表，`com.panoramic.trade.order`，DDD 三层）。
+⚠ 订单**已落库**（2026-09-21 阶段一）；商品 / 库存两个下游仍是内存脚手架，接真实 store 域是阶段二。
+结账、评价与 Seata 接入**不在本期**，计划见仓库根 [`todo.md`](../../todo.md)。
 
 > 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)：
 > 那张表由 `docs/contracts/drift-check.mjs` 与代码**双向核对**，始终反映真实进度（本 README 里写死条数只会随每次实现失真）。
@@ -35,6 +35,11 @@
 | 表 | 归属 | 说明 |
 |---|---|---|
 | `trade_cart_item` | **trade-center（本域）** | 购物车行（`customer_id` + `spu_id` / `sku_id` + `quantity` + `selected`；**唯一键 `uk_customer_sku (customer_id, sku_id)`**，即同一顾客同一 SKU 至多一行） |
+| `trade_order` | **trade-center（本域）** | 订单主表（一笔订单一店；`order_no` 唯一，地址四项为快照，`fingerprint` 为 L2 幂等键） |
+| `trade_order_item` | **trade-center（本域）** | 订单明细（一行 = 一个 SKU；快照字段下单即冻结；`uk_order_sku (order_no, sku_id)`） |
+| `trade_order_submission` | **trade-center（本域）** | 订单提交记录（**唯一键 `uk_customer_request (customer_id, request_id)` = L1 幂等键**，先占键的落点） |
+| `trade_order_submission_order` | **trade-center（本域）** | 提交记录 ↔ 订单关联（一次请求落了哪几笔；纯关联表，无审计列、物理删除） |
+| `trade_order_status_log` | **trade-center（本域）** | 状态轨迹（一行 = 一次状态变更，`uk_order_seq (order_no, seq)`；`create_time` 即变更时刻） |
 | `mall_user` | mall-bff | 顾客账号（**不在本域**） |
 | `customer_profile` / `customer_address` | customer-center | 顾客资料 / 收货地址（**不在本域**） |
 | `store_goods_spu` / `store_goods_sku` | store | 店铺商品（**不在本域**；本域只存 id） |
@@ -129,40 +134,41 @@
 > `customerId` 直接取自请求路径且域侧不判归属——「锚点即数据权限」这条口径只在
 > 「路径上的 `customerId` 由 mall-bff 从登录态填」+「8087 不可从公网抵达」**同时**成立时才成立。
 
-### 7. 订单领域模型（本期：无接口、不落库）
+### 7. 订单领域（DDD 三层，已落库）
 
-`com.panoramic.trade.order`，DDD 三层：`domain`（**零 Spring 依赖**，纯 POJO）/ `application`（步骤流水线 + 编排）/ `infrastructure`（内存适配器 + Spring 装配）。
-**本期不建表、不出接口、不引 Seata**——订单全在内存里跑，**验收方式是单测**。
+`com.panoramic.trade.order`，DDD 三层：`domain`（**零 Spring 依赖**，纯 POJO）/ `application`（步骤流水线 + 编排）/ `infrastructure`（适配器 + Spring 装配）。
+订单**已真实落库**（`trade_order` 等 5 张表，见「二、实体标记」）；**Seata 仍未接入**。
 
-先做模型、后落库：下单要跨域扣库存、要分布式事务、要状态机与幂等，这几件事的正确性全在模型里；模型钉死后，未来落库**只换适配器**，`domain` 与 `application` 层不动。
+⚠ **订正一句早期说法**：曾写过「落库只换适配器，`domain` / `application` 一行都不用动」。那句话**是错的**——落库期实际动了三处且都是必需的：收货地址进模型、快递单号进模型、支付金额校验进聚合（理由见 `OrderModel` 的类注释）。适配器能替换的只是**外部依赖**（仓库 / 商品 / 库存），订单**自己有什么**必须由聚合说完。
 
-三个**端口**就是那个「只换适配器」的接缝：
+三个**端口**就是「换适配器不动业务」的接缝：
 
-| 端口 | 本期实现 | 未来 |
+| 端口 | 当前实现 | 未来 |
 |---|---|---|
-| `GoodsQueryPort`（商品快照 + 可见性） | `InMemoryGoodsQueryPort` | store 域 `StoreClient`（Feign，带熔断降级） |
-| `StockPort`（扣减 + SKU 粒度出库记录） | `InMemoryStockPort` | store 域库存能力（`UPDATE ... WHERE stock >= ?` 的影响行数 + 同事务写出库记录） |
-| `OrderRepository`（订单 + **提交记录**，两级幂等的落点） | `InMemoryOrderRepository` | `trade_order` / `trade_order_item` / 提交记录表 / 出库记录表 |
+| `GoodsQueryPort`（商品快照 + 可见性） | 内存脚手架（读 `resources/mock-store-data.json`：store 域的**只读快照**） | store 域 `StoreClient`（Feign，带熔断降级） |
+| `StockPort`（扣减 + 按单回补） | 内存脚手架（进程内账，不回写 store 域，重启回到快照值） | store 域库存能力（`UPDATE ... WHERE stock >= ?` 的影响行数 + 同事务写流水） |
+| `OrderRepository`（订单 + **提交记录**，两级幂等的落点） | `JdbcOrderRepository`（5 张表，MyBatis-Plus 基类，**无自定义 SQL**） | 无需更换 |
+
+⚠ 商品 / 库存两处脚手架、`mock-store-data.json` 与 `infrastructure/inmemory` 整包随 store 域落地一起删除（todo 残留 9）；开关是 `panoramic.trade.order.store-adapter=mock|feign`，**阶段一的默认值是 `mock`**（mock 侧带 `matchIfMissing`，它被删除的同一改动里默认值翻到 `feign` 侧）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
 
 - **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
 - **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
-- **生成流水线**：`goods-check`（商品存在 + 店铺已审核 + SPU/SKU 已上架 + 未平台锁定，并把商品快照冻进订单项）→ `stock-check`（逐行原子扣减，成功即写一条 SKU 粒度出库记录）→ `price-compute`（取单价、算行小计与总价、`seal()` 封模型）。三步都是**可插拔实现**（`OrderCreateStep` bean），**启哪些、什么顺序由 `panoramic.trade.order.steps` 决定**，配了不存在的步骤名 → 装配即失败。⚠ 步骤间**只经 `OrderModel` 本体传参**；模型必须走完 `open → 补商品快照 → 补价 → seal` 才能被置为待支付——**顺序写反会直接抛错，不会静默出一张残单**
+- **生成流水线**：`goods-check`（商品存在 + 店铺已审核 + SPU/SKU 已上架 + 未平台锁定，并把商品快照冻进订单项）→ `stock-check`（逐行原子扣减；SKU 粒度的出库流水由库存实现自己记，端口不暴露流水）→ `price-compute`（取单价、算行小计与总价、`seal()` 封模型）。三步都是**可插拔实现**（`OrderCreateStep` bean），**启哪些、什么顺序由 `panoramic.trade.order.steps` 决定**，配了不存在的步骤名 → 装配即失败。⚠ 步骤间**只经 `OrderModel` 本体传参**；模型必须走完 `open → 补商品快照 → 补价 → seal` 才能被置为待支付——**顺序写反会直接抛错，不会静默出一张残单**
 - **一单一店**：一次提交按 `storeId` 拆成多笔订单（各店的金额 / 状态 / 扣减相互独立），按 `storeId` 升序处理
 - **订单号**：`yyyyMMddHHmmss` + 4 位序列，生成后查重、冲突则重试（上限 `panoramic.trade.order.order-no-max-retry`）；`Clock` 与序列源可注入——单测靠它钉死时间与「故意撞号」
 - **重复提交（两级判定）**：
-  - 一级 = **提交记录** `OrderSubmission{requestId, customerId, 整批订单}`：`requestId` 命中即按记录返回**首次那批**。⚠ 记录里**必须含复用笔**——不含的话，一次「部分复用 + 部分新建」的提交被重放时会少返回几笔（用户侧表现为「下单成功但少了一笔」）。⚠ 被复用笔的 `requestId` 字段保持**它原本的值**（记录的是「哪次提交创造了这笔单」），不要被后来的提交改写
+  - 一级 = **先占键**：`trade_order_submission` 的**唯一键 `(customer_id, request_id)`** 就是幂等键——`OrderRepository#occupy` 先插一行，**再**执行业务（拆单 / 扣库存 / 落库）。并发重复提交由**唯一索引的行锁**串行化：后到者阻塞到先到者提交，然后拿到重复键 → 回读**先到者那一批**；先到者业务失败回滚 → 键随事务一起消失，后到者成为新的「第一个」（失败不留残键不需要任何补偿动作）
+  - 一级的返回口径 = **提交关联** `trade_order_submission_order` 说的：一批里可能含复用笔（指纹命中），它们的 `requestId` 是**上一次提交**的值，按 requestId 查会少返回几笔（用户侧表现为「下单成功但少了一笔」）。⚠ 复用笔的 `requestId` 字段保持**它原本的值**（记的是「哪次提交创造了这笔单」），不被后来的提交改写；关联行则**无条件写**——本次提交的成员关系是新的
   - 一级的作用域是**顾客内**（`customerId + requestId`）：跨顾客不共享，否则 A 用过的 `requestId` 能把 A 的订单取给 B
-  - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`），命中则复用该笔。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
-  - ⚠ 提交记录与订单在**同一次写入**里落（D13），故不存在「订单落了、记录没落」的窗口；真实落库后若两者非原子，重放会**退化到二级指纹**（窗口内各笔仍能命中）→ 仍返回同一批。这条自愈性保持住就行，不必为它引入分布式事务
+  - ⚠ **键与订单必须同事务**：`occupy` 若自己单独提交，键就先落地——先到者随后失败时键残留，重放会回读到一个**空批次**。故事务边界在 `OrderCreateCoordinator#create`（`@Transactional`），**不在端口方法上**；已知代价是后到者最多阻塞到 `innodb_lock_wait_timeout`（默认 50s），这是「宁可慢也不重复下单」的取舍
+  - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`，闭区间），命中则复用该笔。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
   - ⚠ 代价（`requestId` 的定义使然，不是缺陷）：同一 `requestId` 被**换内容**复用（客户端 bug）时，返回的是首次那批，新内容不会被下单
-  - ⚠ **记录存的是活引用、不是快照**：只拷列表不拷元素，故重放返回的是订单**当前**状态（生命周期推进后的最新真相），代价是调用方改了返回值就等于改了凭证——**调用方不得修改返回的订单**
-- ⚠ **并发下的已知缺口（本期有意不修，留给落库期）**：`findSubmission → 下单扣库存 → saveSubmission` 是 check-then-act。两个线程同时提交同一 `customerId + requestId`（双击 / 超时重试，正是幂等要挡的那类）会**都**错过查询、各下各的单，而记录只留首批——另一批成「一级幂等永远取不到的孤儿单」，Seata 也挡不住（那是**键没被独占**，不是回滚能解决的）。真实落库必须把 `(customer_id, request_id)` 定成**唯一键**、并把**占用幂等键提到执行业务之前**（先占键、再下单）。⚠ 本期的端口是「查 → 做 → 写」三段，**表达不了「先占键」**，落库时**别照抄这个形状**
-- **失败回滚**：任一笔失败即整次提交回滚，且**只回补本次新建的笔**。回补口径是「按出库流水汇总 `orderNo|skuId` 净额、只回补净额 > 0 的行」——⚠ **不得改成逐行回补**：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多、且不会报错（静默数据错）
-- ⚠ **回补的幂等由编排层承担、端口层不做去重**（`StockPort#revert` 调一次就还一次）：曾按 `orderNo + skuId` 在端口层去重，结果与「两次失败提交撞同一单号」叠加会**静默吞掉第二次回补**——库存净亏，而流水净额还显示 0（账实不符）。真实实现（store 域）**不要**把这层去重加回去：净额算法的第二次调用会自己算出 0，外层已经够了
-- **保存时机**：步骤链全部成功、状态已置待支付之后才一次性写入——**失败不留残单**，回滚只需回补库存
+  - ⚠ **重放返回的是订单「当前」状态**：落库实现按关联回读（天然是最新真相），内存实现存的是**活引用**（只拷列表不拷元素）——代价是调用方改了返回值就等于改了凭证，**调用方不得修改返回的订单**
+- **失败回滚**：任一笔失败即整次提交回滚（库内写入随事务消失，**失败不留残单**），只剩「回补库存」要还——库存在当前实现里是**外部资源**（内存脚手架 / 将来 store 域），不随本地事务回滚，必须显式归还。⚠ **只回补本次新建的笔**：复用笔的库存在上一次就扣过了
+- ⚠ **回补按单、幂等由净额算出来**（`StockPort#revertByOrder(orderNo)`）：实现按流水算出「这一单每个 SKU 还欠多少」，还完净额归 0，重复调用即无欠可还。**不得**改成按 `orderNo + skuId` 记「已回补」标记的去重——失败提交从不落库，同一秒的两次失败提交可能拿到同一个单号，那个标记会**静默吞掉第二次回补**（库存净亏、流水却显示 0）。⚠ 同样**不得**改成逐行回补：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多且不报错
+- **读取时对账**：库里读到的数据也要自证——枚举名可解析、明细小计 = 单价×数量、轨迹 `seq` 连续且是合法的「下标 +1」路径、落库的总件数 / 总金额与按行重算的一致。任一条不符即 `IllegalStateException`（**数据被写坏**，不是 400——报成 400 等于把「库里的数据坏了」说成「你的操作不对」）
 - **Seata 落点**：`OrderCreateCoordinator#create` 的方法入口（将来在那里加 `@GlobalTransactional`），真实库存写入方在 store 域。本期**不引依赖、不加注解**——没有跨服务调用时它没有事务可管
 - **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
-- ⚠ **生产进程里的现状**：这些 bean 会被装配进容器，但**没有任何 Controller 调用它们**（本期不出接口），故对运行中的服务是惰性的
 
 ## 四、配置说明
 

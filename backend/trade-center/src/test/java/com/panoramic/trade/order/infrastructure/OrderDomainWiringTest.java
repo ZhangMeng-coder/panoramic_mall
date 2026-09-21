@@ -4,7 +4,9 @@ import com.panoramic.trade.order.application.OrderCreateCommand;
 import com.panoramic.trade.order.application.OrderCreateCoordinator;
 import com.panoramic.trade.order.application.OrderCreatePipeline;
 import com.panoramic.trade.order.application.OrderCreateStep;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.panoramic.trade.order.application.config.OrderProperties;
+import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
@@ -12,13 +14,17 @@ import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryStockPort;
+import com.panoramic.trade.order.infrastructure.mock.MockStoreConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContextInitializer;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.MapPropertySource;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import org.yaml.snakeyaml.Yaml;
 
@@ -56,8 +62,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>⚠ 为了断言「装配真的读了这份配置」，本类把真实 yml 的 {@code panoramic.trade.order} 也喂进了
  * 测试上下文的环境（{@link RealApplicationYmlInitializer}）：否则 {@code OrderProperties} 全是默认值，
  * 「顺序 === 配置顺序」这类断言会退化成自说自话。</p>
+ *
+ * <p>⚠ <b>两个开关在测试上下文里怎么处理</b>：真实 yml 写的是 {@code repository: jdbc}，
+ * 但本上下文**没有数据源**（也不该有：它只验域内装配，连上库就跑偏了），
+ * 故用 {@link TestPropertySource} 把它盖成 {@code memory}（优先级高于 initialize 里 {@code addLast} 的真实 yml）。
+ * 盖掉不等于不看——{@link #repositorySwitchIsOneOfTheSupportedValues()} 仍然把真实 yml 的那个值
+ * 与「代码里认识的取值集合」对账，改名 / 打错字照样在这里红。
+ * {@code store-adapter} 保持真实值 {@code mock}，故本类要一并加载 {@link MockStoreConfiguration}
+ * ——商品 / 库存端口本来就由它提供，这也顺带验了「开关真的指到了那份快照」。</p>
  */
-@SpringJUnitConfig(classes = OrderDomainConfiguration.class, initializers = OrderDomainWiringTest.RealApplicationYmlInitializer.class)
+@SpringJUnitConfig(classes = {OrderDomainConfiguration.class, MockStoreConfiguration.class,
+        OrderDomainWiringTest.TestObjectMapperConfiguration.class},
+        initializers = OrderDomainWiringTest.RealApplicationYmlInitializer.class)
+@TestPropertySource(properties = "panoramic.trade.order.repository=memory")
 class OrderDomainWiringTest {
 
     /** 相对模块根目录（Maven surefire 的默认工作目录就是模块根，即 {@code backend/trade-center}） */
@@ -77,6 +94,20 @@ class OrderDomainWiringTest {
 
     private static final Long SKU_ID = 910L;
     private static final Long STORE_ID = 7L;
+
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
+    /** 测试上下文缺 Boot 自动配置，{@code ObjectMapper} 得自己给（mock 快照的解析要用它） */
+    @Configuration
+    static class TestObjectMapperConfiguration {
+
+        @Bean
+        ObjectMapper objectMapper() {
+            return new ObjectMapper();
+        }
+    }
 
     @Autowired
     private OrderProperties properties;
@@ -150,6 +181,15 @@ class OrderDomainWiringTest {
     }
 
     @Test
+    @DisplayName("两个开关都写实了取值，且取值是代码认识的那几个（不设默认值 → 写错即起不来）")
+    void repositorySwitchIsOneOfTheSupportedValues() {
+        // ⚠ 这两个键刻意没有默认值：缺失或写错时对应 bean 一个都不装配，报错是「找不到 X 的 bean」。
+        // 那条报错指向装配，读者得自己去 yml 里找原始拼写；这里把它提前钉在配置文本上。
+        assertThat(String.valueOf(orderSection().get("store-adapter"))).isIn("mock", "feign");
+        assertThat(String.valueOf(orderSection().get("repository"))).isIn("jdbc", "memory");
+    }
+
+    @Test
     @DisplayName("配置窗口与重试上限是正数（0 或负值会让幂等与重试静默失效）")
     void numericConfigIsSane() {
         assertThat(properties.getIdempotencyWindowSeconds()).isPositive();
@@ -163,7 +203,7 @@ class OrderDomainWiringTest {
     void assembledCoordinatorCreatesAnOrder() {
         goodsQueryPort.put(InMemoryGoodsQueryPort.sellable(SKU_ID, STORE_ID, "示例店铺", "10.00"));
         stockPort.setStock(SKU_ID, 5);
-        OrderCreateCommand command = new OrderCreateCommand(11L, OrderSource.DIRECT, "req-wiring",
+        OrderCreateCommand command = new OrderCreateCommand(11L, OrderSource.DIRECT, ADDRESS, "req-wiring",
                 List.of(new OrderCreateCommand.Line(SKU_ID, 2)));
 
         List<OrderModel> created = coordinator.create(command);

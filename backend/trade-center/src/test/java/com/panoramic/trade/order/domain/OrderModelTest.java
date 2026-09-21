@@ -26,8 +26,16 @@ class OrderModelTest {
 
     private static final LocalDateTime CREATE_TIME = LocalDateTime.of(2026, 9, 21, 12, 0, 0);
 
+    /** 发货时填的快递单号（取值本身无意义，只要合法：非空且不超过长度上限） */
+    private static final String TRACKING_NO = "SF1234567890";
+
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
+
     private static OrderModel openOrder(OrderLine... lines) {
-        return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+        return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
                 "req-1", "fp-1", CREATE_TIME, List.of(lines));
     }
 
@@ -196,7 +204,7 @@ class OrderModelTest {
     void unsealedOrderCannotTransition() {
         OrderModel model = completableOrder();
 
-        assertThatThrownBy(() -> model.markPaid(FLOW))
+        assertThatThrownBy(() -> model.markPaid(FLOW, model.getTotalAmount()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("尚未封存");
         assertThatThrownBy(() -> FLOW.transition(model, OrderStatus.PAID))
@@ -211,11 +219,11 @@ class OrderModelTest {
         OrderModel model = completableOrder();
         model.seal();
 
-        model.markPaid(FLOW);
+        model.markPaid(FLOW, model.getTotalAmount());
         assertThat(model.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(model.getStatusTrail()).containsExactly(OrderStatus.PENDING_PAYMENT, OrderStatus.PAID);
 
-        model.markShipped(FLOW);
+        model.markShipped(FLOW, TRACKING_NO);
         model.markReceived(FLOW);
         assertThat(model.getStatus()).isEqualTo(OrderStatus.RECEIVED);
         assertThat(model.getStatusTrail()).containsExactly(
@@ -230,15 +238,15 @@ class OrderModelTest {
         OrderModel model = completableOrder();
         model.seal();
 
-        Throwable skip = catchThrowable(() -> model.markShipped(FLOW));
+        Throwable skip = catchThrowable(() -> model.markShipped(FLOW, TRACKING_NO));
         assertThat(skip).isInstanceOf(ServiceException.class);
         assertThat(((ServiceException) skip).getCode()).isEqualTo(400);
         // 提示语用的是 mallLabel（给顾客看的），故 SHIPPED 在这里是「已发货」而不是店主侧的「待收货」
         assertThat(skip.getMessage()).contains("跳级").contains("待支付").contains("已发货");
 
-        model.markPaid(FLOW);
+        model.markPaid(FLOW, model.getTotalAmount());
 
-        Throwable repeat = catchThrowable(() -> model.markPaid(FLOW));
+        Throwable repeat = catchThrowable(() -> model.markPaid(FLOW, model.getTotalAmount()));
         assertThat(repeat).isInstanceOf(ServiceException.class);
         assertThat(repeat.getMessage()).contains("重复变更");
 

@@ -24,8 +24,12 @@ import java.util.Objects;
  * 按字段比会得到「同一行不相等」的假象；行的身份是 {@code skuId}（聚合根按它查找），需要判身份时
  * 用 {@link #getSkuId()} 比，不要依赖对象相等。</p>
  *
- * <p>⚠ 本期是**纯模型**（裁定 D1）：不落库、无接口。快照字段（{@code goodsName}/{@code mainImage}/
- * {@code specAttrs}）冻结在此处正是裁定 D15 的落点——下单后不再回查商品，商品日后改名换图都不影响已有订单。</p>
+ * <p>快照字段（{@code goodsName}/{@code mainImage}/{@code specAttrs}）冻结在此处正是裁定 D15 的落点
+ * ——下单后不再回查商品，商品日后改名换图都不影响已有订单。</p>
+ *
+ * <p>⚠ 落库期（2026-09-21）多了一个反向入口 {@link #rehydrate}：从落库状态把订单项重建出来。
+ * 它与 {@link #open} 的两段式补全**对称**——一个向外建、一个向内读，两条路的校验口径同一份
+ * （{@code rehydrate} 复用 {@link #price} 的单价校验与小计算法）。</p>
  */
 public final class OrderItem {
 
@@ -131,6 +135,47 @@ public final class OrderItem {
         this.unitPrice = unitPrice;
         this.subtotal = unitPrice.multiply(BigDecimal.valueOf(quantity)).setScale(AMOUNT_SCALE, RoundingMode.HALF_UP);
         this.priced = true;
+    }
+
+    /**
+     * 从落库状态重建一个**已补全**的订单项（⚠ 只有仓储适配器该调它）
+     *
+     * <p>⚠ 公开可见性是**跨包**的要求，不是「谁都能调」的邀请：仓储适配器在
+     * {@code infrastructure.jdbc}，与 domain 不同包（同 {@link OrderModel#rehydrate}）。</p>
+     *
+     * <p>⚠ 复用 {@link #open} 与 {@link #price} 而不是直接赋值：数量区间、单价下限、小计算法
+     * 与建单路径**同一份**实现。若这里另写一遍，两条路的校验就会各自漂移，
+     * 而漂移的后果是「库里读出来的东西与写进去的规则不一致」——最难发现的一类。</p>
+     *
+     * <p>⚠ 落库的小计**参与对账**：它与「单价 × 数量」必须相等，不等说明读出来的列串了位
+     * （例如 {@code unit_price} 与 {@code subtotal} 互换），这类错误不查就一路带到页面上。</p>
+     *
+     * @param skuId     店铺 SKU id
+     * @param quantity  数量
+     * @param spuId     店铺商品 SPU id
+     * @param goodsName 下单时冻结的商品名
+     * @param mainImage 下单时冻结的主图（可为 null：商品本来就没图）
+     * @param specAttrs 下单时冻结的规格（可为 null → 记为空 Map）
+     * @param unitPrice 下单时单价
+     * @param subtotal  落库的小计（用于对账）
+     * @return 已补全（{@code fulfilled=true, priced=true}）的订单项
+     * @throws IllegalStateException 落库的小计与按单价重算的结果不一致
+     */
+    public static OrderItem rehydrate(Long skuId, int quantity, Long spuId, String goodsName, String mainImage,
+                                      Map<String, String> specAttrs, BigDecimal unitPrice, BigDecimal subtotal) {
+        OrderItem item = open(skuId, quantity);
+        item.spuId = Objects.requireNonNull(spuId, "订单项的 spuId 不能为空");
+        item.goodsName = Objects.requireNonNull(goodsName, "订单项的商品名不能为空");
+        item.mainImage = mainImage;
+        item.specAttrs = specAttrs == null ? Map.of() : Map.copyOf(specAttrs);
+        item.fulfilled = true;
+        item.price(unitPrice);
+        if (subtotal == null || subtotal.compareTo(item.subtotal) != 0) {
+            throw new IllegalStateException("订单项 skuId=" + skuId + " 落库的小计("
+                    + (subtotal == null ? "null" : subtotal.toPlainString()) + ")与按单价重算的("
+                    + item.subtotal.toPlainString() + ")不一致");
+        }
+        return item;
     }
 
     /**

@@ -28,12 +28,16 @@ class OrderStatusFlowTest {
     private static final List<OrderStatus> FULL_FLOW =
             List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.RECEIVED);
 
+    /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
+    private static final OrderAddress ADDRESS =
+            new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
     private static OrderStatusFlow flow() {
         return new OrderStatusFlow(FULL_FLOW);
     }
 
     private static OrderModel sealedOrder() {
-        OrderModel model = OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+        OrderModel model = OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
                 "req-1", "fp-1", LocalDateTime.of(2026, 9, 21, 12, 0, 0), List.of(new OrderLine(10L, 1)));
         model.applyGoodsSnapshot(10L, new SkuSnapshot(2001L, 10L, 7L, "示例店铺", "示例商品",
                 "http://img/x.png", Map.of(), new BigDecimal("10.00"), true, true, true, false));
@@ -193,7 +197,7 @@ class OrderStatusFlowTest {
     @DisplayName("未 seal 的订单不能迁移：从 transition 直接进来也是 IllegalStateException（异常类型不因入口而变）")
     void unsealedOrderCannotTransition() {
         OrderStatusFlow flow = flow();
-        OrderModel unsealed = OrderModel.open("202609211200000002", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+        OrderModel unsealed = OrderModel.open("202609211200000002", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
                 "req-2", "fp-2", LocalDateTime.of(2026, 9, 21, 12, 0, 0), List.of(new OrderLine(10L, 1)));
 
         assertThatThrownBy(() -> flow.transition(unsealed, OrderStatus.PAID))

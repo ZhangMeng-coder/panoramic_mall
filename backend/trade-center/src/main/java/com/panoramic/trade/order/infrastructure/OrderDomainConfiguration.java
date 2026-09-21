@@ -1,5 +1,6 @@
 package com.panoramic.trade.order.infrastructure;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.panoramic.trade.order.application.OrderCreateCoordinator;
 import com.panoramic.trade.order.application.OrderCreatePipeline;
 import com.panoramic.trade.order.application.OrderCreateStep;
@@ -9,9 +10,14 @@ import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
 import com.panoramic.trade.order.domain.port.OrderRepository;
 import com.panoramic.trade.order.domain.port.StockPort;
-import com.panoramic.trade.order.infrastructure.inmemory.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
-import com.panoramic.trade.order.infrastructure.inmemory.InMemoryStockPort;
+import com.panoramic.trade.order.infrastructure.jdbc.JdbcOrderRepository;
+import com.panoramic.trade.order.infrastructure.service.TradeOrderItemService;
+import com.panoramic.trade.order.infrastructure.service.TradeOrderService;
+import com.panoramic.trade.order.infrastructure.service.TradeOrderStatusLogService;
+import com.panoramic.trade.order.infrastructure.service.TradeOrderSubmissionOrderService;
+import com.panoramic.trade.order.infrastructure.service.TradeOrderSubmissionService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
@@ -26,7 +32,7 @@ import java.util.List;
  * <p>⚠ <b>为什么装配集中在一个配置类而不是每个类各自 {@code @Component}</b>：
  * 步骤实现是「可插拔」的（新增自定义步骤 = 新增一个 {@code @Component} + yml 里加个名字），
  * 而「串成链」与「选哪个适配器」是装配决策——两者混在一起后，换一个端口实现就得去动业务类。
- * 于是本类只做三件事：装配状态机、装配端口的内存实现、把步骤串成流水线。</p>
+ * 于是本类只做四件事：装配状态机、装配订单仓库、把步骤串成流水线、装配下单编排器。</p>
  *
  * <p>⚠ <b>{@code @ComponentScan} 只扫步骤包</b>：装配层单测用 {@code @SpringJUnitConfig} 直接加载本类，
  * 不会经过启动类的 {@code scanBasePackages = "com.panoramic"}，故这里必须自己把可插拔步骤收进来，
@@ -38,9 +44,18 @@ import java.util.List;
  * 都从它取，单测注入固定/可推进的时钟才能钉住「窗口内复用、窗口外新单」这条边界。
  * 生产用系统时钟，语义与原来的 {@code now()} 完全一致。</p>
  *
- * <p>⚠ <b>三个端口 bean 返回的是内存实现的具体类型</b>（而非端口接口）：本期只有内存实现（裁定 D1），
- * 而装配层单测要用它们的预置入口（{@code put} / {@code setStock}）。将来接真实适配器时，
- * 把这里的 {@code @Bean} 方法换成真实实现即可，**domain / application 一行都不用动**（残留清单 3）。</p>
+ * <h3>两个下游端口（商品 / 库存）不在本类</h3>
+ * <p>它们由 store 域提供，本期（阶段一）是 {@code infrastructure/mock} 里的内存脚手架
+ * ——单独放一个配置类，是为了让「接真实 store 域时该删什么」是一次整文件删除（todo 残留 9），
+ * 而不是回到本类里挑 bean 方法。步骤链与编排器只按端口类型注入，换实现不影响它们。</p>
+ *
+ * <h3>订单仓库：两种实现由配置二选一</h3>
+ * <p>{@code panoramic.trade.order.repository} = {@code jdbc}（真实落库）或 {@code memory}
+ * （无数据源场景：装配层单测、将来不需要库的切片测试）。⚠ 两边的 bean **方法名不同、类型也不同**
+ * （{@code jdbcOrderRepository} / {@code inMemoryOrderRepository}），靠 {@code @ConditionalOnProperty}
+ * 保证同一时刻只有一个 OrderRepository bean；消费方（编排器 / 应用服务）一律按端口类型注入。</p>
+ * <p>⚠ 两个分支都**不设 {@code matchIfMissing}**：配置里没写这个键时，两边都不装配，
+ * 报错是「找不到 OrderRepository 类型的 bean」——起不来，而不是静默挑一个实现。</p>
  */
 @Configuration
 @EnableConfigurationProperties(OrderProperties.class)
@@ -69,26 +84,31 @@ public class OrderDomainConfiguration {
     }
 
     /**
-     * 商品查询端口（本期为内存实现）
+     * 订单仓库（真实落库：5 张表 + MyBatis-Plus 基类）
+     *
+     * <p>⚠ 五个 {@code *Service} 是容器里的 MP 服务 bean（本类不 {@code @ComponentScan} 到它们——
+     * 生产由启动类扫，装配层单测走 memory 分支不需要它们）。</p>
      */
     @Bean
-    public InMemoryGoodsQueryPort goodsQueryPort() {
-        return new InMemoryGoodsQueryPort();
+    @ConditionalOnProperty(name = "panoramic.trade.order.repository", havingValue = "jdbc")
+    public JdbcOrderRepository jdbcOrderRepository(TradeOrderSubmissionService submissionService,
+                                                   TradeOrderSubmissionOrderService submissionOrderService,
+                                                   TradeOrderService orderService,
+                                                   TradeOrderItemService itemService,
+                                                   TradeOrderStatusLogService statusLogService,
+                                                   OrderStatusFlow orderStatusFlow,
+                                                   ObjectMapper objectMapper,
+                                                   Clock clock) {
+        return new JdbcOrderRepository(submissionService, submissionOrderService, orderService, itemService,
+                statusLogService, orderStatusFlow, objectMapper, clock);
     }
 
     /**
-     * 库存端口（本期为内存实现；时钟注入是为了让出库记录的发生时刻可预测）
+     * 订单仓库（内存实现：无数据源的单测 / 切片场景）
      */
     @Bean
-    public InMemoryStockPort stockPort(Clock clock) {
-        return new InMemoryStockPort(clock);
-    }
-
-    /**
-     * 订单仓库（本期为内存实现）
-     */
-    @Bean
-    public InMemoryOrderRepository orderRepository() {
+    @ConditionalOnProperty(name = "panoramic.trade.order.repository", havingValue = "memory")
+    public InMemoryOrderRepository inMemoryOrderRepository() {
         return new InMemoryOrderRepository();
     }
 
