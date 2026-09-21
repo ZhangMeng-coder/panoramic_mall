@@ -38,7 +38,7 @@
 
 - JDK 21、Maven 3.9+
 - Nacos 单机启动（默认 8848，账号 `nacos/nacos`）
-- MySQL 8 可用：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库时通过环境变量注入
+- MySQL 8 可用：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（库 `panoramic_mall`）；连接其他库时通过环境变量注入。⚠ 账号口令只在该共享配置里，勿写入代码或提交到仓库
 - **Nacos 共享配置已就位**：把 `nacos-config/` 下 4 个 data-id（`datasource-mysql` / `datasource-redis` / `auth` / `feign-circuitbreaker`）发布到 Nacos——服务侧 import **不带 `optional:`**，缺任一则启动失败。一览表与发布方式见 [nacos-config/README.md](nacos-config/README.md)
 
 ### 1. 构建

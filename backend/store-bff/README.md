@@ -82,7 +82,7 @@
 
 ## 四、配置说明
 
-- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
+- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`（`jwt-secret` / `redis-prefix` / `header-name` 由端 BFF 与 gateway 同源；熔断参数与 admin 同源一份）。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - `@EnableFeignClients(basePackages = {"com.panoramic.contract.store", "com.panoramic.contract.goods"})` 扫描内部 Feign 客户端（store 域 + goods-center）
 - 响应结构：成功 `code=200`；业务校验失败 `code=400` 携带中文提示；店铺未过审 `code=403`；下游不可用统一 `code=500`（store 域「店铺服务暂不可用」/ 中台「商品服务暂不可用」）
