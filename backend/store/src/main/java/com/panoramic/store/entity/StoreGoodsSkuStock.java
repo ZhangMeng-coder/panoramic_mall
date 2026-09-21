@@ -15,7 +15,7 @@ import lombok.EqualsAndHashCode;
  * <p>不冗余 {@code store_id} / {@code spu_id}：归属链
  * {@code sku_id → store_goods_sku.spu_id → store_goods_spu.store_id}，
  * 归属与平台锁定校验由调用方（{@code StoreGoodsSpuServiceImpl}）负责，本实体不持别的表。</p>
- * <p>可用库存 = {@code stock − locked_stock}；C 端展示的一律是可用库存。{@code warn_stock}
+ * <p>可用库存 = {@code stock}；C 端展示的一律是可用库存。{@code warn_stock}
  * 仅商户端低库存预警用（NULL = 不预警），不进 C 端。</p>
  */
 @Data
@@ -35,13 +35,15 @@ public class StoreGoodsSkuStock extends BaseEntity {
     private Long skuId;
 
     /**
-     * 总库存（商户维护）；可用库存 = stock − lockedStock
+     * 总库存（商户维护）；可用库存 = stock
      */
     private Integer stock;
 
     /**
-     * 占用库存（交易域写入，本期恒 0）
+     * <b>已废弃</b>（2026-09-21 裁定）：不参与可用库存口径、不得新增写入；该列是先前自加的预留，
+     * 流程不清晰、回冲操作繁琐。DDL 删列见仓库根 todo.md「残留 / 后续」第 1 行。
      */
+    @Deprecated
     private Integer lockedStock;
 
     /**

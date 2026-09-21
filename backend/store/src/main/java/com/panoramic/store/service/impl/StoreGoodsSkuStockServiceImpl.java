@@ -45,9 +45,8 @@ public class StoreGoodsSkuStockServiceImpl extends ServiceImpl<StoreGoodsSkuStoc
     public Map<Long, Integer> availableStockMapBySkuIds(Collection<Long> skuIds) {
         Map<Long, Integer> map = new HashMap<>();
         for (StoreGoodsSkuStock row : mapBySkuIds(skuIds).values()) {
-            int stock = row.getStock() == null ? 0 : row.getStock();
-            int locked = row.getLockedStock() == null ? 0 : row.getLockedStock();
-            map.put(row.getSkuId(), stock - locked);
+            // 可用库存 = stock：locked_stock 已于 2026-09-21 废弃，不参与口径（DDL 删列见仓库根 todo.md 残留 1）
+            map.put(row.getSkuId(), row.getStock() == null ? 0 : row.getStock());
         }
         return map;
     }
@@ -62,7 +61,7 @@ public class StoreGoodsSkuStockServiceImpl extends ServiceImpl<StoreGoodsSkuStoc
         StoreGoodsSkuStock row = new StoreGoodsSkuStock();
         row.setSkuId(skuId);
         row.setStock(stock == null || stock < 0 ? 0 : stock);
-        row.setLockedStock(0);
+        // locked_stock 已废弃、不写；该列 NOT NULL DEFAULT 0，不设即 0
         // 审计列（create_user/create_time/...）由 MyMetaObjectHandler 经 save 自动填充，不手写
         save(row);
     }

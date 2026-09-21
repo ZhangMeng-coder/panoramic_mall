@@ -152,7 +152,8 @@ public interface StoreClient {
     /**
      * SKU 库存分页（owner 侧，仅 store_id 名下；按 SKU 平铺一行一条，
      * 支持商品名 / SKU 编码关键字、上下架筛选、仅看低库存）。
-     * <p>出参的 {@code stock} 是库存表里的总库存；可用库存 = {@code stock - lockedStock}。</p>
+     * <p>出参的 {@code stock} 是库存表里的总库存；可用库存 = {@code stock}
+     * （{@code lockedStock} 已于 2026-09-21 废弃，不参与口径、不再写入）。</p>
      */
     @GetMapping("/goods/stock/page")
     PageResult<StoreGoodsStockPageItemVO> pageSkuStock(@RequestParam("storeId") Long storeId,

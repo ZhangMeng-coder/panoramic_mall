@@ -180,8 +180,8 @@ const stockText = computed<string | null>(() => {
 
 /**
  * 售罄态（只用于文案上色）；未选中 SKU 时为 false。
- * ⚠ 判据必须与 `stockText` 同为「≤0」：写成 `=== 0` 时，若出现 `locked_stock > stock`
- * （本期 locked 恒 0，交易域接入后可能），文案会显示「已售罄」却不上色。
+ * ⚠ 判据必须与 `stockText` 同为「≤0」：两处口径必须一致，别一处写 `=== 0`、一处写 `<= 0` 而分家
+ * （历史上 `availableStock` 曾是 `stock − locked_stock` 时才需要 `=== 0` 的判据，现已统一为 `stock`）。
  */
 const soldOut = computed(() => {
   const sku = activeSku.value

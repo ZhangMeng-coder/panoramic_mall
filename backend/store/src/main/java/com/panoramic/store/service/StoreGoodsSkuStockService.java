@@ -31,7 +31,7 @@ public interface StoreGoodsSkuStockService extends IService<StoreGoodsSkuStock> 
      * 批量读可用库存（SKU VO 回填用，一次 IN 查询）
      *
      * @param skuIds SKU id 集合
-     * @return skuId -> 可用库存（{@code stock − locked_stock}，空列按 0 计）；无库存行的 SKU 不在 Map 中
+     * @return skuId -> 可用库存（{@code stock}，空列按 0 计）；无库存行的 SKU 不在 Map 中
      */
     Map<Long, Integer> availableStockMapBySkuIds(Collection<Long> skuIds);
 

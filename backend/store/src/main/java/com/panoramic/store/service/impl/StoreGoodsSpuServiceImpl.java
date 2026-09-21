@@ -578,7 +578,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
      * @param spu          店铺商品实体（已确权）
      * @param vo           目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
      * @param skuRows      该 SPU 名下的 SKU 列表（单条路径按 SPU 查得；批量路径由全量结果内存分组得到）
-     * @param availableMap skuId -> 可用库存（{@code stock − locked_stock}）；缺行按 0 计
+     * @param availableMap skuId -> 可用库存（{@code stock}）；缺行按 0 计
      */
     private void buildDetail(StoreGoodsSpu spu, StoreGoodsSpuDetailVO vo, List<StoreGoodsSku> skuRows,
                              Map<Long, Integer> availableMap) {
@@ -944,7 +944,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
      * SKU 实体 → VO（{@code availableStock} 由调用方批量取好后传入，避免逐行查库存）
      *
      * @param sku            SKU 实体
-     * @param availableStock 可用库存（{@code stock − locked_stock}）；null 按 0
+     * @param availableStock 可用库存（{@code stock}）；null 按 0
      */
     private StoreGoodsSkuVO toSkuVO(StoreGoodsSku sku, Integer availableStock) {
         StoreGoodsSkuVO vo = new StoreGoodsSkuVO();

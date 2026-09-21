@@ -6,7 +6,8 @@ import lombok.Data;
 
 /**
  * 单行 SKU 库存修改请求参数（store 域内部接口与 store-bff 同源共享）。
- * <p>本期是直接赋值，不是增减；占用库存 {@code locked_stock} 由交易域维护，不在此入参内。</p>
+ * <p>本期是直接赋值，不是增减；占用库存 {@code locked_stock} 已于 2026-09-21 废弃（不参与口径、不再写入），
+ * 不在本入参内。</p>
  */
 @Data
 public class StoreGoodsStockUpdateDTO {

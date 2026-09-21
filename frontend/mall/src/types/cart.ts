@@ -20,7 +20,7 @@ export interface CartItem {
    *  故页面按这里的存储顺序原样展示，不像详情页那样重排 */
   specAttrs: SpecAttr[] | null
   price: number | null
-  /** 可用库存（= stock − locked_stock）。⚠ 加购不校验库存，库存只影响「还能不能再加」 */
+  /** 可用库存（= stock；locked_stock 已于 2026-09-21 废弃、不参与口径）。⚠ 加购不校验库存，库存只影响「还能不能再加」 */
   availableStock: number
   quantity: number
   /** 服务端持久化的选中态（页面上的「全选」见 CartView.vue 的作用域注释） */

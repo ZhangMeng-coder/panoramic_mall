@@ -30,7 +30,7 @@
 | `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段） |
 | `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
-| `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `locked_stock` / `warn_stock`；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
+| `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `warn_stock`；`locked_stock` **已废弃**（2026-09-21，不参与口径、不再写入，列待落库期删）；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
@@ -89,7 +89,7 @@
 
 **库存口径（R14）**：
 
-- **可用库存 = `stock − locked_stock`**，**C 端展示的一律是可用库存**（`locked_stock` 本期恒 0，待交易域接入后由域写入）；`warn_stock` 仅商户端低库存预警用（NULL = 不预警），**不进 C 端**
+- **可用库存 = `stock`**（`locked_stock` 已于 2026-09-21 废弃，不再参与口径），**C 端展示的一律是可用库存**；`warn_stock` 仅商户端低库存预警用（NULL = 不预警），**不进 C 端**
 - **库存不参与**「SPU 上架 ⟺ ≥1 SKU 上架」**不变量**（归零不触发任何下架），**也不参与 C 端可见性**（售罄商品照常可打开，C 端标售罄）
 - **平台锁定期库存同样只读**（owner 侧整行只读由 `assertNotLocked` 域内强制）
 - **库存独立写操作不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**唯一例外**是 `replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行）

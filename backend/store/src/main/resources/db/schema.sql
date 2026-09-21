@@ -143,14 +143,16 @@ UPDATE store_goods_spu s
 --   而商品编辑 / 上下架 / 平台锁定 / refreshDerived 都在改同一行 —— 补货会与商品运维互相阻塞。
 --   独立后库存行的写锁只覆盖库存行本身（R14）。
 --   不冗余 store_id / spu_id：归属链 sku_id → store_goods_sku.spu_id → store_goods_spu.store_id。
---   available(可用库存) = stock − locked_stock；C 端展示的一律是它（本期 locked_stock 恒 0）。
+--   available(可用库存) = stock；C 端展示的一律是它。
+--   ⚠ locked_stock 已于 2026-09-21 废弃（不参与任何口径、不再写入），但**列与建表语句保留**：
+--     旧库仍有它，删了新旧库结构会分叉；ALTER TABLE ... DROP COLUMN 是销毁性操作，见仓库根 todo.md 残留 1。
 --   warn_stock 仅商户端低库存预警用，NULL = 不预警，**不进 C 端**。
 --   库存不参与「SPU上架 ⟺ ≥1 SKU 上架」不变量，也不参与 C 端可见性（零库存不触发下架、商品照常可见）。
 CREATE TABLE IF NOT EXISTS store_goods_sku_stock (
   id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   sku_id       BIGINT UNSIGNED NOT NULL                COMMENT 'store_goods_sku.id（一 SKU 一行）',
   stock        INT             NOT NULL DEFAULT 0      COMMENT '总库存（商户维护）',
-  locked_stock INT             NOT NULL DEFAULT 0      COMMENT '占用库存（交易域写入，本期恒 0）',
+  locked_stock INT             NOT NULL DEFAULT 0      COMMENT '已废弃（2026-09-21）：不参与可用库存口径、不写入；待落库期 DROP',
   warn_stock   INT             DEFAULT NULL            COMMENT '低库存预警阈值（NULL = 不预警，仅商户端用）',
   create_user  VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

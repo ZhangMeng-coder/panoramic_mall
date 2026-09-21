@@ -60,7 +60,8 @@ public class StoreGoodsStockPageItemVO {
     private Integer stock;
 
     /**
-     * 占用库存（交易域写入，本期恒 0）；只读展示，不参与本页编辑
+     * <b>已废弃</b>（2026-09-21）：不参与可用库存口径、不再写入，恒 0；只读展示，不参与本页编辑。
+     * 字段保留（对外契约不删，契约删字段属破坏性改动），DDL 删列见仓库根 todo.md 残留 1
      */
     private Integer lockedStock;
 

@@ -67,7 +67,7 @@ public class MallCartItemVO {
     private BigDecimal price;
 
     /**
-     * 可用库存（= 域侧 {@code availableStock} = {@code stock − locked_stock}）；拿不到商品信息时为 0
+     * 可用库存（= 域侧 {@code availableStock} = {@code stock}；{@code locked_stock} 已废弃、不参与口径）；拿不到商品信息时为 0
      */
     private Integer availableStock;
 

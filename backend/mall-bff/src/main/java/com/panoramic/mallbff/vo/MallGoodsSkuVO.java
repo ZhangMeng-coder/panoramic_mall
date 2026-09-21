@@ -40,7 +40,8 @@ public class MallGoodsSkuVO {
     private String mainImage;
 
     /**
-     * 可用库存（= 域侧 {@code availableStock} = {@code stock − locked_stock}）；0 表示该规格已售罄。
+     * 可用库存（= 域侧 {@code availableStock} = {@code stock}；{@code locked_stock} 已废弃、不参与口径）；
+     * 0 表示该规格已售罄。
      * <p>⚠ 库存<b>不参与详情可见性</b>：售罄商品照常可打开，只是选中该规格时展示「已售罄」。
      * 阈值的 {@code warn_stock} 是商户端内部信息，不进 C 端。</p>
      */
