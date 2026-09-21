@@ -40,3 +40,23 @@ spring:
 #   **MySQL（trade_cart_item）始终是唯一事实源**。两个方向的错判都能自愈（误报 → 自增 0 行 → 回插；
 #   漏报 → 唯一键冲突 → 转原子自增），详见 backend/trade-center/README.md。
 # ⚠ 部署前提：8087 端口只在内网可达，否则可伪造 X-User-Id；这是「域服务去鉴权」的既有取舍。
+
+# 订单生成流水线与状态机配置（本期为纯领域模型，无接口、不落库；见仓库根 todo.md 执行计划）
+panoramic:
+  trade:
+    order:
+      # 订单生成步骤：数组顺序即执行顺序；名称对应 OrderCreateStep#name()，配了不存在的名字则启动失败
+      steps:
+        - goods-check
+        - stock-check
+        - price-compute
+      # 订单状态流转顺序：只允许「下标 +1」的推进；必须覆盖 OrderStatus 全部常量，缺一个即启动失败
+      status-flow:
+        - PENDING_PAYMENT
+        - PAID
+        - SHIPPED
+        - RECEIVED
+      # 幂等窗口（秒）：同指纹在该窗口内视为重复提交
+      idempotency-window-seconds: 300
+      # 订单号冲突时的重试上限
+      order-no-max-retry: 5
