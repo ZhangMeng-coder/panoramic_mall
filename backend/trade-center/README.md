@@ -2,8 +2,9 @@
 
 全景商城**交易域**（Servlet 技术栈，2026-09-21 新建），端口 **8087**。
 
-本域持**购物车 `trade_cart_item`**。⚠ **本期只有购物车**：订单 / 结账 / 评价**不在本期**
-（下单需要跨域事务、库存扣减、支付与状态机，是独立的一期），计划见仓库根 [`todo.md`](../../todo.md)。
+本域持**购物车 `trade_cart_item`**，另有**订单领域模型**（`com.panoramic.trade.order`，DDD 三层）。
+⚠ **本期订单只有模型——没有接口、也不落库**（只由单测验证，见「三、职责与边界」第 7 节）；
+订单**接口**、订单**落库**、结账、评价与 Seata 接入**都不在本期**，计划见仓库根 [`todo.md`](../../todo.md)。
 
 > 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)：
 > 那张表由 `docs/contracts/drift-check.mjs` 与代码**双向核对**，始终反映真实进度（本 README 里写死条数只会随每次实现失真）。
@@ -114,7 +115,7 @@
   域只按 `spuId` / `skuId` 出原始行（见 cross-cutting 第 20 条：购物车行是「C 端可见性」不变量的**第三个落点**）。
   同理，全选是**域侧整表**操作，作用面含 BFF 眼里「已失效」的行
 - **不加购时校验商品存在性**：域不持商品、不调 store（加购不做跨域调用）；商品下架 / 不存在由 BFF 与页面处理
-- **不做订单 / 结账 / 评价**（本期外，见 [`todo.md`](../../todo.md)）
+- **不做订单接口 / 订单落库 / 结账 / 评价**：**订单领域模型已建**（见下节，**无接口、不落库**，只由单测验证）
 - **不做页面编排**（商品详情拼装、失效标记、汇总金额都在 mall-bff）
 
 ### 6. 信任与防线
@@ -127,6 +128,32 @@
 > ⚠ 本域**不做鉴权是有意设计，不是疏漏**。安全性完全依赖 `8087` 端口只在内网可达。
 > `customerId` 直接取自请求路径且域侧不判归属——「锚点即数据权限」这条口径只在
 > 「路径上的 `customerId` 由 mall-bff 从登录态填」+「8087 不可从公网抵达」**同时**成立时才成立。
+
+### 7. 订单领域模型（本期：无接口、不落库）
+
+`com.panoramic.trade.order`，DDD 三层：`domain`（**零 Spring 依赖**，纯 POJO）/ `application`（步骤流水线 + 编排）/ `infrastructure`（内存适配器 + Spring 装配）。
+**本期不建表、不出接口、不引 Seata**——订单全在内存里跑，**验收方式是单测**。
+
+先做模型、后落库：下单要跨域扣库存、要分布式事务、要状态机与幂等，这几件事的正确性全在模型里；模型钉死后，未来落库**只换适配器**，`domain` 与 `application` 层不动。
+
+三个**端口**就是那个「只换适配器」的接缝：
+
+| 端口 | 本期实现 | 未来 |
+|---|---|---|
+| `GoodsQueryPort`（商品快照 + 可见性） | `InMemoryGoodsQueryPort` | store 域 `StoreClient`（Feign，带熔断降级） |
+| `StockPort`（扣减 + SKU 粒度出库记录） | `InMemoryStockPort` | store 域库存能力（`UPDATE ... WHERE stock >= ?` 的影响行数 + 同事务写出库记录） |
+| `OrderRepository`（订单与幂等查询） | `InMemoryOrderRepository` | `trade_order` / `trade_order_item` / 出库记录表 |
+
+- **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
+- **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
+- **生成流水线**：`goods-check`（商品存在 + 店铺已审核 + SPU/SKU 已上架 + 未平台锁定，并把商品快照冻进订单项）→ `stock-check`（逐行原子扣减，成功即写一条 SKU 粒度出库记录）→ `price-compute`（取单价、算行小计与总价、`seal()` 封模型）。三步都是**可插拔实现**（`OrderCreateStep` bean），**启哪些、什么顺序由 `panoramic.trade.order.steps` 决定**，配了不存在的步骤名 → 装配即失败。⚠ 步骤间**只经 `OrderModel` 本体传参**；模型必须走完 `open → 补商品快照 → 补价 → seal` 才能被置为待支付——**顺序写反会直接抛错，不会静默出一张残单**
+- **一单一店**：一次提交按 `storeId` 拆成多笔订单（各店的金额 / 状态 / 扣减相互独立），按 `storeId` 升序处理
+- **重复提交（两级判定）**：`requestId`（整次提交）命中即返回整批；拆单后每笔再按 `fingerprint = sha256(customerId|source|storeId|排序后的 skuId:qty)` 在**窗口内**判定，命中则复用该笔。⚠ 复用笔属于**上一次提交**，它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
+- **失败回滚**：任一笔失败即整次提交回滚，且**只回补本次新建的笔**。回补口径是「按出库流水汇总 `orderNo|skuId` 净额、只回补净额 > 0 的行」——⚠ **不得改成逐行回补**：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多、且不会报错（静默数据错）
+- **保存时机**：步骤链全部成功、状态已置待支付之后才一次性写入——**失败不留残单**，回滚只需回补库存
+- **Seata 落点**：`OrderCreateCoordinator#create` 的方法入口（将来在那里加 `@GlobalTransactional`），真实库存写入方在 store 域。本期**不引依赖、不加注解**——没有跨服务调用时它没有事务可管
+- **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
+- ⚠ **生产进程里的现状**：这些 bean 会被装配进容器，但**没有任何 Controller 调用它们**（本期不出接口），故对运行中的服务是惰性的
 
 ## 四、配置说明
 

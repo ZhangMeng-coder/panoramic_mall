@@ -70,5 +70,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 购物车行的落库口径（`(customer_id, sku_id)` 唯一键 + **物理删除**）、数量与行数上限（单行 ≤ 999、单购物车 ≤ 100 行）、
 加购的「查重 → 自增」双向回退、选中状态持久化、Redis 两处失效的可自愈性、
-以及为什么本域**只有购物车、没有下单**——见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)。
+以及**订单领域模型**的完整口径（状态机 / 配置驱动的生成流水线 / 一单一店拆单 / 两级幂等 / 回滚与保存时机）——
+见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)「三、职责与边界」第 7 节。
+⚠ 订单模型**本期无接口、不落库**（只由单测验证），故**在下面的接口表里没有任何一行**——这不是漏登记。
 本文件只写接口与形状。
