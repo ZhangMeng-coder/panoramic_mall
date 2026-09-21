@@ -207,7 +207,7 @@ layer: cross-cutting
 | 契约 | 域服务（goods-center 8081 / store 8083 / customer-center 8086 / trade-center 8087）**不做任何鉴权**，其安全性完全依赖"端口只在内网可达" |
 | 定义位置 | 各域 `application.yml` 注释；`goods-center/config/GoodsSecurityConfig.java:16`、`store/config/StoreSecurityConfig.java:17`、`customer-center/config/CustomerSecurityConfig.java:17`、`trade-center/config/TradeSecurityConfig.java:19` |
 | 消费位置 | 全部部署环境 |
-| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏）。⚠ **「锚点即数据权限」的两个域上这条更硬**（customer-center 8086 / trade-center 8087）：域侧 `customerId` **直接取自请求路径且不做任何鉴权**（见 [customer-center.md](./customer-center.md) 与 [trade-center.md](./trade-center.md) 第一节），**能连到这两个端口的人就能读写任意顾客的资料、地址簿与购物车**——该口径只在「路径上的 `customerId` 由端 BFF 从登录态填」+「该端口不可从公网抵达」两条**同时**成立时才成立。⚠ trade-center 的 Redis 不改变这一点：那两个键只存 sku 与行数，**没有登录态**，抄不走任何身份 |
+| 破坏后果 | 域端口一旦暴露公网 → 可伪造 `X-User-Id` → **防线整体失效**（域内不做鉴权是有意设计，不是疏漏）。⚠ **「锚点即数据权限」的两个域上这条更硬**（customer-center 8086 / trade-center 8087）：域侧 `customerId` **直接取自请求路径且不做任何鉴权**（见 [customer-center.md](./customer-center.md) 与 [trade-center.md](./trade-center.md) 第一节），**能连到这两个端口的人就能读写任意顾客的资料、地址簿、购物车与订单**（含下单 / 支付 / 发货 / 收货四项动作）——该口径只在「路径上的 `customerId` 由端 BFF 从登录态填」+「该端口不可从公网抵达」两条**同时**成立时才成立。⚠ trade-center 的 Redis 不改变这一点：那两个键只存 sku 与行数，**没有登录态**，抄不走任何身份 |
 | 核对方式 | **无法静态核对**。本页仅登记，属部署/运维前提 |
 
 ### 16. 权限串与前端路由一致性

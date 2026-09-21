@@ -4,7 +4,14 @@ import com.panoramic.contract.trade.dto.TradeCartItemAddDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeCartSelectDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
+import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
+import com.panoramic.contract.trade.dto.TradeOrderPlatformPageQueryDTO;
+import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.contract.trade.vo.TradeCartItemVO;
+import com.panoramic.contract.trade.vo.TradeOrderPageVO;
+import com.panoramic.contract.trade.vo.TradeOrderVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,29 +24,39 @@ import java.util.List;
 
 /**
  * trade-center（交易域，下沉纯域）内部 Feign 客户端。
- * <p>交易域本期只持「购物车 {@code trade_cart_item}」（订单 / 结账 / 评价不在本期，见仓库根 {@code todo.md}），
- * 不向页面暴露公网路由，只被 mall-bff 经本接口内部调用。规约（见 CLAUDE.md 与 docs/contracts/trade-center.md）：
+ * <p>交易域持「购物车 {@code trade_cart_item}」与「订单」（{@code trade_order} 等 5 张表）；
+ * 结算 / 评价不在本期（见仓库根 {@code todo.md}）。不向页面暴露公网路由，
+ * 只被端 BFF 经本接口内部调用。规约（见 CLAUDE.md 与 docs/contracts/trade-center.md）：
  * <ul>
- *   <li>入参/出参 DTO 与接口同源维护在 trade-center-interface（域服务端、mall-bff 客户端引用同一份类型）；</li>
+ *   <li>入参/出参 DTO 与接口同源维护在 trade-center-interface（域服务端、各端 BFF 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
  *   <li>调用经 {@link TradeFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
  *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
- * 数据权限口径：锚点 {@code customerId} = {@code mall_user.id}（跨域 id 引用、无外键），所有方法全按传入锚点过滤；
- * <b>无 owner / platform 分侧</b>——本期只做 C 端自助，调用方传的 {@code customerId} 是否「本人」由 mall-bff
- * 从登录态取，域内不做任何身份判断（不读 X-User-Type 判权；该头只用于审计留痕）。
- * 服务端路径与映射需与 trade-center 域内部控制器一一对应（前缀 /internal/trade，类级再拼 /cart）。
+ * <b>数据权限口径分两种，别按一种理解</b>：
+ * <ul>
+ *   <li><b>购物车无分侧</b>：锚点 {@code customerId} = {@code mall_user.id}（跨域 id 引用、无外键），
+ *       全部方法按传入锚点过滤，只做 C 端自助。</li>
+ *   <li><b>订单分三侧</b>（顾客 / 商户 / 平台）：顾客侧锚点 {@code customerId}、商户侧锚点 {@code storeId}
+ *       ——**锚点在路径里**；平台侧<b>没有锚点段</b>（管理端本就是全量视角），它要筛的
+ *       {@code storeId} / {@code customerId} 走 {@link TradeOrderPlatformPageQueryDTO} 的字段。
+ *       订单标识一律用 {@code orderNo}（业务可读单号），不用自增 id。</li>
+ * </ul>
+ * 两种口径下域内都<b>不做任何身份判断</b>（不读 X-User-Type 判权；该头只用于审计留痕）：
+ * 调用方传的锚点是否真是「本人 / 本店」，由端 BFF 从登录态取，域侧不校验——防线在 BFF。
+ * 服务端路径与映射需与 trade-center 域内部控制器一一对应（前缀 /internal/trade，类级再拼 /cart 或 /order）。
  * <p>⚠ <b>字段定义不在契约表里</b>：字段即 {@code com.panoramic.contract.trade.dto} / {@code .vo} 包下的类，
  * 契约表（docs/contracts/trade-center.md）只登记「有哪些接口、形状是什么、类型在哪、谁在调」，**不抄字段**
  * （抄一份就是制造第二个会漂移的地方）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表某行的 {@code 待实现} 标记、在此声明该方法、域侧补上实现，
  * 三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前购物车 8 条（列表 / 计数 / 加购 / 改数量 / 单行选中 / 全选 / 批量删除 / 清空）**全部落地**
- * （契约表 {@code 待实现} 归零）。</p>
+ * 当前购物车 8 条 + 订单 10 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
  */
 @FeignClient(name = "trade-center", contextId = "tradeCenterClient",
         path = "/internal/trade", configuration = TradeFeignConfiguration.class)
 public interface TradeCenterClient {
+
+    // ── 购物车（8 条，C 端顾客自助，无分侧） ──────────────────────────────────────
 
     /**
      * 我的购物车行列表，按行 id 升序（= 加购顺序）；空购物车返回空列表，不返回 null。
@@ -126,4 +143,124 @@ public interface TradeCenterClient {
      */
     @DeleteMapping("/cart/{customerId}")
     void clearCart(@PathVariable("customerId") Long customerId);
+
+    // ── 订单（10 条，分顾客 / 商户 / 平台三侧） ──────────────────────────────────
+
+    /**
+     * 下单：一次提交按 {@code storeId} 拆成多笔（一单一店），**返回整批**，顺序 = {@code storeId} 升序
+     *
+     * <p>⚠ <b>幂等</b>：命中请求级键（{@code requestId}）或窗口内同指纹时，<b>原样返回首次那批</b>——
+     * 不重建、不二次扣库存、连商品都不再校验。故调用方拿到的一律是「这次提交对应的那一批」。</p>
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param dto        下单参数（来源 / 幂等键 / 地址快照 / 商品行）
+     * @return 本次提交的整批订单（至少一笔）
+     * @throws com.panoramic.common.exception.ServiceException 商品不可购买 / 库存不足 / 数量越界 / 地址非法（HTTP 400）
+     */
+    @PostMapping("/order/{customerId}")
+    List<TradeOrderVO> createOrder(@PathVariable("customerId") Long customerId,
+                                   @RequestBody TradeOrderCreateDTO dto);
+
+    /**
+     * 我的订单分页（只含该顾客的订单；按主键倒序 = 下单倒序）
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param dto        筛选与分页条件（无锚点字段）
+     * @return 总数 + 当页订单
+     */
+    @PostMapping("/order/customer/{customerId}/page")
+    TradeOrderPageVO pageCustomerOrders(@PathVariable("customerId") Long customerId,
+                                        @RequestBody TradeOrderPageQueryDTO dto);
+
+    /**
+     * 我的订单详情；订单不存在或不属于该顾客 → 404，不区分两种情形
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param orderNo    业务可读单号
+     * @return 订单（状态 + 地址快照 + 明细齐全）
+     */
+    @GetMapping("/order/customer/{customerId}/{orderNo}")
+    TradeOrderVO getCustomerOrder(@PathVariable("customerId") Long customerId,
+                                  @PathVariable("orderNo") String orderNo);
+
+    /**
+     * 支付（假支付）：{@code dto.amount} 必须<b>等于订单总额</b>，不一致 → 400
+     *
+     * <p>⚠ <b>不幂等，重复提交由状态机拒</b>：第二次 {@code pay} 回 400「订单状态不能从「已支付」重复变更到
+     * 「已支付」」。调用方**原样透传**该 4xx，不另译成「请勿重复操作」（同一句提示只此一份）。</p>
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param orderNo    业务可读单号
+     * @param dto        支付金额
+     * @throws com.panoramic.common.exception.ServiceException 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
+     */
+    @PostMapping("/order/customer/{customerId}/{orderNo}/pay")
+    void payOrder(@PathVariable("customerId") Long customerId,
+                  @PathVariable("orderNo") String orderNo,
+                  @RequestBody TradeOrderPayDTO dto);
+
+    /**
+     * 确认收货（终态）；已收货再调用 → 400
+     *
+     * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
+     * @param orderNo    业务可读单号
+     * @throws com.panoramic.common.exception.ServiceException 非法迁移（HTTP 400）、订单不属本人（404）
+     */
+    @PostMapping("/order/customer/{customerId}/{orderNo}/receive")
+    void receiveOrder(@PathVariable("customerId") Long customerId,
+                      @PathVariable("orderNo") String orderNo);
+
+    /**
+     * 本店订单分页（只含该店铺的订单；**含待支付**——店主的待办起点不是「已支付」）
+     *
+     * @param storeId 店铺 id（= 店主账号 id，数据权限锚点）
+     * @param dto     筛选与分页条件（无锚点字段）
+     * @return 总数 + 当页订单
+     */
+    @PostMapping("/order/store/{storeId}/page")
+    TradeOrderPageVO pageStoreOrders(@PathVariable("storeId") Long storeId,
+                                     @RequestBody TradeOrderPageQueryDTO dto);
+
+    /**
+     * 本店订单详情；订单不存在或不属于该店铺 → 404，不区分两种情形
+     *
+     * @param storeId 店铺 id（= 店主账号 id，数据权限锚点）
+     * @param orderNo 业务可读单号
+     * @return 订单
+     */
+    @GetMapping("/order/store/{storeId}/{orderNo}")
+    TradeOrderVO getStoreOrder(@PathVariable("storeId") Long storeId,
+                               @PathVariable("orderNo") String orderNo);
+
+    /**
+     * 发货（记录快递单号）；重复发货 / 跳级 → 400
+     *
+     * @param storeId 店铺 id（= 店主账号 id，数据权限锚点）
+     * @param orderNo 业务可读单号
+     * @param dto     快递单号（必填）
+     * @throws com.panoramic.common.exception.ServiceException 单号为空 / 非法迁移（HTTP 400）、订单不属本店（404）
+     */
+    @PostMapping("/order/store/{storeId}/{orderNo}/ship")
+    void shipOrder(@PathVariable("storeId") Long storeId,
+                   @PathVariable("orderNo") String orderNo,
+                   @RequestBody TradeOrderShipDTO dto);
+
+    /**
+     * 平台侧订单分页（**全量视角、路径无锚点**）：要筛店铺 / 顾客走 DTO 字段
+     *
+     * @param dto 筛选与分页条件（含可选的 {@code storeId} / {@code customerId}）
+     * @return 总数 + 当页订单
+     */
+    @PostMapping("/order/page")
+    TradeOrderPageVO pagePlatformOrders(@RequestBody TradeOrderPlatformPageQueryDTO dto);
+
+    /**
+     * 平台侧订单详情（全量视角）
+     *
+     * @param orderNo 业务可读单号
+     * @return 订单
+     * @throws com.panoramic.common.exception.ServiceException 订单不存在（HTTP 404）
+     */
+    @GetMapping("/order/{orderNo}")
+    TradeOrderVO getPlatformOrder(@PathVariable("orderNo") String orderNo);
 }

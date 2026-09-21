@@ -9,12 +9,14 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 # 交易域（trade-center）内部契约 · 第 ② 层
 
-> 交易域：**购物车 `trade_cart_item`**。
-> **不暴露公网路由**，只被 mall-bff 经内部 Feign 调用。
+> 交易域：**购物车 `trade_cart_item` + 订单**（`trade_order` / `trade_order_item` /
+> `trade_order_status_log` / `trade_order_submission` / `trade_order_submission_order`）。
+> **不暴露公网路由**，只被**端 BFF** 经内部 Feign 调用（购物车与订单顾客侧 ← mall-bff；
+> 订单商户侧 ← store-bff；订单平台侧 ← admin）。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
 **共 18 个接口**：**购物车 8**（C 端顾客自助，无分侧）+ **订单 10**（分顾客 / 商户 / 平台三侧）。
-⚠ 订单那 10 条是**契约先行**（状态列标 `待实现`）——域内订单模型已建完、接口层尚未实现。
+两条线**均已实现**（状态列无 `待实现`）。
 
 ## 一、归属与形状
 
@@ -42,14 +44,14 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| listCartItems | GET | /cart/{customerId} | `Long` | `List<TradeCartItemVO>` | TradeCenterClient.java:52 | CartController.java:44 | CartBffService(mall-bff) |  |
-| cartItemCount | GET | /cart/{customerId}/count | `Long` | `Integer` | TradeCenterClient.java:61 | CartController.java:52 | CartBffService(mall-bff) |  |
-| addCartItem | POST | /cart/{customerId}/items | `Long`, `TradeCartItemAddDTO` | `Long` | TradeCenterClient.java:72 | CartController.java:60 | CartBffService(mall-bff) |  |
-| updateCartItemQuantity | PUT | /cart/{customerId}/items/{id} | `Long`, `Long`, `TradeCartItemUpdateDTO` | `void` | TradeCenterClient.java:83 | CartController.java:69 | CartBffService(mall-bff) |  |
-| setCartItemSelected | PUT | /cart/{customerId}/items/{id}/selected | `Long`, `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:95 | CartController.java:79 | CartBffService(mall-bff) |  |
-| setAllCartItemsSelected | PUT | /cart/{customerId}/selected | `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:108 | CartController.java:89 | CartBffService(mall-bff) |  |
-| removeCartItems | POST | /cart/{customerId}/items/remove | `Long`, `TradeCartItemIdsDTO` | `void` | TradeCenterClient.java:118 | CartController.java:98 | CartBffService(mall-bff) |  |
-| clearCart | DELETE | /cart/{customerId} | `Long` | `void` | TradeCenterClient.java:127 | CartController.java:107 | CartBffService(mall-bff) |  |
+| listCartItems | GET | /cart/{customerId} | `Long` | `List<TradeCartItemVO>` | TradeCenterClient.java:70 | CartController.java:44 | CartBffService(mall-bff) |  |
+| cartItemCount | GET | /cart/{customerId}/count | `Long` | `Integer` | TradeCenterClient.java:79 | CartController.java:52 | CartBffService(mall-bff) |  |
+| addCartItem | POST | /cart/{customerId}/items | `Long`, `TradeCartItemAddDTO` | `Long` | TradeCenterClient.java:90 | CartController.java:60 | CartBffService(mall-bff) |  |
+| updateCartItemQuantity | PUT | /cart/{customerId}/items/{id} | `Long`, `Long`, `TradeCartItemUpdateDTO` | `void` | TradeCenterClient.java:101 | CartController.java:69 | CartBffService(mall-bff) |  |
+| setCartItemSelected | PUT | /cart/{customerId}/items/{id}/selected | `Long`, `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:113 | CartController.java:79 | CartBffService(mall-bff) |  |
+| setAllCartItemsSelected | PUT | /cart/{customerId}/selected | `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:126 | CartController.java:89 | CartBffService(mall-bff) |  |
+| removeCartItems | POST | /cart/{customerId}/items/remove | `Long`, `TradeCartItemIdsDTO` | `void` | TradeCenterClient.java:136 | CartController.java:98 | CartBffService(mall-bff) |  |
+| clearCart | DELETE | /cart/{customerId} | `Long` | `void` | TradeCenterClient.java:145 | CartController.java:107 | CartBffService(mall-bff) |  |
 
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`customerId`**（数据权限锚点），第二个是行 `id`。
 > 例：`updateCartItemQuantity` 的 `Long, Long, DTO` = `customerId, id, dto`。
@@ -60,23 +62,22 @@ typeDirs: backend/trade-center-interface/src/main/java
 > 删除接口用 **`POST .../items/remove` + `@RequestBody`**（而非 `DELETE` 带 body，或逐个 `DELETE`）：
 > 批量删除口径与跨店通用侧同形，见 [cross-cutting.md](./cross-cutting.md) 第 18 条。
 
-### 2. 订单（10 条，**全部待实现**）
+### 2. 订单（10 条，分顾客 / 商户 / 平台三侧）
 
-域内订单模型已建完（见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节），
-**接口层尚未实现**，故下表整列标 `待实现`；实现完成后**同一改动内把状态摘回留空**（不摘检查器报错）。
+域内订单领域模型与接口层均已落地（领域口径见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节）。
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| createOrder | POST | /order/{customerId} | `Long`, `TradeOrderCreateDTO` | `List<TradeOrderVO>` | — | — | OrderBffService(mall-bff) | 待实现 |
-| pageCustomerOrders | POST | /order/customer/{customerId}/page | `Long`, `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | — | — | OrderBffService(mall-bff) | 待实现 |
-| getCustomerOrder | GET | /order/customer/{customerId}/{orderNo} | `Long`, `String` | `TradeOrderVO` | — | — | OrderBffService(mall-bff) | 待实现 |
-| payOrder | POST | /order/customer/{customerId}/{orderNo}/pay | `Long`, `String`, `TradeOrderPayDTO` | `void` | — | — | OrderBffService(mall-bff) | 待实现 |
-| receiveOrder | POST | /order/customer/{customerId}/{orderNo}/receive | `Long`, `String` | `void` | — | — | OrderBffService(mall-bff) | 待实现 |
-| pageStoreOrders | POST | /order/store/{storeId}/page | `Long`, `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | — | — | StoreOrderBffService(store-bff) | 待实现 |
-| getStoreOrder | GET | /order/store/{storeId}/{orderNo} | `Long`, `String` | `TradeOrderVO` | — | — | StoreOrderBffService(store-bff) | 待实现 |
-| shipOrder | POST | /order/store/{storeId}/{orderNo}/ship | `Long`, `String`, `TradeOrderShipDTO` | `void` | — | — | StoreOrderBffService(store-bff) | 待实现 |
-| pagePlatformOrders | POST | /order/page | `TradeOrderPlatformPageQueryDTO` | `TradeOrderPageVO` | — | — | AdminOrderBffService(admin) | 待实现 |
-| getPlatformOrder | GET | /order/{orderNo} | `String` | `TradeOrderVO` | — | — | AdminOrderBffService(admin) | 待实现 |
+| createOrder | POST | /order/{customerId} | `Long`, `TradeOrderCreateDTO` | `List<TradeOrderVO>` | TradeCenterClient.java:161 | OrderController.java:49 | OrderBffService(mall-bff) |  |
+| pageCustomerOrders | POST | /order/customer/{customerId}/page | `Long`, `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:172 | OrderController.java:58 | OrderBffService(mall-bff) |  |
+| getCustomerOrder | GET | /order/customer/{customerId}/{orderNo} | `Long`, `String` | `TradeOrderVO` | TradeCenterClient.java:183 | OrderController.java:67 | OrderBffService(mall-bff) |  |
+| payOrder | POST | /order/customer/{customerId}/{orderNo}/pay | `Long`, `String`, `TradeOrderPayDTO` | `void` | TradeCenterClient.java:198 | OrderController.java:76 | OrderBffService(mall-bff) |  |
+| receiveOrder | POST | /order/customer/{customerId}/{orderNo}/receive | `Long`, `String` | `void` | TradeCenterClient.java:210 | OrderController.java:86 | OrderBffService(mall-bff) |  |
+| pageStoreOrders | POST | /order/store/{storeId}/page | `Long`, `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:221 | OrderController.java:97 | StoreOrderBffService(store-bff) |  |
+| getStoreOrder | GET | /order/store/{storeId}/{orderNo} | `Long`, `String` | `TradeOrderVO` | TradeCenterClient.java:232 | OrderController.java:106 | StoreOrderBffService(store-bff) |  |
+| shipOrder | POST | /order/store/{storeId}/{orderNo}/ship | `Long`, `String`, `TradeOrderShipDTO` | `void` | TradeCenterClient.java:244 | OrderController.java:115 | StoreOrderBffService(store-bff) |  |
+| pagePlatformOrders | POST | /order/page | `TradeOrderPlatformPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:255 | OrderController.java:127 | AdminOrderBffService(admin) |  |
+| getPlatformOrder | GET | /order/{orderNo} | `String` | `TradeOrderVO` | TradeCenterClient.java:265 | OrderController.java:135 | AdminOrderBffService(admin) |  |
 
 > **锚点在路径里**（顾客侧 `{customerId}` / 商户侧 `{storeId}`），与购物车同一手法：域内不做身份判断
 > （读锚点 ≠ 鉴权），锚点由**端 BFF 从登录态取**后填进路径。⚠ **平台侧没有锚点段**——管理端本就是全量视角，
@@ -99,8 +100,8 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | 包 | 类型 |
 |---|---|
-| `dto` | TradeCartItemAddDTO, TradeCartItemIdsDTO, TradeCartItemUpdateDTO, TradeCartSelectDTO；**订单（待实现）**：TradeOrderCreateDTO, TradeOrderAddressDTO, TradeOrderPageQueryDTO, TradeOrderPlatformPageQueryDTO, TradeOrderPayDTO, TradeOrderShipDTO |
-| `vo` | TradeCartItemVO；**订单（待实现）**：TradeOrderVO, TradeOrderPageVO |
+| `dto` | TradeCartItemAddDTO, TradeCartItemIdsDTO, TradeCartItemUpdateDTO, TradeCartSelectDTO；订单：TradeOrderCreateDTO, TradeOrderAddressDTO, TradeOrderPageQueryDTO, TradeOrderPlatformPageQueryDTO, TradeOrderPayDTO, TradeOrderShipDTO |
+| `vo` | TradeCartItemVO；订单：TradeOrderVO, TradeOrderPageVO |
 
 > ⚠ 订单分页出参刻意叫 `TradeOrderPageVO` 而**不再加一个 `PageResult`**：本仓库已有 `contract.goods.vo` /
 > `contract.store.vo` / admin 本地三份同形同名的 `PageResult`（「别引错包」清单见 [cross-cutting.md](./cross-cutting.md) 第 3 条），
@@ -121,7 +122,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 加购的「查重 → 自增」双向回退、选中状态持久化、Redis 两处失效的可自愈性、
 以及**订单领域模型**的完整口径（状态机 / 配置驱动的生成流水线 / 一单一店拆单 / 两级幂等 / 回滚与保存时机）——
 见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)「三、职责与边界」第 7 节。
-⚠ 订单模型**已建完、接口层尚未实现**：接口的形状见上面第二节的订单表（整列 `待实现`），
+⚠ 订单侧**领域模型与接口层均已落地**：接口的形状见上面第二节的订单表，
 支付金额校验、发货单号校验、状态流转等**行为口径**归
 [`backend/trade-center/README.md`](../../backend/trade-center/README.md)「三、职责与边界」第 7 节。
 本文件只写接口与形状。

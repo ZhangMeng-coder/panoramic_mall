@@ -25,9 +25,10 @@ spring:
         # 配置中心与注册中心同址
         server-addr: @nacos.server-addr@
 
-# trade-center 为下沉纯域（交易域）：不向页面暴露公网路由，仅被 mall-bff 经内部 Feign（/internal/trade/**）调用；
-# 服务端不启用 Feign 客户端扫描。鉴权与权限判定全部收敛在端 BFF（mall-bff 从登录态取 customerId），本服务只做两件事：
-#   1) 执行领域逻辑（购物车 trade_cart_item，全按传入锚点 customerId 过滤）；
+# trade-center 为下沉纯域（交易域）：不向页面暴露公网路由，只被端 BFF 经内部 Feign（/internal/trade/**）调用
+# —— 购物车 ← mall-bff；订单分三侧：顾客侧 ← mall-bff、商户侧 ← store-bff、平台侧 ← admin。
+# 服务端不启用 Feign 客户端扫描。鉴权与权限判定全部收敛在端 BFF（各 BFF 从登录态取锚点 customerId / storeId），本服务只做两件事：
+#   1) 执行领域逻辑（购物车 trade_cart_item、订单 trade_order 等 5 张表，全按传入锚点过滤）；
 #   2) TradeUserIdentityFilter 把网关注入的信任头 X-User-Id / X-User-Type 直取填 UserContext
 #      （不校验 token、不做权限判断；缺头则不填充，审计字段留空）。
 # 数据源/mybatis-plus 由 Nacos 共享配置 datasource-mysql.yml 提供。

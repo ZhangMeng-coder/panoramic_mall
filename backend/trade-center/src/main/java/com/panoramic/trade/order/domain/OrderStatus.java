@@ -12,8 +12,9 @@ package com.panoramic.trade.order.domain;
  * 由 {@link OrderStatusFlow} 装配并在装配期断言「配置覆盖本枚举全部常量」（缺一个即启动失败）。
  * 这样加状态只改配置与枚举，不用回头改 if/else 分支。</p>
  *
- * <p>⚠ 本期是**纯模型**（裁定 D1）：状态只在内存里流转，没有落库、没有接口；真实落库时状态列存
- * {@link #name()}（字符串），两侧文案由端侧按本枚举渲染，不落库。</p>
+ * <p>⚠ 状态**已落库、已有接口**（阶段一，取代原先「纯模型」的 D1 口径）：{@code trade_order.status} 与
+ * {@code trade_order_status_log.status} 两列都存 {@link #name()}（字符串）；两侧文案**不落库**，
+ * 由 {@code TradeOrderVO} 读本枚举下发（{@link #mallLabel} / {@link #storeAdminLabel}），端 BFF 不另写一份。</p>
  */
 public enum OrderStatus {
 
