@@ -13,7 +13,7 @@ typeDirs: backend/store-interface/src/main/java
 > **不暴露公网路由**，只被 store-bff（owner 侧）、admin BFF（platform 侧）与 mall-bff（跨店通用侧）经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 23 个接口**（owner 13 + platform 8 + 跨店通用 2）。
+**共 26 个接口**（owner 13 + platform 8 + 跨店通用 2 + 交易协作 3）。
 
 ## 一、前缀怎么拼上的
 
@@ -47,6 +47,9 @@ typeDirs: backend/store-interface/src/main/java
 | unlockStoreGoods | POST | /goods/platform/spu/{id}/unlock | Long | void | StoreClient.java:232 | GoodsController.java:215 | ShopGoodsBffService(admin) |  |
 | listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:239 | ShopController.java:89 | ShopGoodsBffService(admin) |  |
 | crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | StoreClient.java:199 | GoodsController.java:173 | CatalogBffService(mall-bff) |  |
+| tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | List<StoreGoodsSkuSnapshotVO> | — | — | GoodsQueryAdapter(trade-center) | 待实现 |
+| deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | boolean | — | — | StockAdapter(trade-center) | 待实现 |
+| revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | void | — | — | StockAdapter(trade-center) | 待实现 |
 
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`storeId`**（owner 侧数据权限锚点），后面的是 `id` / `spuId` / `skuId`。
 > 例：`storeGoodsDetail` 的 `Long, Long` = `storeId, id`；`updateStoreGoodsSkuShelf` 的 `Long, Long, Long, DTO` = `storeId, spuId, skuId, dto`。
@@ -54,13 +57,14 @@ typeDirs: backend/store-interface/src/main/java
 > 检查器**不核对行号**（只核对路径 / 方法 / 权限串），故文件里增删几行就会整体偏移——
 > 2026-09-21 按当时的真实行号统一校准过一次，改动这两个文件时顺手带一下即可。
 
-## 三、owner / platform / 跨店通用 三侧（**分流由「调哪一侧」决定，不由域内判断**）
+## 三、owner / platform / 跨店通用 / 交易协作 四侧（**分流由「调哪一侧」决定，不由域内判断**）
 
 | 侧 | 条数 | 方法 |
 |---|:--:|---|
 | **owner** | 13 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock |
 | **platform** | 8 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, platformSpuBatch, lockStoreGoods, unlockStoreGoods, listShopOptions |
 | **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets |
+| **交易协作**（无锚点，调用方 = trade-center） | 3 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder |
 
 owner 侧**带 `storeId`**（只作用于「id == store_id 的店」，调用方 store-bff）；platform 侧**不带**（全量，
 调用方 admin BFF，其中 `platformStoreGoodsDetail` / `platformSpuBatch` 另被 mall-bff 消费——
@@ -68,6 +72,11 @@ owner 侧**带 `storeId`**（只作用于「id == store_id 的店」，调用方
 域只按传入条件过滤，**限定条件全由调用方自设**。域内**没有** `assertOwner` / `requirePlatformAdmin`
 之类的断言，**谁在什么权限下能调哪一侧完全是端 BFF 的职责**。跨店侧返回的 VO 是**管理端超集**，
 C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutting.md) 第 17、19、20 条。
+
+**交易协作侧**是第四侧：调用方是**域**（trade-center）而不是端 BFF，路径子段天然带 `trade` 以示区分。
+它不复用「跨店通用」——那条的语义是**查询**、调用方是端 BFF；也不塞进 `platform`（那条写死在管理端）。
+⚠ 该侧的存在使 store 域首次被**域间**调用，打破了「域只依赖自己的 `<域>-interface`」的结构隔离，
+是**唯一登记的跨域依赖例外**（见 [cross-cutting.md](./cross-cutting.md) 第 14 条与第 22 条）。
 
 ## 四、形状规则
 
@@ -81,8 +90,8 @@ C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutt
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO |
-| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsSkuBatchQueryDTO, StoreStockDeductDTO |
+| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO, StoreGoodsSkuSnapshotVO |
 
 > ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem`（**跨域共享形状**，不在上表清单里），`contract.goods.dto`
 > 下有同形同名的孪生类，逐字段映射时**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
