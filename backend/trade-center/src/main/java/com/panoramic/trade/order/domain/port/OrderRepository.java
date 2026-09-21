@@ -36,6 +36,16 @@ public interface OrderRepository {
      * <p>⚠ {@code requestId} 为空则只写订单、不记映射（这次提交不做请求级去重）；
      * 同一 {@code customerId + requestId} 已有记录时**保留最先那条**——「首次那批」才是唯一凭证。</p>
      *
+     * <p>⚠ <b>并发下的已知缺口（本期有意不修，留给落库期）</b>：调用方是
+     * 「先 {@link #findSubmission} → 再一路下单扣库存 → 最后 {@link #saveSubmission}」的 check-then-act。
+     * 两个线程同时提交同一个 {@code customerId + requestId}（双击、超时重试——正是幂等要挡的那类）会**都**错过
+     * 查询、各自生成单号扣库存，而这里只能留下一批：另一批订单成了「一级幂等永远取不到的孤儿单」，
+     * 而 {@code @GlobalTransactional} 也挡不住它——那不是回滚能解决的问题，是**键没被独占**。</p>
+     *
+     * <p>真实实现必须把 {@code (customer_id, request_id)} 定成**唯一键**、并把「占用幂等键」提到
+     * <b>执行业务之前</b>（先占键 → 再下单；占不到就失败或回读首批）。⚠ 本期端口是「查 → 做 → 写」三段，
+     * **表达不了「先占键」**，故落库时**不要照抄这个形状**。</p>
+     *
      * @param submission 待写入的提交记录（订单 + 幂等键）
      */
     void saveSubmission(OrderSubmission submission);

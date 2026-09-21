@@ -33,8 +33,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>⚠ 第一级返回的是「首次那次提交返回过的**整批**」，条数与订单号都要逐一致：
  * 一批里可能含指纹命中的复用笔（它们的 requestId 属于上一次提交），故凭证只能是那次提交的记录本身，
- * 不能是「按 requestId 查出来的订单行」。另有两条边界必须钉住：整批重放（含复用笔）与
- * 「requestId 的作用域是顾客内」——后者错法的后果是把别人的订单交给当前顾客。</p>
+ * 不能是「按 requestId 查出来的订单行」。另有四条边界必须钉住：整批重放（含复用笔）、
+ * 「整批全是复用笔」时**仍要写记录**、「同一 requestId 换内容复用」返回的仍是首批，
+ * 以及「requestId 的作用域是顾客内」——最后一条错法的后果是把别人的订单交给当前顾客。</p>
  *
  * <p>⚠ 时间窗口的边界是**闭区间**（{@code createTime >= since}）：窗口长度那一刻算窗口内。
  * 边界必须有用例钉住，否则「临界 1 秒」的行为只能靠读代码猜。</p>
@@ -177,6 +178,47 @@ class OrderIdempotencyTest {
         assertThat(second.get(0)).isSameAs(first.get(0));
         assertThat(orderRepository.count()).isEqualTo(1);
         assertThat(stockPort.outboundRecords()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("整批全是复用笔（本次一笔都没新建）→ 记录仍要写下，重放原样返回整批")
+    void allReusedBatchStillRecordsTheSubmission() {
+        List<OrderModel> first = coordinator.create(
+                command(11L, OrderSource.CART, "req-1", line(SKU_A, 2), line(SKU_B, 1)));
+        assertThat(first).hasSize(2);
+
+        // req-2 内容与 req-1 逐字相同 → 两笔都指纹命中，本次 created 为空
+        List<OrderModel> allReused = coordinator.create(
+                command(11L, OrderSource.CART, "req-2", line(SKU_A, 2), line(SKU_B, 1)));
+        assertThat(allReused).containsExactlyElementsOf(first);
+
+        // ⚠ 记录里必须有 req-2 这条：若把它「优化」成「created 为空就不写」，重放会查不到记录、返回空批
+        assertThat(orderRepository.findSubmission(11L, "req-2")).get()
+                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(first));
+        assertThat(coordinator.create(command(11L, OrderSource.CART, "req-2", line(SKU_A, 2), line(SKU_B, 1))))
+                .containsExactlyElementsOf(first);
+        // 复用不落库、不扣库存：全程只有首批那两笔与那一次扣减
+        assertThat(orderRepository.count()).isEqualTo(2);
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 2);
+        assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK - 1);
+        assertThat(stockPort.outboundRecords()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("同一 requestId 被换内容复用（客户端 bug）→ 仍返回首次那批，新内容不下单（已登记的口径）")
+    void sameRequestIdWithDifferentContentReturnsTheFirstBatch() {
+        List<OrderModel> first = coordinator.create(command(11L, OrderSource.CART, "req-1", line(SKU_A, 2)));
+
+        // 同一个键、换了商品：一级幂等先命中，故返回首批，B 店那笔根本不会被建出来
+        List<OrderModel> second = coordinator.create(command(11L, OrderSource.CART, "req-1", line(SKU_B, 1)));
+
+        assertThat(second).containsExactlyElementsOf(first);
+        assertThat(second.get(0).getOrderNo()).isEqualTo(first.get(0).getOrderNo());
+        // 副作用为零：B 店既没下单也没扣库存，凭证也没被新内容顶掉
+        assertThat(orderRepository.count()).isEqualTo(1);
+        assertThat(stockPort.available(SKU_B)).isEqualTo(STOCK);
+        assertThat(orderRepository.findSubmission(11L, "req-1")).get()
+                .satisfies(submission -> assertThat(submission.orders()).containsExactlyElementsOf(first));
     }
 
     // ── 第二级：指纹 + 时间窗口 ─────────────────────────────────────────────────

@@ -19,11 +19,17 @@ import java.util.List;
  *
  * @param requestId  调用方带来的幂等键（可为 null：为空表示这次提交不做请求级去重，也就不记映射）
  * @param customerId 下单顾客 id（与 {@code requestId} 一起构成查询键）
- * @param orders     这次提交返回的**整批**订单（含复用笔），顺序与首次返回一致
+ * @param orders     这次提交返回的**整批**订单（含复用笔），顺序与首次返回一致。⚠ 存的是**活引用不是快照**（见下）
  */
 public record OrderSubmission(String requestId, Long customerId, List<OrderModel> orders) {
 
-    /** 防御性拷贝：这份记录一旦落下就是「首次返回了什么」的唯一凭证，不该被外部改到 */
+    /**
+     * ⚠ 只拷**列表**、不拷元素：这份记录持有的是那批订单的**活引用**，不是当时的快照。
+     *
+     * <p>于是重放返回的是它们的**当前**状态（订单生命周期会自己推进，重放看到最新真相，不会拿到过期状态），
+     * 代价是「这份记录是唯一凭证」只成立于**没人改它**的前提下：返回值与仓库里是同一批对象，
+     * 谁改了返回值就等于改了凭证。故**调用方不得修改**返回的订单，本类也不自称快照。</p>
+     */
     public OrderSubmission {
         orders = orders == null ? List.of() : List.copyOf(orders);
     }

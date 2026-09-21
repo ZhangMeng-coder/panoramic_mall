@@ -21,6 +21,13 @@ import java.util.Optional;
  * <p>⚠ 写入时**按单号幂等**（已存在即忽略）：一次提交的整批里可能含复用笔（上一次提交留下的订单），
  * 它们已经在这个列表里了，再插一遍就会把订单条数、指纹判重、单号查重全部搅乱。</p>
  *
+ * <p>⚠ <b>只保证单线程安全，并发下有计划内的缺口</b>：每个方法各自同步，但
+ * 「{@link #findSubmission} → 下单扣库存 → {@link #saveSubmission}」这段跨方法的过程**不是原子的**。
+ * 两个线程同时提交同一个 {@code customerId + requestId} 时会各下各的单，而 {@code putIfAbsent} 只留下首批，
+ * 另一批订单就成了「一级幂等永远取不到的孤儿单」（库存已扣、重放却看不到它）。
+ * 这是**有意不在这里修**的：修法是「占用幂等键先于执行业务」+ 键上的唯一约束，属**落库期**的设计，
+ * 见 {@link OrderRepository#saveSubmission} 的接口注释。本实现是端口语义的占位，不是并发安全的参照实现。</p>
+ *
  * <p>⚠ {@link #findByFingerprint} 的窗口过滤是**闭区间**（{@code createTime >= since}）：
  * 窗口的边界口径只有一处定义（在 {@code OrderRepository} 的接口注释里），本类只如实实现它，
  * 不在这里另立一套「到底含不含边界」的算法。</p>
