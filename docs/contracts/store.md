@@ -15,17 +15,10 @@ typeDirs: backend/store-interface/src/main/java
 
 **共 22 个接口**（owner 13 + platform 7 + 跨店通用 2）。
 
-## 一、前缀怎么拼上的（⚠ 容易踩）
+## 一、前缀怎么拼上的
 
-`@FeignClient(path = "/internal/store")` **不是** context-path —— store 的 `application.yml` 里没有
-context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@RequestMapping` 里写死的字面量：
-
-| Controller | 类级 `@RequestMapping` | 行号 |
-|---|---|---|
-| `ShopController` | `/internal/store/shops` | :31 |
-| `GoodsController` | `/internal/store/goods` | :44 |
-
-下表「路径」列是**去掉 `/internal/store` 前缀后**的部分。改前缀要**同时**改 Feign 客户端与两个 Controller。
+本域前缀 = **`/internal/store`**；拼法（不是 context-path、由 Controller 类级 `@RequestMapping`
+写死）见 [README.md](./README.md) 的「内部 Feign 的「路径」前缀怎么来的」。
 
 ## 二、接口清单
 
@@ -57,38 +50,25 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 > 「入参」列里**多个 `Long` 同时出现**时，第一个是 **`storeId`**（owner 侧数据权限锚点），后面的是 `id` / `spuId` / `skuId`。
 > 例：`storeGoodsDetail` 的 `Long, Long` = `storeId, id`；`updateStoreGoodsSkuShelf` 的 `Long, Long, Long, DTO` = `storeId, spuId, skuId, dto`。
 
-## 三、owner / platform / 跨店通用 三侧（**分流由"调哪一侧"决定，不由域内判断**）
+## 三、owner / platform / 跨店通用 三侧（**分流由「调哪一侧」决定，不由域内判断**）
 
-| 侧 | 条数 | 方法 | 特征 |
-|---|:--:|---|---|
-| **owner** | 13 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock | **带 `storeId`**，只作用于「id == store_id 的店」；调用方是 store-bff |
-| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions | **不带 `storeId`**，全量；调用方主要是 admin BFF（权限由 admin 的 `@PreAuthorize` 把关），其中 `platformStoreGoodsDetail` **另被 mall-bff 的 `CatalogBffService` 消费**（C 端商品详情，见下条） |
-| **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets | **不带 `storeId`、也不带任何端别约束**：域只按传入条件过滤，**限定条件全由调用方自设**。`pageStoreGoodsCrossShop` 由 admin BFF 与 mall-bff 共用、`crossShopFacets` 目前只有 mall-bff 消费，差别只在传入条件——C 端固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`（只出已审核通过店铺的在售未锁定商品），管理端不传这三个约束、走全量 |
+| 侧 | 条数 | 方法 |
+|---|:--:|---|
+| **owner** | 13 | mineShop, saveShop, submitShop, pageStoreGoods, storeGoodsDetail, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock |
+| **platform** | 7 | pageShops, shopDetail, auditShop, platformStoreGoodsDetail, lockStoreGoods, unlockStoreGoods, listShopOptions |
+| **跨店通用**（无锚点） | 2 | pageStoreGoodsCrossShop, crossShopFacets |
 
-> 域内**没有** `assertOwner` / `requirePlatformAdmin` 之类的断言（已随去鉴权一并删除）。
-> 谁在什么权限下能调哪一侧，**完全是端 BFF 的职责**。
-> ⚠ 跨店通用侧返回的 VO 是**管理端超集**（含 `lockUser` / `lockReason` / `lockTime` 等），
-> **C 端输出前必须由端 BFF 裁剪**（见 [cross-cutting.md](./cross-cutting.md) 第 19 条）。
->
-> ⚠ **platform 侧 `platformStoreGoodsDetail` 的第二个消费者是 mall-bff**（C 端商品详情，`CatalogBffService#detail`）：
-> 它拿到的是**管理端超集**（`lockStatus` / `lockReason` / `lockUser` / `lockTime` / `goodsSpuId` /
-> `centerVersion` / 含已下架的全部 SKU），**读 ≠ 判断**——域侧照旧不做任何 C 端裁决，
-> 由 mall-bff 自己按与列表**同一不变量**重判可见性（`shelfStatus=1` + `lockStatus=0` + 店铺 `status=2`，
-> 任一不满足回 C 端 404「商品不存在或已下架」），并**逐字段手工映射裁剪**成 C 端形状
-> （不用 BeanUtils 拷贝：域 VO 日后加字段不会自动漏到前台）。契约见 [mall-bff.md](./mall-bff.md)。
-> ⚠ **下游故障 ≠ 不可见**：`BffFeignCall` 把熔断 / 连接失败降级成 `ServiceException(500, …)`，
-> mall-bff 只把**业务 4xx**（400/403/404）转成「不存在或已下架」，其余照抛——
-> 否则一次下游抖动会被伪装成「这商品下架了」。
+owner 侧**带 `storeId`**（只作用于「id == store_id 的店」，调用方 store-bff）；platform 侧**不带**（全量，
+调用方 admin BFF，`platformStoreGoodsDetail` 另被 mall-bff 消费）；跨店通用侧**连端别约束也不带**——
+域只按传入条件过滤，**限定条件全由调用方自设**。域内**没有** `assertOwner` / `requirePlatformAdmin`
+之类的断言，**谁在什么权限下能调哪一侧完全是端 BFF 的职责**。跨店侧返回的 VO 是**管理端超集**，
+C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutting.md) 第 17、19、20 条。
 
 ## 四、形状规则
 
-- ✅ **不包 `RespData`**；✅ **无 `@PreAuthorize`**；错误走 `{code,msg}` + 真实 HTTP 状态。
-- ⚠ **跨店分页与筛选聚合走 `POST + @RequestBody`**（`pageStoreGoodsCrossShop` / `crossShopFacets`），而非 owner 侧的 `GET + @SpringQueryMap` ——
-  两者的入参都含集合（`List<Long> categoryIds` / `brandIds`），走 query 会在客户端被序列化成 `xxx[]=1` 形状；
-  `POST + body` 规避 Feign `@SpringQueryMap` 对集合字段序列化口径不确定的风险。
-- ⚠ **facets 两个维度互斥地排除自身**：`facets` 返回分类与品牌两个维度，分类维度不受**已选分类**影响、
-  品牌维度不受**已选品牌**影响（`facetBy` 只在另一维度施加筛选），故选中某项后同维度选项不会消失。
-- ⚠ 缺失行**不抛异常**：`mine` / 详情类接口查不到时的行为见模块 README 的边界说明。
+- 形状（不包 `RespData` / 不鉴权 / `{code,msg}` + 真实 HTTP 状态）与跨店通用侧的 `POST + @RequestBody` 口径、
+  facets 两维互斥，见 [cross-cutting.md](./cross-cutting.md) 第 2、6、13、18 条。
+- ⚠ 缺失行**不抛异常**：`mine` / 详情类接口查不到时的行为见 [`backend/store/README.md`](../../backend/store/README.md) 的边界说明。
 
 ## 五、类型所在包（全部在 `store-interface`，两端引用同一份）
 
@@ -99,10 +79,8 @@ context-path（只有 `server.port: 8083`）。前缀是 Controller 类级 `@Req
 | `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO |
 | `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO |
 
-> ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem` 一份（不在上表清单里，因为它们是**跨域共享形状**）：
-> 2026-09-19 拆分前，本包 6 个类 + store 域实现直接引 `contract.goods.dto` 的那一份；拆分时切成
-> 各域自持，store 侧用**本包这份**。`contract.goods.dto` 下有同形同名的孪生类，由 store-bff / mall-bff
-> 逐字段映射时**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
+> ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem`（**跨域共享形状**，不在上表清单里），`contract.goods.dto`
+> 下有同形同名的孪生类，逐字段映射时**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
 
 > 「子类扩字段」先例：`StoreGoodsSpuPlatformDetailVO extends StoreGoodsSpuDetailVO`（platform 侧追加 `storeName` / `categoryPath`），
 > 避免为平台侧污染 owner 侧 VO。

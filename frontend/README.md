@@ -1,34 +1,23 @@
 # 全景商城 — 前端
 
-前端按项目拆分为三个子项目（各自独立 `package.json` / `node_modules`，互不依赖）：
+`frontend/` 下按端拆成**三个互相独立的前端工程**（各自 `package.json` / `node_modules`，互不依赖）：
 
-| 目录 | 说明 | 技术栈 |
+| 目录 | 职责 | 端口 |
 |---|---|---|
-| [admin/](./admin/) | 后端管理项目（商品分类/品牌/SPU-SKU、用户/角色/权限、店铺审核） | Vue 3 + Vite + **TypeScript** + Element Plus |
-| [store/](./store/) | 商城店铺端（店主注册登录 + 店铺信息维护 + 在售商品管理；订单/库存占位） | Vue 3 + Vite + **TypeScript** + Element Plus |
-| [mall/](./mall/) | 商城前台（用户购物端）——**账号已接入 mall-bff**（登录 / 注册 / 退出 / me）+ **商品浏览已接 catalog 三接口**（搜索区 / 分类展示区 / 商品列表页）；首页热门商品列表仍**静态 mock** | Vue 3 + Vite + **TypeScript**（Element Plus 仅列为依赖，页面不使用） |
+| [admin/](./admin/) | 平台管理后台：分类 / 品牌 / 标准商品（SPU-SKU）/ 用户 / 角色 / 权限 / 店铺列表 / 店铺商品（跨店） | 5173 |
+| [store/](./store/) | 店主端：注册登录、店铺信息与审核状态、在售商品与 SKU、库存 | 5174 |
+| [mall/](./mall/) | C 端前台（顾客）：首页、搜索与分类商品、商品详情、账号与收货地址 | 5175 |
 
-> **三端技术形态已统一为 Vue 3 + Vite + TypeScript + axios**（2026-09-14 拉平）：均开启 `strict`，`npm run build` = `vue-tsc --noEmit && vite build`，**类型不过即构建失败**；另有 `npm run type-check` 只跑类型检查。HTTP 客户端一律 axios，各自只有 `src/api/request.ts` 一个入口（不存在 `fetch` / `XMLHttpRequest` 直调）。
->
-> 三份 `tsconfig.json` 内容一致，**唯一差异**是 admin / store 的 `compilerOptions.types` 多一项 `element-plus/global`（这两端在 `main.ts` 里全局注册了 Element Plus，模板里的 `<el-*>` 才有类型；mall 不注册 EP 故只需要 `vite/client`）。新增 tsconfig 选项时**两端同改**，不要各自漂移。
+三端**技术形态一致**（Vue 3 + Vite + TypeScript + axios）——写法、门禁（类型检查即构建门禁）与共同约定见根目录 [CLAUDE.md](../CLAUDE.md) 的「前端三端统一技术形态」；mall 的视觉与结构另是一套受约束的基准，见同一文件的「mall 前台（用户端）视觉与结构约定」。
+
+**页面契约的唯一裁决点是 [docs/contracts/](../docs/contracts/README.md)**：写 / 改前端只照表写，不照后端代码写。
 
 ## 本地开发
 
 ```bash
-# 管理后台（默认端口 5173）
-cd admin && npm install && npm run dev
-
-# 商城店铺端（默认端口 5174）
-cd store && npm install && npm run dev
-
-# 商城前台（默认端口 5175）
-cd mall && npm install && npm run dev
+cd admin && npm install && npm run dev   # → http://localhost:5173
+cd store && npm install && npm run dev   # → http://localhost:5174
+cd mall  && npm install && npm run dev   # → http://localhost:5175
 ```
 
-三个端均通过 Vite dev proxy 转发至网关 `http://localhost:8080`（admin：`/admin`、`/goods`、`/store`、`/discovery`；store：`/store`、`/auth`；mall：`/mall` —— 后端 **mall-bff（8085）** 的取码/注册/登录/退出/me 共 5 条账号接口**已接入 mall 的登录与注册页**，catalog 三接口（分类树 / 商品分页 / 筛选聚合）**已接入搜索区、分类展示区与商品列表页**；首页热门商品列表仍为静态 mock）。
-
-> 管理后台与店铺端共用同一套设计令牌（`src/styles/tokens.css` 色板 + Element Plus 主题映射），明暗主题各自持久化（`pm-admin-theme` / `pm-store-theme`）。
->
-> **商城前台（mall）是另一套令牌，刻意不同源** —— C 端促销风橙红色板，只有 `frontend/mall/src/styles/tokens.css` 一个换肤入口，与上面两端的靛蓝后台令牌不通用；前台也不引 Element Plus 样式，**保持自己单独一套风格**。
->
-> ⚠ mall 前台的视觉与结构是**受约束**的基准，见根目录 [CLAUDE.md](../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」。要新增区块或改风格，先在 `frontend/mall` 工程里改好、定了，再往外铺。
+三端都经 Vite dev proxy 把本端前缀转发到 API 网关 `http://localhost:8080`（端口与前缀逐个写在各自 `vite.config.ts` 里）；跑起来前需先起网关与该端的端 BFF。各端构建 / 类型检查脚本同名，见 [CLAUDE.md](../CLAUDE.md) 的「前端三端统一技术形态」。

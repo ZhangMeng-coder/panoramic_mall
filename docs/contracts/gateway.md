@@ -11,7 +11,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 ## 一、路由
 
-配置位置：`gateway/src/main/resources/application.yml:31-50`（仅有 3 条路由，无其他）
+配置位置：`gateway/src/main/resources/application.yml:31-51`（仅有 3 条路由，无其他）
 
 | route id | 断言路径 | 转发目标 | 过滤器 |
 |---|---|---|---|
@@ -29,19 +29,12 @@ config: backend/gateway/src/main/resources/application.yml
 
 | 项 | 值 | 位置 |
 |---|---|---|
-| 配置键 | `panoramic.gateway.bff-services` | `application.yml:61` |
+| 配置键 | `panoramic.gateway.bff-services` | `application.yml:65` |
 | 当前值 | `admin,store-bff,mall-bff`（逗号分隔，**无空格**） | 同上 |
 | 强制者 | `BffRouteGuardFilter` | `gateway/filter/BffRouteGuardFilter.java` |
 
-`BffRouteGuardFilter` 的判定语义（改动前务必读完）：
-
-| 行为 | 说明 | 位置 |
-|---|---|---|
-| **默认拒绝** | 白名单配置为空 = **拒绝一切**，不是放行一切 | :41-46 |
-| 未命中路由 → **放行** | 取不到 `GATEWAY_ROUTE_ATTR` 时直接放行（故 `/discovery` 不受本守卫管） | :51-54 |
-| 放行条件 | `scheme == lb` **且** `uri.getHost()` 在白名单内 | :57-59 |
-| 其余 | 一律 403，响应体与 `RespData` 同构 `{"code":403,"msg":"..."}` | :60-62, :75-82 |
-| 执行顺序 | `getOrder() == -200`，**先于**鉴权 `AuthGlobalFilter`（-100） | :69 |
+> `BffRouteGuardFilter` 的判定语义（改动前务必读完）见
+> [`backend/gateway/README.md`](../../backend/gateway/README.md) 的「`BffRouteGuardFilter` 判定语义」。
 
 ## 三、鉴权白名单（**两处各写一份**）
 
@@ -49,7 +42,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 ### 网关侧
 
-`gateway/src/main/resources/application.yml:66` → `panoramic.auth.whitelist-paths`：
+`gateway/src/main/resources/application.yml:67` → `panoramic.auth.whitelist-paths`：
 
 | 路径 | 说明 |
 |---|---|
@@ -64,11 +57,8 @@ config: backend/gateway/src/main/resources/application.yml
 
 ### 服务本地侧
 
-| 服务 | 路径 | 位置 |
-|---|---|---|
-| admin | `/auth/login` | `admin/src/main/resources/application.yml` |
-| store-bff | `/auth/login`, `/auth/register` | `store-bff/src/main/resources/application.yml` |
-| mall-bff | `/auth/login`, `/auth/register`, `/auth/sms-code`, `/catalog/categories` | `mall-bff/src/main/resources/application.yml` |
+各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（**服务侧不带前缀**）——条目直接看
+配置文件，抄一份到这里只会漂移。
 
 ⚠ 只改一处 → 要么登录接口被拦（登不进去），要么本应鉴权的接口裸露到公网。
 

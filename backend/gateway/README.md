@@ -22,9 +22,19 @@
 ⚠ `StripPrefix=1` 意味着**网关侧路径带前缀、服务侧路径不带**。这条差异贯穿整个白名单体系，也是「两处白名单写法不同」的根因。
 
 ### 2. 公网入口白名单
-`BffRouteGuardFilter` 强制校验 `panoramic.gateway.bff-services`，**名单外服务（含业务域 goods-center / store）经网关一律 403**。语义要点：**空配置 = 拒绝一切**（默认拒绝，不是放行）；未命中路由直接放行；执行顺序 `-200` **先于**鉴权 `-100`。
+`BffRouteGuardFilter` 强制校验 `panoramic.gateway.bff-services`，**名单外服务（含业务域 goods-center / store）经网关一律 403**。判定语义见下。
 
 域服务只由 BFF 经注册中心内部 Feign 调用，**不给域服务开公网路由**（历史 `/goods/** → goods-center` 已随下沉移除）。
+
+#### `BffRouteGuardFilter` 判定语义（来源：`docs/contracts/gateway.md`；改动前务必读完）
+
+| 行为 | 说明 |
+|---|---|
+| **默认拒绝** | 白名单配置为空 = **拒绝一切**，不是放行一切 |
+| 未命中路由 → **放行** | 取不到 `GATEWAY_ROUTE_ATTR` 时直接放行（故 `/discovery` 不受本守卫管） |
+| 放行条件 | `scheme == lb` **且** `uri.getHost()` 在白名单内 |
+| 其余 | 一律 403，响应体与 `RespData` 同构 `{"code":403,"msg":"..."}` |
+| 执行顺序 | `getOrder() == -200`，**先于**鉴权 `AuthGlobalFilter`（-100） |
 
 ### 3. 鉴权透传
 `AuthGlobalFilter` 对非白名单路径：验 JWT 签名/有效期 → 解析 `type` claim → 校验 Redis `panoramic:login:{type}:{userId}` 登录态仍有效 → 注入 `X-User-Id` / `X-User-Type` 给下游。

@@ -2,7 +2,7 @@
 
 全景商城**店铺业务域**（Servlet 技术栈，2026-09-07 由原 `store-center` 拆分而来），端口 **8083**。
 
-本域持**店铺资料 `store_shop`（含审核状态机）** 与 **店铺在售商品 `store_goods_spu` / `store_goods_sku`**，不带店主登录、不带页面编排。
+本域持**店铺资料 `store_shop`（含审核状态机）** 与 **店铺在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock`**，不带店主登录、不带页面编排。
 
 ## 一、架构位置
 
@@ -10,19 +10,15 @@
 
 | 方向 | 对象 | 通道 |
 |---|---|---|
-| 被谁调 | store-bff（**owner 侧**：我的店铺、店铺商品） | `store-interface` 的 `StoreClient`，带熔断降级 |
+| 被谁调 | store-bff（**owner 侧**：我的店铺、店铺商品、库存） | `store-interface` 的 `StoreClient`，带熔断降级 |
 | 被谁调 | admin BFF（**platform 侧**：店铺管理审核、店铺商品跨店管理与锁定） | 同上 |
-| 被谁调 | mall-bff（**跨店通用侧**：C 端商品分页与筛选聚合，`/goods/cross-shop/spu/page` + `/goods/facets`） | 同上 |
+| 被谁调 | mall-bff（**跨店通用侧**：C 端商品分页、筛选聚合与详情） | 同上 |
 | 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |
 
-拆分后的归属边界：
+- 店主账号 `store_user` 归 **store-bff**（见 [`../store-bff/README.md`](../store-bff/README.md)）；本域**不持店主账号**，平台侧也不与店主账号联查（D6）
+- 本域只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链与 Redis；⚠ 域端口只在内网可达是**安全前提**，本域不做鉴权，防线在网络层、不在应用层
 
-- 店主账号 `store_user` 归 **store-bff**（见 [`../store-bff/README.md`](../store-bff/README.md)）
-- 本域**不持店主账号**，平台侧也不与店主账号联查（D6）
-- 本域只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链与 Redis
-- ⚠ 域端口只在内网可达是**安全前提**：本域不做鉴权，防线在网络层，不在应用层
-
-> 📋 对外接口清单（owner / platform / 跨店通用 三侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)。
+> 📋 对外接口清单（owner / platform / 跨店通用 三侧）见 [`docs/contracts/store.md`](../../docs/contracts/store.md)（条数与落地状态以该表为准，本 README 不另记）。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
 
 ## 二、实体标记
@@ -37,9 +33,9 @@
 | `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `locked_stock` / `warn_stock`；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：审计列形状、平台锁定四列 + `idx_lock_status` 的**最终形状**都已写进该文件，不再保留中间迁移脚本。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
-字段沿用 common `BaseEntity` 约定：逻辑删除 + 创建/更新时间与操作人（MP 自动填充）——操作人 `create_user`/`update_user` 为 **`VARCHAR(32)`**，值为 **`UserType:UserId`**（如 `store:5`）；`audit_by` 是审核人留痕列（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。⚠ 例外：`audit_by` 是**审核人留痕列**（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
 
 ## 三、职责与边界
 
@@ -47,7 +43,7 @@
 
 - **账号店同 ID（一人一店）**：`store_shop.id == 店主账号 id`（`IdType.INPUT`，建店时由 store-bff 带入账号 id）；已删除 `owner_user_id` 列与 `uk_owner_user_id`，天然一人一店。
 - **store_id 通用数据权限（D5）**：owner 侧方法必带 `store_id`、只作用于「store_id == 传入值」的行；platform 侧方法不带 `store_id`、全量。
-  - 在售商品（`store_goods_*`）**owner 侧以「id + store_id」双条件取行**（`StoreGoodsSpuServiceImpl#getOwnedOrThrow`）：他人商品与不存在的商品**同样报「商品不存在」**，不泄露存在性；SKU 不持 `store_id`，先校验其 SPU 归属再操作。
+  - 在售商品（`store_goods_*`）owner 侧以「id + store_id」双条件取行（`StoreGoodsSpuServiceImpl#getOwnedOrThrow`）：他人商品与不存在的商品**同样报「商品不存在」**，不泄露存在性；SKU 不持 `store_id`，先校验其 SPU 归属再操作。
   - **owner / platform 的分流由「哪个 BFF 调哪一侧接口」决定，域内不做身份断言**（原 `assertOwner` / `requirePlatformAdmin` 已删）：store-bff 调 owner 侧并从登录态取 store_id，admin 调 platform 侧并由 `@PreAuthorize` 把关。
   - `audit_by` 直取 `X-User-Id` 仅留痕（不与平台账号联查，D6）。
 
@@ -63,74 +59,58 @@
 | 2 已通过 | ❌ 信息锁定只读 | ❌ 无需提交 | — |
 | 3 已驳回 | 回到草稿(0) 清留痕 | 重新提交(1) | — |
 
-- **提交即校验完整资质**：联系人/电话/省市区+详细地址/营业执照名称/统一社会信用代码/执照照 均必填；保存草稿不强制
-- **审核只对「待审核(1)」做条件更新**（`update ... where status=1`）：并发/重复审核时更新 0 行即拒绝，防重复审核
-- 驳回必须填原因（`audit_remark`）；审核人/审核时间（`audit_by`/`audit_time`）仅留痕记录，不与平台用户表联查
-- 编辑驳回回草稿/驳回重提时把提交/审核留痕列显式写 NULL（MP update 默认跳过 null 列，实体置空不够）
+- **提交即校验完整资质**（联系人/电话/省市区+详细地址/营业执照名称/统一社会信用代码/执照照均必填），保存草稿不强制
+- **审核只对「待审核(1)」做条件更新**（`update ... where status=1`）：并发/重复审核时更新 0 行即拒绝
+- 驳回必须填原因（`audit_remark`）；审核人/时间（`audit_by`/`audit_time`）仅留痕，不与平台用户表联查
+- 编辑驳回回草稿/驳回重提时把提交/审核留痕列**显式写 NULL**（MP update 默认跳过 null 列，实体置空不够）
 - ⚠ **审核门禁不在域内做**：店铺 `status == 2`（已通过）的判断由端 BFF 编排时前置
 
 ### 3. 店铺在售商品
 
-字段与中台标准商品同构，SKU 额外带 `price`（**不建库存列**）；分类/品牌存「id 引用 + 名称快照」，保存时**不回查中台**。
+字段与中台标准商品同构，SKU 额外带 `price`；分类/品牌存「id 引用 + 名称快照」，保存时**不回查中台**；分类**全路径**域内不解析（域不持分类表），由端 BFF 读时调 goods-center 补全。
 
 上下架规则收敛为一句话：**SPU 上架 ⟺ 至少一个 SKU 上架**（不变量，无独立 SPU 上下架入口）。
 
-分类**全路径**（如「服饰 / 男装 / T恤」）**域内不解析**——域不持分类表，由端 BFF 读时调 goods-center 批量路径接口补全（本域只保证快照名可用）。
+规则：
 
-| # | 规则 |
-|---|---|
-| R1 | 新增：SPU 与全部 SKU 一律下架态落库；每个 SKU `price` 必填且 ≥0.01 |
-| R2/R3 | 上架任一 SKU → SPU 自动上架；SKU 全下架 → SPU 自动下架（由 `refreshDerived` → `refreshShelfStatus` 推导，不手写） |
-| R4 | 已上架 SKU **整行锁死**：规格组合/价格/编码/图片不可改、不可删（整单替换时缺行即拒绝），须先下架 |
-| R5 | 未上架 SKU 可增、可改、可删 |
-| R6 | 存在上架 SKU 时 `spec_config` 只读（防 SKU 组合孤儿） |
-| R7 | 名称/主图/轮播图/详情/分类/品牌任何时候都可改 |
-| R8 | 存在上架 SKU 时拒绝删除 SPU；否则软删 SPU 并**级联软删**其下全部 SKU |
-| R9 | 审核门禁（`status == 2`）**不在域内做**，由端 BFF 前置 |
-| R10 | 中台版本同步（比对 `center_version`、给「同步」按钮）由端 BFF 编排，域只存版本快照 |
-| R11 | owner 侧方法入口以「id + store_id」限定作用域（platform 侧方法不带 store_id、跨店全量） |
-| R12 | **平台锁定**（2026-09-12 新增）：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；仅平台可解锁，解锁不自动恢复上架 |
-| R13 | **最低价推导**（2026-09-17 新增）：`min_price` = 名下**上架且未删** SKU 的最低价；SKU 全下架时清空为 NULL。由 `refreshDerived` → `refreshMinPrice` 推导，不手写 |
-| R14 | **库存锁隔离**（2026-09-19 新增）：库存单独成表 `store_goods_sku_stock`，读写**只碰本表**；不用 `SELECT ... FOR UPDATE`；批量走**单条** `UPDATE ... WHERE sku_id IN (...)`，不循环逐行；读路径一次 `IN` 批量查、无 N+1 不加锁；库存独立写操作**不加外层 `@Transactional`** |
+- **新增**（R1）：SPU 与全部 SKU 一律下架态落库，每个 SKU `price` 必填且 ≥0.01；**未上架 SKU 可增、可改、可删**（R5）
+- **上下架是推导结果**（R2/R3）：上架任一 SKU → SPU 自动上架；SKU 全下架 → SPU 自动下架（`refreshDerived` → `refreshShelfStatus`，不手写）
+- **已上架 SKU 整行锁死**（R4）：规格组合/价格/编码/图片不可改、不可删（整单替换时缺行即拒绝），须先下架；连带**存在上架 SKU 时** `spec_config` 只读（R6，防 SKU 组合孤儿）、SPU 不可删（R8）
+- **可自由改**（R7）：名称/主图/轮播图/详情/分类/品牌任何时候都可改；删 SPU（R8）在无上架 SKU 时软删并**级联软删**其下全部 SKU
+- **最低价推导**（R13）：`min_price` = 名下**上架且未删** SKU 的最低价，SKU 全下架时清空为 NULL（`refreshDerived` → `refreshMinPrice`，不手写）
+- **不在域内的三条**（R9–R11）：审核门禁（`status == 2`）与中台版本同步由端 BFF 编排，owner 侧作用域由「id + store_id」限定（见上「数据权限模型」）
+- **R12** 平台锁定见下「4. 平台锁定规则」；**R14** 库存锁隔离见下「库存口径」
 
 > ⚠ `refreshDerived` 是**推导量统一刷新入口**，内含两个不变量写者：`refreshShelfStatus`（「SPU 上架 ⟺ ≥1 SKU 上架」）与
 > `refreshMinPrice`（「`min_price` = 名下上架未删 SKU 最低价」）。任何时候都不要绕过它直接改 `shelf_status` / `min_price`——包括锁定时的级联下架。
 > ⚠ 两者**各自独立比较**（下架高价 SKU 后上下架不变、最低价却变了），且 `min_price` 可被清成 NULL，
 > 回写只能用 `lambdaUpdate().set(...)`：`updateById` 跳过 null 列，会把「SKU 全下架 → 清空 `min_price`」静默丢掉。
 
-**库存口径（R14，2026-09-19 新增）**：
+**库存口径（R14）**：
 
 - **可用库存 = `stock − locked_stock`**，**C 端展示的一律是可用库存**（`locked_stock` 本期恒 0，待交易域接入后由域写入）；`warn_stock` 仅商户端低库存预警用（NULL = 不预警），**不进 C 端**
-- **库存不参与**「SPU 上架 ⟺ ≥1 SKU 上架」**不变量**（归零不触发任何下架），**也不参与 C 端可见性**（下架 / 平台锁定 / 店铺未过审那三条不变；售罄商品照常可打开，C 端标售罄）
-- **平台锁定期库存同样只读**：owner 侧整行只读由 `assertNotLocked` 域内强制，改库存也在其中
-- **库存独立写不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**唯一例外**是 `replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行）
+- **库存不参与**「SPU 上架 ⟺ ≥1 SKU 上架」**不变量**（归零不触发任何下架），**也不参与 C 端可见性**（售罄商品照常可打开，C 端标售罄）
+- **平台锁定期库存同样只读**（owner 侧整行只读由 `assertNotLocked` 域内强制）
+- **库存独立写操作不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**唯一例外**是 `replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行）
 - 写入点五处：库存页单行改、库存页批量改、新建 SKU 带初始库存、SKU 删除级联删、SPU 删除级联删；**归属校验**（`sku_id → sku.spu_id → spu.store_id`）与「仅新建行采信初始库存」的判定都在 owner 侧编排里做，库存 service 不认识 `store_id`
 
-**跨店通用查询口径（2026-09-17）**：`/goods/cross-shop/spu/page`（分页）与 `/goods/facets`（筛选聚合）**无数据权限锚点**，
-限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**——admin BFF 与 mall-bff 共用，域内不判身份、不做端别分流；
-域侧**不含任何 C 端隐含约束**（C 端那三个固定条件的口径在 mall-bff，见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 17 条）。
-facets **两个维度互斥地排除自身**：分类维度不受已选分类影响、品牌维度不受已选品牌影响（否则选中某项后同维度选项消失）；
-两个维度都按 count 降序、id 升序兜底。
+### 4. 平台锁定规则（R12）
 
-### 4. 平台锁定规则（R12，2026-09-12 新增）
+`store_goods_spu` 的 `lock_status` / `lock_reason` / `lock_user` / `lock_time` 四列即锁定态（**不建独立锁定表**）：
 
-管理后台「店铺商品管理」可对**任意店铺**的商品锁定/解锁（`lock_status` 列，见 `db/schema.sql` 中 `store_goods_spu` 的列定义与文件尾部的幂等补列块）。
-
-| 项 | 口径 |
-|---|---|
-| 锁定写入 | `lock_status=1` + `lock_reason`（必填）+ `lock_user` + `lock_time`；已锁定则拒绝重复操作（条件更新 `where lock_status=0`，防并发） |
-| 自动下架 | 锁定时把名下**已上架** SKU 批量置下架，再由 `refreshDerived` 重推 SPU 为下架（`refreshShelfStatus` 与 `refreshMinPrice` 一并重算）——**不变量不变，仍是唯一入口**，不绕过它直接改 `shelf_status` / `min_price` |
-| 锁定期 owner 侧 | **整行只读**：编辑 / 删除 / SKU 整单替换 / SKU 上下架 一律拒绝（`assertNotLocked`，域内强制，不只靠前端禁用按钮），提示「商品已被平台锁定，不可 X，请联系平台管理员」 |
-| 解锁 | 清空 `lock_reason`/`lock_user`/`lock_time`、`lock_status=0`（**必须 `lambdaUpdate().set(null)` 显式清**，`updateById` 跳过 null 会清不掉）；**不动 SKU 与 `shelf_status`**——保持下架，由店主手动重新上架 |
-| 锁定人取值 | `UserContext` 直取，按审计同格式存 `UserType:UserId`（如 `admin:1`）。这是**业务列而非审计列**（D7），故在 service 内显式写入；**店铺端不展示锁定人**，仅管理端展示 |
-| 权限 | 平台侧由 admin BFF 的 `@PreAuthorize store:goods:lock` 把关；**域内不做任何权限判断** |
+- **锁定写入**：`lock_status=1` + `lock_reason`（必填）+ `lock_user` + `lock_time`；已锁定则拒绝重复操作（**条件更新 `where lock_status=0`**，防并发）
+- **级联下架**：锁定时把名下**已上架** SKU 批量置下架，再由 `refreshDerived` 重推 SPU 为下架（`refreshShelfStatus` 与 `refreshMinPrice` 一并重算）——**不变量不变、仍是唯一入口**，不绕过它直接改 `shelf_status` / `min_price`
+- **锁定期 owner 侧整行只读**：编辑 / 删除 / SKU 整单替换 / SKU 上下架 / 改库存一律拒绝（`assertNotLocked` 域内强制，不只靠前端禁用按钮）
+- **解锁**：清空 `lock_reason`/`lock_user`/`lock_time`、`lock_status=0`（**必须 `lambdaUpdate().set(col, null)` 显式清**，`updateById` 跳过 null 会清不掉）；**不动 SKU 与 `shelf_status`**——保持下架，由店主手动重新上架
+- **锁定人**：`UserContext` 直取，按审计同格式存 `UserType:UserId`。这是**业务列而非审计列**（D7），故在 service 内显式写入；**店铺端不展示锁定人**，仅管理端展示
+- **权限**：平台侧由 admin BFF 的 `@PreAuthorize store:goods:lock` 把关；**域内不做任何权限判断**
 
 ### 5. 边界（本域不做什么）
 
-- **不做任何鉴权、不做任何权限判断、不校验 token**；唯一授权点是调用方端 BFF 的 `@PreAuthorize`
-- **不装配认证链**：不打 Redis、不查登录态；`application.yml` 不声明 auth 白名单
+- **不做任何鉴权、不做任何权限判断、不校验 token**；唯一授权点是调用方端 BFF 的 `@PreAuthorize`；**不装配认证链**（不打 Redis、不查登录态，`application.yml` 不声明 auth 白名单）
 - **不做审核门禁、不做版本比对、不解析分类路径**——三者都是调用方 BFF 的编排职责
 - **不持店主账号、不持分类表**
+- **跨店通用侧（`/goods/cross-shop/spu/page` 与 `/goods/facets`）无数据权限锚点**：限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**，域内不判身份、不做端别分流、**不含任何 C 端隐含约束**（C 端固定三个条件的口径在 mall-bff）；两者走 `POST + @RequestBody`（入参含集合，规避 `@SpringQueryMap` 序列化口径问题）。见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 17–19 条
 
 ### 6. 信任与防线
 
@@ -139,14 +119,14 @@ facets **两个维度互斥地排除自身**：分类维度不受已选分类影
 1. `StoreUserIdentityFilter` —— 把透传的 `X-User-Id`/`X-User-Type` 直取填 `UserContext`，供审计填充与 `audit_by` 留痕；**缺头即不填充、放行**，不回 401
 2. 本地 `StoreSecurityConfig` —— 唯一一条全放行链，避免 Spring Security 默认链拦截 actuator
 
-原 `InternalTrustFilter`（验 `X-Internal-Token`）与 `assertOwner` / `requirePlatformAdmin`（域内 userType 断言）**均已删除**（2026-09-10）。
+原 `InternalTrustFilter`（验 `X-Internal-Token`）与 `assertOwner` / `requirePlatformAdmin`（域内 userType 断言）**均已删除**。
 
 > ⚠ 本域**不做鉴权是有意设计，不是疏漏**。安全性完全依赖 `8083` 端口只在内网可达。
 
 ## 四、配置说明
 
-- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（root/root，库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置加载**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**——配置中心不可用或该 dataId 缺失时启动即失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
+- **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供（默认指向 `123.56.117.17:3306`，库 `panoramic_mall`）；连接其他库请注入环境变量 `MYSQL_HOST` / `MYSQL_PORT` / `MYSQL_DB` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`（账号密码勿写入代码或提交到仓库）
+- **Nacos 共享配置加载**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**——缺该 dataId 则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - MyBatis-Plus：主键 `IdType.INPUT`（store_shop.id = 账号 id）、`is_delete` 逻辑删除、驼峰映射
 - 启动类扫描 `com.panoramic` 以加载 common 的全局异常处理、分页插件、字段自动填充与安全链
 - 异常语义（内部）：经 `StoreDomainExceptionHandler` 还原**真实 HTTP 状态 + `{code,msg}`**，供内部 Feign ErrorDecoder 还原为 `ServiceException`

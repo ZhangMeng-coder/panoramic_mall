@@ -15,7 +15,6 @@
 | `feign-circuitbreaker.yml` | Feign 熔断开关 + resilience4j 参数 |
 
 > 📋 **谁加载什么**（加载矩阵）见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条 —— 那是跨服务契约，不在本文件重复。
-> 划分依据：**gateway 不加载 `datasource-mysql`**（无数据源）；**业务域 goods-center / store 只加载 `datasource-mysql`**（域服务不鉴权、不碰登录态、不走 Feign 客户端）；**`feign-circuitbreaker` 只被端 BFF 加载**（只有端 BFF 出站调域）。
 
 ## 二、约定
 

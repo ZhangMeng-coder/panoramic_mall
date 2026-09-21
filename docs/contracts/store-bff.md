@@ -42,21 +42,17 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 ## 二、形状规则
 
-- ✅ **必包 `RespData`**（唯一例外见第三节的 403 门禁，也是 `RespData` 形状的）。
-- ⚠ **全 20 个接口都没有 `@PreAuthorize`** —— 店主端**不接 RBAC**。
-  登录态是唯一门槛：`/auth/login`、`/auth/register` 在网关与服务两处白名单内免鉴权，**其余全部要求已登录**。
-  所以「权限串」列整列为 `—` 是**预期状态**，不是漏登记。
-- ⚠ **身份类型绑定**：本层只接受 `type=store` 的登录态（`panoramic.auth.user-type: store`）。跨端 token（`admin` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**。
-  ⚠ 本层**不接 RBAC**，也没有任何「登录者是不是店主」的断言（`currentStoreId()` 直接取 `loginUser.getId()` 当 store_id），所以**这道绑定就是店主端的唯一身份防线**：删掉它，顾客 token 会被当作店主。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
+- ✅ **必包 `RespData`**（唯一例外见下节 403 门禁，也是 `RespData` 形状的）。
+- ⚠ **全 20 个接口都没有 `@PreAuthorize`** —— 店主端**不接 RBAC**，登录态是唯一门槛，故「权限串」列整列为 `—` 属预期；
+  本层**只接受 `type=store` 的登录态**（`panoramic.auth.user-type: store`），跨端 token 在 `AuthTokenFilter` 处即按未认证处理（**HTTP 401**），
+  这是店主端的**唯一身份防线**。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
 
 ## 三、本层独有的业务门禁（不在域内）
 
-| 门禁 | 说明 | 位置 |
-|---|---|---|
-| **店铺已审核通过** | `/goods/**` 全部接口（含 `/goods/stock/**` 库存三接口）在调域**之前**判定店铺状态；未过审返回 **`code=403`** | 域内**不做**该判断（域不查店铺状态） |
-| **分类全路径解析** | 列表 / 详情读时调 goods-center `/categories/paths` 批量补 `categoryPath`；**解析失败只告警、路径留空**，前端回退快照名 | 读时解析，非 N+1；降级不得拖垮主流程 |
-| **中台版本比对** | 详情页的「更新提示 + 同步覆盖」在**本层**组装；域只落库/回读 `center_version`，不调中台、不判版本 | 编排职责 |
-| **锁定商品只读** | 锁定商品在店主端**整行只读**；锁定信息**不含锁定人**（仅平台端展示） | 域内强制，本层透出 |
+调域**之前**判定店铺「已审核通过」（含 `/goods/stock/**`），未过审回 **`code=403`**（域内不查店铺状态）；
+另有分类全路径读时补全、中台版本比对（「更新提示 + 同步覆盖」）、锁定商品整行只读三条编排口径。
+四条的规则本体见 [`backend/store-bff/README.md`](../../backend/store-bff/README.md) 与
+[`backend/store/README.md`](../../backend/store/README.md)。
 
 ## 四、类型所在
 

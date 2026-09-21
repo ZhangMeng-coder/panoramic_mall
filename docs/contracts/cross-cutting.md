@@ -105,7 +105,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | `create_user` / `update_user` 值为 `UserType:UserId` 字符串（如 `admin:1` / `store:7`），列类型 **`VARCHAR(32)`**，实体字段类型 **`String`** |
-| 定义位置 | `common/.../vo/BaseEntity.java:12,23,35`（`:12` 类 javadoc 声明 `VARCHAR(32)` 约定；`:23`/`:35` 为 `createUser` / `updateUser` 字段声明） |
+| 定义位置 | `common/.../vo/BaseEntity.java:14,23,35`（`:14` 类 javadoc 声明 `VARCHAR(32)` 约定；`:23`/`:35` 为 `createUser` / `updateUser` 字段声明） |
 | 写值位置 | `common/.../config/MyMetaObjectHandler.java:52`（拼 `{userType}:{userId}`，取不到 userId 留空） |
 | 回退规则 | `common/.../util/UserContext.java:68-72` `getUserType()` 缺省回退 `admin` |
 | 业务列复用 | `store_goods_spu.lock_user`（`store/.../entity/StoreGoodsSpu.java:126`）沿用同一格式 |
@@ -134,7 +134,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 公网只路由到端 BFF；`panoramic.gateway.bff-services` 是**唯一放行名单**，名单外一律 403 |
-| 定义位置 | `gateway/src/main/resources/application.yml:31-50`（3 条路由）、`:61`（`bff-services = admin,store-bff,mall-bff`） |
+| 定义位置 | `gateway/src/main/resources/application.yml:31-51`（3 条路由）、`:65`（`bff-services = admin,store-bff,mall-bff`） |
 | 强制位置 | `gateway/filter/BffRouteGuardFilter.java`：`getOrder() = -200`，**先于鉴权** `AuthGlobalFilter`（-100）；**空配置 = 拒绝一切**（默认拒绝）；未命中路由直接放行；仅 `scheme=lb` 且在名单内放行 |
 | 消费位置 | 全部公网流量 |
 | 破坏后果 | 新端 BFF 上线忘了进白名单 → 该端**全部 403**（会炸得明显）；线序调整 → 未鉴权先过守卫 |
@@ -145,7 +145,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 免鉴权路径需**同时**登记在网关侧与各服务本地侧；**网关侧带前缀、服务侧不带** |
-| 定义位置 | 网关 `gateway/application.yml:66`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/categories,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/categories`） |
+| 定义位置 | 网关 `gateway/application.yml:67`（`/admin/auth/login,/store/auth/login,/store/auth/register,/mall/auth/login,/mall/auth/register,/mall/auth/sms-code,/mall/catalog/categories,/discovery/**`）；各服务 `application.yml` 的 `panoramic.auth.whitelist-paths`（admin `/auth/login`；store-bff `/auth/login,/auth/register`；mall-bff `/auth/login,/auth/register,/auth/sms-code,/catalog/categories`） |
 | ⚠ 易漏项 | **登录前调用的接口**（C 端的「获取验证码」`/auth/sms-code`）最容易漏——它也必须在两处白名单里，否则按钮直接 401。⚠ **C 端登记的是精确路径 `/catalog/categories`（首页宫格的分类树），不是 `/catalog/**` 前缀**：mall 的分级是「**首页免登录，一涉及商品查询与详情就鉴权**」，写成前缀会把商品分页 / 筛选 / 详情一并放开到公网（前台裸奔）。改这一行必须两侧同一改动内一起改，且不要把精确路径换回前缀 |
 | ⚠ 分级配套 | 白名单收窄只挡得住**直连**：C 端前端还有一层「需登录页」路由级拦截（`/search`、`/category/:id`、`/goods/:id` 的 `meta.requiresAuth`，未登录即带 `redirect` 跳登录页），以及拦截器 401 兜底（清本地态 + 提示 + 带 `redirect` 跳登录页）。**唯一静默的 401 是守卫刷新重建登录态的 `/auth/me`**——公开首页上的重建失败不该把游客弹走，见 [mall-bff.md](./mall-bff.md) |
 | ⚠ 静默 401 由守卫自己收口 | `/auth/me` 的静默分支会**先清掉本地 token**，随后同一导航内的业务接口再吃 401 时，拦截器的「本来有登录态吗」判据（`getToken()`）已为假 → 既不提示也不跳转，需登录页会渲染成「商品暂不可用」（把**未登录**报成**下游故障**）。故守卫在重建失败时若当前页是 `requiresAuth`，**自己**落登录页（`loginLocation`），**不能把交接推给拦截器**。⚠ 判据必须是 `!getToken()`（会话真没了）而**非**只看 `requiresAuth`：清态只有 401 分支会做，`me()` 因网络 / 5xx 失败时 token 未动，此时若也跳登录页会**成环**——token 还在 → 登录页命中「已登录不该待在登录页」又被弹回原页 → 再 `me()`…直到 vue-router 无限重定向保护中止导航。删掉这个分支不会编译报错，只会在「token 过期后刷新需登录页」这条路径上静默退化 |
@@ -262,7 +262,7 @@ layer: cross-cutting
 | 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）与 `#detail` → `#shopApproved`（取回后重判）；域侧 `store-interface/.../contract/store/api/StoreClient.java#platformStoreGoodsDetail` + `store/controller/GoodsController.java` |
 | 消费位置 | mall-bff `CatalogController` 的 `/catalog/goods`、`/catalog/goods/{id}`；同一个域方法另有 admin BFF 消费（管理端不走 C 端口径） |
 | 不可见响应 | 不存在 / 已下架 / 被锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因**（区分了就等于给外人一个探测商品是否存在 / 是否被锁的接口） |
-| 4xx/5xx 分野 | **只有业务 4xx**（400/403/404）才转成 404；`BffFeignCall` 的熔断/连接降级是 `ServiceException(500, …)`，**照抛**——否则下游一抖，「商品服务挂了」会被伪装成「商品已下架」（第 13 条在本场景的延伸） |
+| 4xx/5xx 分野 | **只有业务 4xx**（400/403/404）才转成 404；熔断 / 连接降级是 5xx，**照抛**——否则下游一抖，「商品服务挂了」会被伪装成「商品已下架」（第 13 条在本场景的落点） |
 | 破坏后果 | 详情漏判某一条件 → 平台锁定 / 未过审店铺的商品可被 `/goods/{id}` 直接打开（列表搜不到，但 id 可枚举）；把 5xx 也当 404 → 下游故障时全站商品看起来都下架了 |
 | 核对方式 | **人工核对**（可见性重判无法用静态哨兵表达） |
 

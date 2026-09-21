@@ -13,11 +13,6 @@ typeDirs: backend/customer-center-interface/src/main/java
 > **不暴露公网路由**，只被 mall-bff 经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-⚠ **本表按行分批实现**（契约先行）：**某一行是否已落地，以下表的「状态」列为准**（留空 = 已实现，
-`待实现` = 已定契约、代码未写）——本文件正文不另记进度，写死条数只会在下次改动时失真。
-某行标 `待实现` 时**只核对路径 / 方法 / 权限串的写法**，不参与「契约 ↔ 代码」双向核对（见 [README.md](./README.md)）；
-实现完成后须在**同一改动内**把对应行的「状态」摘回留空，否则检查器的反向哨兵会报错。
-
 ## 一、归属与形状
 
 - **锚点 `customerId` = `mall_user.id`**：跨域 id 引用、**无外键**，与 `store_id` = 店主账号 id 同一手法。
@@ -27,9 +22,9 @@ typeDirs: backend/customer-center-interface/src/main/java
 - **域内不做任何身份判断**：不判 `X-User-Type`、不校验 token、无 `@PreAuthorize`；
   身份头只读来填 `UserContext`，且**仅用于审计留痕**。
   调用方传的 `customerId` 是否真是「本人」，**由 mall-bff 从登录态取**，域侧不校验 —— 防线在 BFF。
-- **形状**：✅ **不包 `RespData`**，直接返回业务结果类型；错误走 `ServiceException` + 真实 HTTP 状态。
-- **前缀**：类级 `@RequestMapping` 写死 `/internal/customer/xxx`（本仓库既有做法，**不用 context-path**），
-  下表「路径」列是**去掉 `/internal/customer` 前缀后**的部分。
+- **形状**：**不包 `RespData`**，错误走 `{code,msg}` + 真实 HTTP 状态 —— 见 [cross-cutting.md](./cross-cutting.md) 第 2 条。
+- **前缀**：`/internal/customer`；拼法（不是 context-path、由 Controller 类级 `@RequestMapping` 写死）
+  见 [README.md](./README.md) 的「内部 Feign 的「路径」前缀怎么来的」。
 
 ## 二、接口清单
 

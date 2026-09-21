@@ -4,9 +4,7 @@
 
 ## 为什么单独一个模块
 
-域服务（goods-center / store）的启动类是 `@SpringBootApplication(scanBasePackages = "com.panoramic")`，会把 common 里带 `@Configuration`/`@Service` 的类一并装配。若认证链（`SecurityConfig`、`AuthTokenFilter`、`LoginUserCacheService`）留在 common，**域服务就会被强制装配**——于是被迫依赖 Redis（`datasource-redis.yml`）与 `jwt-secret`（`auth.yml`），哪怕它一个 Redis 命令都不发。
-
-把它们移到 `common-auth`、并让**只有端 BFF 依赖本模块**，域服务只依赖 `common`，就从**模块依赖关系**上保证拿不到认证链与 Redis——比"配置排除/组件扫描排除"更难被后续改动静默破坏。
+域服务的启动类是 `@SpringBootApplication(scanBasePackages = "com.panoramic")`，会把 common 里带 `@Configuration`/`@Service` 的类一并装配：认证链若留在 common，域服务就被强制依赖 Redis 与 `jwt-secret`，哪怕它一个 Redis 命令都不发。移到本模块、并让**只有端 BFF 依赖本模块**，就从**模块依赖关系**上保证域服务拿不到认证链与 Redis——比"配置排除/组件扫描排除"更难被后续改动静默破坏。
 
 ## 功能清单
 
@@ -21,15 +19,16 @@
 
 1. **依赖**：`pom.xml` 同时引入 `com.panoramic:common` 与 `com.panoramic:common-auth`（版本随父 POM）。
 2. **Nacos 共享配置**：需引入 `datasource-redis.yml` 与 `auth.yml`（`jwt-secret` / `jwt-expire-seconds` / `redis-prefix` / `header-name`）。
-3. **登录**：本端只提供**自己身份**的登录接口，签发时 `userType` 与 JWT `type` claim 必须一致（`generateToken(id, USER_TYPE_XXX)` 与 `LoginUser.setUserType(USER_TYPE_XXX)` 成对出现），否则网关按 `type` 拼键会查不到登录态。
-4. **密钥同源**：`jwt-secret` 由端 BFF 与 gateway 共享（Nacos `auth.yml`），不可单边改动。
+3. **身份类型绑定**：必须在**自己的** `application.yml` 声明 `panoramic.auth.user-type`（见表）。`AuthTokenFilter` 重建出 `LoginUser` 后比对 `userType`，**不匹配即按未认证处理（HTTP 401）**——这是**跨端隔离的唯一防线**（网关不校验 type 与目标路由是否匹配）。⚠ **无默认值，漏配启动即失败**（取向同 `config.import` 不带 `optional:`）。见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 9 条。
+4. **登录**：本端只提供**自己身份**的登录接口，签发时 `userType` 与 JWT `type` claim 必须一致（`generateToken(id, USER_TYPE_XXX)` 与 `LoginUser.setUserType(USER_TYPE_XXX)` 成对出现），否则网关按 `type` 拼键会查不到登录态。
+5. **密钥同源**：`jwt-secret` 由端 BFF 与 gateway 共享（Nacos `auth.yml`），不可单边改动。
 
 ## 各端身份空间
 
-| 端 | userType | Redis 键样例 | 状态 |
-|---|---|---|---|
-| admin | `admin` | `panoramic:login:admin:1` | 已有 |
-| store-bff | `store` | `panoramic:login:store:7` | 已有 |
-| mall-bff | `user` | `panoramic:login:user:42` | 已有（账号 + 商品浏览，已接 goods-center / store） |
+| 端 | `panoramic.auth.user-type` |
+|---|---|
+| admin | `admin` |
+| store-bff | `store` |
+| mall-bff | `user` |
 
 > 修改本模块后需执行 `mvn -pl common-auth install` 并重启依赖它的端 BFF 才生效。

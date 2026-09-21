@@ -1,150 +1,25 @@
 # 全景商城 — 前台商城（mall）
 
-mall 前台（用户购物端）的正式前端工程：**Vue 3 + Vite + TypeScript**。
-**账号功能已接入后端 `mall-bff`**（取码 / 注册 / 登录 / 登出 / 当前顾客，共 5 条），
-**商品浏览已接入 catalog 三接口**（分类树 / 商品分页 / 筛选聚合）：搜索区真跳转、分类展示区读真实分类树，
-另有搜索结果页与分类商品页；
-⚠ **首页热门商品列表（⑥）仍是静态 mock**（`src/mock/`），本次范围刻意不含。
+C 端前台（顾客侧）的正式前端工程：**Vue 3 + Vite + TypeScript**，端口 **5175**。页面只经网关访问端 BFF `mall-bff`（:8085）——`vite.config.ts` 的 `/mall` 代理 → 网关 8080（`StripPrefix=1`）→ mall-bff。
 
-> **风格基准**：本工程即 mall 前台的风格基准，换肤唯一入口是 [`src/styles/tokens.css`](./src/styles/tokens.css)。
-> 约束条文见根目录 [CLAUDE.md](../../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」。
-> **前台是单独一套风格**：C 端促销风橙红板，与 admin / store 的靛蓝后台令牌**刻意不同源**，两套不通用。
+页面域：首页（六区块）、搜索结果与分类商品列表、商品详情、登录 / 注册、账号（个人资料 / 收货地址）。
+
+## 业务边界
+
+- **视觉与结构见根目录 [CLAUDE.md](../../CLAUDE.md) 的「mall 前台（用户端）视觉与结构约定」**——本工程既是那份基准的落地，也是它的唯一风格源头（新增区块或调风格，先在本工程里改好、定了，再往外铺）。
+- 登录分级：首页公开；**一涉及商品查询 / 详情与顾客自己的数据就要登录**，401 一律提示并跳登录页（与 store / admin 两端一致）。同上，条文以 CLAUDE.md 为准。
+- 页面契约见 [docs/contracts/mall-bff.md](../../docs/contracts/mall-bff.md)：**写 / 改页面只照表写，不照后端代码写**。
+
+## 仅在本文件登记的事
+
+- **唯一换肤入口**：[`src/styles/tokens.css`](./src/styles/tokens.css)。它是 C 端促销风橙红令牌，与 admin / store 两端的靛蓝后台令牌**刻意不同源**，两套不通用；换风格只改该文件顶部「可调整」区块，其余样式文件不用动。
+- **`src/mock/` 是首页的静态数据**（`banners` / `goods` / `hotwords`，分别供 ④ 轮播广告、⑥ 热门商品列表、② 热搜词），其中**⑥ 热门商品列表仍读它、不接接口**。数据逐条刻意探过边界，各文件顶部的 `[探]` 注释逐条记着该项在探什么（长文案、无原价、双角标、销量 0 / 万+、价格位数、最坏叠加…）——**这是刻意基准，不要随手改小**。
+- ⑤ 用户信息框里的优惠券 / 积分 / 收藏**恒为 0**：这三项接口属二期，不编造假数字。
 
 ## 本地开发
 
 ```bash
-cd mall
-npm install
-npm run dev      # http://localhost:5175
+npm install && npm run dev   # → http://localhost:5175
 ```
 
-| 脚本 | 作用 |
-|---|---|
-| `npm run dev` | 开发服务，端口 **5175** |
-| `npm run build` | **`vue-tsc --noEmit && vite build`** —— 类型检查不过即构建失败 |
-| `npm run type-check` | 只跑类型检查 |
-| `npm run preview` | 预览构建产物 |
-
-## 文件结构
-
-```
-mall/
-├── index.html              Vite 入口（只有 #app，样式由 main.ts 引入）
-├── vite.config.ts          端口 5175 + /mall 代理（→ 网关 8080 → mall-bff 8085）
-├── tsconfig.json           strict: true
-└── src/
-    ├── main.ts             createApp + router + 载入五个 css（令牌 → 基线 → 区块 → 账号页 → 目录页）
-    ├── App.vue             <router-view /> + <ToastHost />（全局提示条）
-    ├── env.d.ts            Vite 客户端类型声明（`/// <reference types="vite/client" />`）
-    ├── router/index.ts     hash 模式；/ 首页、/login、/register、/search、/category/:id；兜底重定向 /；全局守卫
-    ├── styles/
-    │   ├── tokens.css      ★ 唯一换肤入口（只改这个文件即可整体换色）
-    │   ├── base.css        reset + 排版基线 + 容器 + 通用工具类
-    │   ├── mall.css        首页六个区块的样式，顺序与 HomeView 一致
-    │   ├── account.css     登录 / 注册页 + 轻提示条（只消费令牌）
-    │   └── catalog.css     商品列表页（搜索结果 / 分类商品）骨架与筛选条
-    ├── types/
-    │   ├── mall.ts         首页区块类型：Banner / Goods
-    │   ├── auth.ts         CurrentUser / LoginResult / 登录注册请求体
-    │   ├── api.ts          PageResult<T> 等跨模块共用的响应形状
-    │   └── catalog.ts      C 端商品浏览的类型（照 docs/contracts/mall-bff.md）
-    ├── api/
-    │   ├── request.ts      axios 实例 + 拦截器（解 RespData、统一报错）
-    │   ├── auth.ts         5 条账号接口（路径照 docs/contracts/mall-bff.md）
-    │   └── catalog.ts      3 条商品浏览接口（分类树 / 商品分页 / 筛选聚合）
-    ├── store/auth.ts       C 端登录态（token 存 localStorage，user 驻留内存）
-    ├── mock/               首页静态数据：banners / goods / hotwords
-    ├── utils/              gradient.ts（渐变占位）、format.ts（价格 / 角标 / 手机号打码）
-    ├── composables/        useCarousel.ts（轮播）、useSmsCode.ts（取码倒计时）、useToast.ts（提示条）
-    ├── components/         六个区块 + 页脚 + AccountShell（账号页外壳）+ ToastHost + GoodsCard / CatalogCard / FilterRow / Pager
-    └── views/              HomeView.vue（六区块）+ GoodsListView.vue（搜索结果 / 分类商品）+ LoginView.vue + RegisterView.vue
-```
-
-## 页面结构（首页自上而下，顺序即基准）
-
-| # | 区块 | 组件 |
-|---|---|---|
-| ① | 顶部用户条 | `TopBar.vue` |
-| ② | 万能搜索长框（含热搜词行） | `SearchBar.vue` |
-| ③ | 全分类展示（一级分类宫格，数量由后端树决定） | `CategoryGrid.vue` |
-| ④ | 大型滚动广告框（自动播放 / 箭头 / 圆点 / 悬停暂停） | `BannerCarousel.vue` |
-| ⑤ | 用户信息展示框 | `UserPanel.vue` |
-| ⑥ | 热门商品列表（5 列 × 2 行 = 10 件） | `GoodsGrid.vue` + `GoodsCard.vue` |
-| — | 极简页脚 | `SiteFooter.vue` |
-
-登录页（`/login`）与注册页（`/register`）用 `AccountShell.vue` 复用同一套顶栏与页脚。
-
-## 账号与登录态（已接入 mall-bff）
-
-| 动作 | 接口 | 入口 |
-|---|---|---|
-| 获取验证码 | `POST /mall/auth/sms-code` | 登录页 / 注册页 |
-| 注册（**注册即登录**） | `POST /mall/auth/register` | `/register` |
-| 登录 | `POST /mall/auth/login` | `/login` |
-| 退出 | `POST /mall/auth/logout` | 顶栏「退出」 |
-| 当前顾客 | `GET /mall/auth/me` | 路由守卫（刷新后重建用户态） |
-
-- **账号即手机号**，验证方式是**手机号 + 短信验证码**，没有密码。
-- ⚠ 短信是**模拟通道**：后端取码只打一行日志、不发真实短信，校验与**固定码 `888888`** 比对。
-  因此登录 / 注册页上固定有一行「演示环境：短信为模拟通道，验证码固定 888888」——
-  **去掉它页面上就没有任何途径得知验证码**，这不是假功能，是契约本身。
-- 登录态：`localStorage['pm-mall-token']` 存 token；用户信息只驻留内存，刷新后由守卫拉 `/auth/me` 重建。
-- ⚠ **401 不自动跳登录页** —— 与 store / admin 两端的**刻意差异**：mall 首页是公开页，
-  带过期 token 的游客不该被弹走，页面照常按未登录态渲染；跳不跳由守卫 / 调用方决定。
-- **首页不要求登录**，游客可正常浏览（守卫只做「已登录别去登录页」和「刷新重建用户态」两件事）。
-- 用户信息框（⑤）里的优惠券 / 积分 / 收藏**恒为 0**：这三项接口属二期，不编造假数字。
-
-## 换风格改哪里
-
-只改 `src/styles/tokens.css` 顶部那一小块「可调整」变量，其余文件不用动：
-
-- `--brand` / `--brand-accent` / `--brand-soft` —— 主色、辅色、浅色底（换色板就改这几个）
-- `--n*` —— 中性色（页面底、边框、文字三级灰）
-- `--r-*` —— 圆角；`--sh-*` —— 阴影（暖调投影）；`--t-*` —— 字号
-
-## 内容范围是刻意探过边界的
-
-`src/mock/` 里的数据（以及已改接**后端真实分类树**的一级分类数量）不是随便凑的，每一项都在探一条边界，用来判断「装多少、装不下怎么办」：
-
-| 数据 | 探什么 |
-|---|---|
-| 一级分类数量由后端分类树决定（当前 9 项，不再是本工程 mock） | 宫格是否正好铺满一行，增删后换行好不好看 |
-| 轮播第 3 张标题拉长 | 长文案下版式会不会挤爆 / 换行难看 |
-| 商品 g1 超长名 | 两行截断够不够 |
-| 商品 g2 无原价、无角标 | 版式留白会不会塌 |
-| 商品 g3 双角标 | 角标放得下吗、会不会压住图 |
-| 商品 g4 销量 0 | 空值显示成「暂无成交」是否可接受 |
-| 商品 g5 / g7 销量「10万+」「5.6万+」 | 大数字会不会挤掉价格 |
-| 商品 g6 价格带两位小数 | 价格三层字号的宽度 |
-| 商品 g8 长名 + 双角标 + 大销量 | 最坏情况叠加 |
-
-⚠ **这是基准，不要随手改小。** 各 `mock/*.ts` 文件顶部的 `[探]` 注释逐条记着该数据在探什么。
-
-## 明确**不做**的事
-
-- ❌ **首页热门商品列表（⑥）不接接口**：该区块数据仍在 `src/mock/`，本次范围刻意不含（账号与商品浏览接口均已接入，见上）
-- ❌ 不做手机 / 窄屏适配 —— **只做宽屏**，容器固定 1280px，没有任何媒体查询
-- ❌ 不做暗色模式（C 端商城不做，与 admin / store 的 `.dark` 是两回事）
-- ❌ **源码内**不写死外链图片 / 不引外链字体 —— 数据驱动的图片（分类图标、商品主图）由后端 URL 提供、照常渲染；**无图 / 加载失败时**用 **CSS 渐变占位**（`utils/gradient.ts`）
-- ❌ 页面里**不使用任何 Element Plus 组件**（见下）
-- ❌ 「购物车 / 我的订单」仍是死链（后端没有对应接口）
-
-## 关于 Element Plus
-
-`element-plus` 在 `package.json` 依赖里，但**仅作后续页面（表单 / 弹窗 / 分页）的备用能力**：
-`main.ts` 不注册 EP、不引 EP 样式，**账号页的表单与提示条也都是手写的**（`styles/account.css`）——
-**前台保持自己单独一套风格，不做样式变换**。
-
-将来某一页真要用 EP，在**那一页**按需引组件与样式，并把 EP 变量重映射到 `src/styles/tokens.css` 的橙红令牌，
-不要全局引 `element-plus/dist/index.css`（会把整站观感拉成后台风）。
-
-## 接口与分层
-
-页面只经网关访问端 BFF：`vite.config.ts` 的 `/mall` 代理 → 网关 8080（`StripPrefix=1`）→ `mall-bff`(8085)。
-账号 5 条**已接入**（`src/api/auth.ts`，路径照契约表 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)）。
-
-商品浏览 3 条**已接入**（`src/api/catalog.ts`）：`GET /catalog/categories`（分类树）、`POST /catalog/goods`（商品分页）、
-`POST /catalog/facets`（筛选聚合）。落地范围：**搜索区**（`SearchBar` 真跳转 → `/search` 结果页）、**分类展示区**
-（`CategoryGrid` 读真实分类树，含分类图标）、**分类商品页**（`/category/:id`），列表骨架为 1280 容器 / 7 列 / 每页 49。
-
-⚠ 首页**热门商品列表（⑥）** 仍读 `src/mock/`，属二期剩余工作（搜索区与分类展示区已完成）。
+`npm run build` = `vue-tsc --noEmit && vite build`（类型不过即构建失败）；`npm run type-check` 只跑类型检查，`npm run preview` 预览构建产物。

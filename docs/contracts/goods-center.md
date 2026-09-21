@@ -15,22 +15,10 @@ typeDirs: backend/goods-center-interface/src/main/java
 
 **共 19 个接口**。调用方见每行「调用方」列。
 
-## 一、前缀怎么拼上的（⚠ 容易踩）
+## 一、前缀怎么拼上的
 
-`@FeignClient(path = "/internal/goods")` 这段前缀**不是** `server.servlet.context-path` ——
-goods-center 的 `application.yml` 里**没有** context-path（只有 `server.port: 8081`）。
-
-前缀是在 **Controller 类级 `@RequestMapping` 里写死的字面量**：
-
-| Controller | 类级 `@RequestMapping` | 行号 |
-|---|---|---|
-| `BrandController` | `/internal/goods/brands` | :31 |
-| `CategoryController` | `/internal/goods/categories` | :30 |
-| `SpuController` | `/internal/goods/spu` | :34 |
-
-即 `@FeignClient(path)` + Feign 方法路径 与 类级映射 + 方法级映射 **逐段相等**。
-所以下表「路径」列写的是**去掉 `/internal/goods` 前缀后的部分**（与 Feign 注解一致），
-改前缀时要**同时**改 Feign 客户端的 `path` 与三个 Controller 的类级映射。
+本域前缀 = **`/internal/goods`**；拼法（不是 context-path、由 Controller 类级 `@RequestMapping`
+写死）见 [README.md](./README.md) 的「内部 Feign 的「路径」前缀怎么来的」。
 
 ## 二、接口清单
 
@@ -61,10 +49,7 @@ goods-center 的 `application.yml` 里**没有** context-path（只有 `server.p
 
 ## 三、形状规则
 
-- ✅ **不包 `RespData`**：出参一律是业务类型（`BrandVO` / `PageResult<...>` / `void`）。
-- ✅ **无 `@PreAuthorize`**：域内不做鉴权。
-- ✅ 错误返回真实 HTTP 状态 + `{code,msg}`，由 `common` 的 `InternalApiErrorDecoder` → `ServiceException` 还原。
-  **4xx 不计熔断失败率、5xx 计入**（[cross-cutting.md](./cross-cutting.md) 第 13 条）。
+见 [cross-cutting.md](./cross-cutting.md) 第 2、6、13 条（不包 `RespData` / 域内不鉴权 / 错误走 `{code,msg}` + 真实 HTTP 状态）。
 
 ## 四、类型所在包（全部在 `goods-center-interface`，两端引用同一份）
 
@@ -75,8 +60,8 @@ goods-center 的 `application.yml` 里**没有** context-path（只有 `server.p
 | `dto` | BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, CategorySaveDTO, CategoryUpdateDTO, SkuDTO, SpecAttr, SpecConfigItem, SpuPageQueryDTO, SpuSaveDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuUpdateDTO |
 | `vo` | BrandVO, CategoryTreeVO, PageResult, SkuVO, SpuBySkuCodeVO, SpuDetailVO, SpuPageItemVO |
 
-⚠ `contract.goods.vo.PageResult` 与 `contract.store.vo.PageResult` 是**两个同名独立类型**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条）；
-本包 `dto` 里的 `SpecAttr` / `SpecConfigItem` 在 `contract.store.dto` 下另有**一份同形同名的孪生类**（2026-09-19 拆分时切成各域自持）。
+> ⚠ 本包的 `PageResult`、`SpecAttr` / `SpecConfigItem` 在 `contract.store` 下**各有一份同形同名的孪生类**，别引错
+> （见 [cross-cutting.md](./cross-cutting.md) 第 3 条）。
 
 ## 五、Feign 客户端配套类
 

@@ -118,56 +118,35 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 > 「路径」列不带网关前缀 `/admin`。例：`/shop/goods/page` 对外完整路径是 `/admin/shop/goods/page`。
 
-## 二、权限串族（8 族）
+## 二、权限串族
 
-| 族 | 权限串 | 所属 Controller |
-|---|---|---|
-| 角色 | `system:role:list` / `:add` / `:edit` / `:delete` / `:assignPermission` / `:assignUser` | RoleController |
-| 用户 | `system:user:list` / `:add` / `:edit` / `:delete` / `:assignRole` | UserController |
-| 权限 | `system:permission:list` / `:add` / `:edit` / `:delete` | PermissionController |
-| 标准商品 | `goods:spu:list` / `:add` / `:edit` / `:delete` | GoodsSpuController |
-| 商品分类 | `goods:category:add` / `:list` / `:edit` / `:delete` | GoodsCategoryController |
-| 商品品牌 | `goods:brand:list` / `:add` / `:edit` / `:delete` | GoodsBrandController |
-| 店铺管理 | `store:shop:list` / `:audit` | shop/ShopController |
-| 店铺商品 | `store:goods:list` / `:lock` | shop/ShopGoodsController |
+各权限串已在上一节逐行登记；族分组即各 Controller 小节。三方一致（`@PreAuthorize` 字面量 ↔
+`sys_permission.perms` 种子 ↔ 前端 `v-perm`）由检查器第 2、3 项核对，见 [cross-cutting.md](./cross-cutting.md) 第 16 条。
 
-⚠ 这些字面量**必须三方一致**：本表 ↔ `admin/src/main/resources/db/*.sql` 的 `sys_permission.perms` 种子 ↔ 前端 `v-perm`。
-由检查器第 2、3 项核对（见 [cross-cutting.md](./cross-cutting.md) 第 16 条）。
-
-## 三、**无 `@PreAuthorize`** 的接口（2 个，属预期）
+## 三、**无 `@PreAuthorize`** 的接口（2 类 / 5 个端点，属预期）
 
 | 接口 | 为何无授权 |
 |---|---|
 | `/auth/login`、`/auth/logout`、`/auth/me`、`/auth/password` | 登录链本身；`/auth/login` 在网关与服务两处白名单内免鉴权，其余靠"已登录"门槛 |
 | `/permissions/menus` | 当前登录用户渲染**自己的**侧栏菜单，属登录后必得数据，不设权限串 |
 
-> ⚠ `/permissions/menus` 与 `/permissions/{id}` 同为单段路径，Spring 按字面量优先匹配，`menus` 不会被 `{id}` 吃掉。
-
 ## 四、形状规则
 
-- ✅ **必包 `RespData`**（55/55）；✅ 授权**只在此层**（`@PreAuthorize`）。
-- ⚠ 本层**只编排，不持域实体**：`/goods/**` 与 `/shop/**` 全部经内部 Feign 下沉到 goods-center / store。
-- ⚠ **分类子树匹配**：`/shop/goods/page` 的 `categoryId` 是**单个** id，由本层用分类树展开成
-  「该节点 + 全部后代」的 `categoryIds` 再传给域（域只做 `IN`）。
-- ⚠ **分类全路径**：本层读时调 goods-center `/categories/paths` 批量补 `categoryPath`，**失败只告警、路径留空**。
-- ⚠ **锁定人渲染**：库里存 `admin:{id}` 原串；前端渲染为「平台管理员(N)」，**不做 `sys_user` 联查取名**。
-- ⚠ **锁定/解锁走 POST 而非 PUT**（`/shop/goods/{id}/lock`、`/unlock`），与其语义（动作而非幂等更新）一致。
-- ⚠ **身份类型绑定**：本层只接受 `type=admin` 的登录态（`panoramic.auth.user-type: admin`）。跨端 token（`store` / `user`）在 `AuthTokenFilter` 处即按未认证处理 → **HTTP 401**，**不会**走到 `@PreAuthorize`。见 [cross-cutting.md](./cross-cutting.md) 第 9 条。
-- ⚠ **店铺商品描述消毒**：`/shop/goods/{id}` 出参的 `description` 是**店主**录入的富文本（域侧原样存取、
-  不清洗），而页面把它 `v-html` 渲染进**平台管理员**的会话 —— 不洗就是店主对管理员页面的存储型 XSS。
-  故本层在出口用 common 的 `HtmlSanitizer` 洗过再返回，**白名单与 mall-bff 共用同一份**（前端不再
-  各自去引清洗库）。见 [cross-cutting.md](./cross-cutting.md) 第 21 条。
+- ✅ **必包 `RespData`**（55/55）；✅ 授权**只在此层**（`@PreAuthorize`）——见 [cross-cutting.md](./cross-cutting.md) 第 1、2 条。
+- ⚠ 本层**只编排，不持域实体**（`/goods/**` 与 `/shop/**` 全部经内部 Feign 下沉到 goods-center / store）。
+- ⚠ 本层编排与出口口径：分类子树展开、分类全路径补全、锁定人渲染、店铺商品描述消毒、身份类型绑定 ——
+  规则本体见 [`backend/admin/README.md`](../../backend/admin/README.md) 与
+  [cross-cutting.md](./cross-cutting.md) 第 9、21 条。
 
 ## 五、类型所在
 
 | 来源 | 类型 |
 |---|---|
 | **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO |
-| 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺：ShopPageQueryDTO, ShopAuditDTO, ShopVO, ShopOptionVO, StoreGoodsLockDTO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuPlatformDetailVO |
+| 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺类型清单见 [store.md](./store.md) 第五节 |
 
-> admin 与 store-bff **各持一份自己的** `LoginResultVO` / `CurrentUserVO`（不共享）—— 两端身份空间不同，属预期。
-> ⚠ `ShopPageQueryDTO` / `ShopAuditDTO` / `ShopVO` 在 `contract.store`（域与 admin 共用同一份），
-> 而 `ShopGoodsPageQueryDTO` 是 **admin 本地**的编排查询对象。
+> `LoginResultVO` / `CurrentUserVO` 两端**各持一份**（不共享，身份空间不同）——见 [store-bff.md](./store-bff.md) 第四节。
+> `ShopPageQueryDTO` / `ShopAuditDTO` / `ShopVO` 在 `contract.store`（域与 admin 共用），`ShopGoodsPageQueryDTO` 是 **admin 本地**的编排查询对象。
 
 ## 六、下游依赖（本层调谁）
 

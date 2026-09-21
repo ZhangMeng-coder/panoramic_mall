@@ -1,80 +1,35 @@
 # admin — 全景商城后台管理
 
-后端管理端（Vue 3 + Vite + **TypeScript** + Element Plus），端口 **5173**，经网关（8080）调用平台管理（admin，端 BFF）接口；admin 再经内部 Feign 编排商品域（goods-center）、店铺域（store）。
+平台管理端的页面工程（Vue 3 + Vite + **TypeScript** + Element Plus），端口 **5173**：经网关**只访问端 BFF `admin`**——商品域（goods-center）与店铺域（store）已下沉为纯域，页面不再直连，一律由 admin BFF 内部 Feign 编排。
 
-> 2026-09-14 由 Vue 3 + JS 拉平为 **Vue 3 + TS（`strict`）**：源码一律 `.ts` / `<script setup lang="ts">`，新增文件也照此写。`tsconfig.json` 与 `frontend/mall` 一致，**唯一差异**是 `compilerOptions.types` 多一项 `element-plus/global`（本端全局注册 EP，模板里的 `<el-*>` 才拿得到类型）。
+页面域：分类 / 品牌 / 标准商品（SPU 与 SKU）/ 用户 / 角色 / 权限 / 店铺列表 / 店铺商品（跨店列表 + 只读详情）。
 
-## 主题与设计令牌（Design Tokens）
+## 业务边界
 
-- **集中换肤**：`src/styles/tokens.css` 顶部 `:root` 即换肤入口（主色 `#4F46E5` / 语义色 / 圆角等），文件头有「可调整变量」注释
-- **Element Plus 主题映射**：同一文件内把 EP 的 `--el-color-*` 色板（含 light-3/5/7/8/9 与 dark-2）映射到令牌色，全站按钮/标签/表格等自动随主色走；`info` 保留中性灰以维持“灰=次要”语义
-- **明暗双主题**：加载 `element-plus/theme-chalk/dark/css-vars.css`，`.dark` 挂在 `<html>`；EP 暗色结构变量 + 令牌暗色层联动。`index.html` 首帧内联脚本先应用主题，避免切换闪烁
-- **亮/暗切换**：顶栏右上角图标按钮，选择写入 `localStorage['pm-admin-theme']`，未设置时跟随系统 `prefers-color-scheme`
-- **排版/间距/圆角/阴影/动效**：按 8px 网格与 Modular Scale 提供 `--space-*`、`--text-*`、`--radius-*`、`--shadow-*`、`--duration-*`
-- **组件预设**：`src/styles/components.css` 提供 `.btn/.btn-primary/.btn-ghost/.btn-sm/.btn-lg`、`.card`、`.input`、`.badge`（语义变体）、`.container-section`，供非 EP 自定义区域直接套用
+- **RBAC 只有本端有**：后端 `@PreAuthorize` 与按钮上的 `v-perm` 是唯一授权点；侧栏菜单由后台接口按当前登录用户的角色动态生成，改动角色 / 权限后需**重新登录**刷新 Redis 快照。
+- 「店铺商品」是**页面(2)级权限**，权限行由后端 `db/schema.sql` 灌入；**角色授权需在「角色管理 → 分配权限」手工勾选**，勾选后相关账号重新登录才生效（超管持 `*` 不受限）。
+- 侧栏能点开的前提是**前端路由 `path` 与 `sys_permission.route` 逐字一致**；商品详情页靠 `meta.activeMenu` 让侧栏仍高亮所属列表项。
 
-## 功能页面
-
-| 页面 | 路由 | 功能 |
-|---|---|---|
-| 分类管理 | `/category` | 分类多级树展示（el-table 树形数据，一次加载全展开，非懒加载）；行悬停操作：新增子分类 / 编辑 / 删除；删除受后端保护（有子分类或有商品时提示失败原因） |
-| 品牌管理 | `/brand` | 品牌列表分页 + 名称关键字搜索；新增/编辑弹窗（LOGO 实时预览）；删除 |
-| 商品管理 | `/spu` | 商品为商城商品的信息模板（无上下架概念，以 展示/隐藏 表示对商城是否可见）；分页筛选（分类树下拉/品牌/展示状态/名称关键字）。**编辑**＝基本信息+规格属性配置（各规格维度可选项）；「规格」弹窗独立管理 SKU（展示编码/图片/规格组合，组合取值来自规格属性配置，可一键生成缺失组合）；「预览」只读查看 名称/分类完整链条/主图/轮播图/详情/规格配置/SKU 明细 |
-| 用户管理 | `/user` | 列表内联展示已分配角色（多角色并排标签）；用户分页（关键字/状态筛选）+ CRUD；密码 BCrypt 存储，编辑留空不改密码；分配角色（全角色勾选回显、可整体替换/清空） |
-| 角色管理 | `/role` | 角色分页 + CRUD；分配权限（权限树勾选，父节点级联全选子级、可清空）；分配用户（左侧展示“不在该角色内”的用户分页可加，右侧已分配可移除） |
-| 权限管理 | `/permission` | 权限树表格展示（el-table 树形数据：目录/页面/按钮逐级递减，含权限字符串、页面级路由地址）；行悬停新增顶级目录 / 新增子级 / 编辑 / 删除（受后端层级与引用保护）；页面(2)级权限带路由地址 `route`，供前端菜单导航 |
-| 店铺管理 | `/shop` | 店主店铺列表（店铺名关键字 + 审核状态筛选、状态 badge 草稿/待审核/已通过/已驳回）；详情抽屉（资质字段只读回显）；审核弹窗：通过 / 驳回（驳回原因必填），按钮挂 `v-perm`（`store:shop:list/audit`）。不显示店主登录账号 |
-| 店铺商品 | `/shop-goods` | **全部店铺**的在售商品列表（2026-09-12 新增）：筛选 分类（el-tree-select，**可选任意层级，含全部子分类**）/ 品牌 / 店铺 / 上下架 / 锁定状态 / 名称关键字；列含 所属店铺、**分类全路径**、SKU 数、状态标签、锁定状态标签。操作：未锁定 → `锁定`（弹窗原因必填）；已锁定 → `锁定信息`（原因 / 锁定人 `平台管理员(N)` / 时间）+ `解锁`（二次确认）。按钮挂 `v-perm`（`store:goods:list` / `store:goods:lock`） |
-| 店铺商品详情 | `/shop-goods/:id` | 只读详情页（A3）：基础信息（名称 / 所属店铺 / 分类全路径 / 品牌 / 状态 / 锁定状态 / 中台关联）/ 主图 / 轮播图 / 商品详情富文本 / 规格属性配置 / SKU 列表（规格组合、编码、图片、价格、上下架）/ 锁定信息；顶部 `返回` + `锁定`/`解锁`。侧栏靠 `meta.activeMenu` 仍高亮「店铺商品」 |
-
-> 侧边栏菜单由后台 `/admin/permissions/menus` 动态生成（按当前登录用户角色过滤 `menusByRoleIds`：商品中台 / 系统管理 / 店铺管理 目录→页面，页面携带 `route`）；改动角色/权限后需**重新登录**刷新 Redis 快照。
->
-> ⚠ 「店铺商品」是本次新增的**页面(2)级权限**（`store:goods`，`route=/shop-goods`，挂目录「店铺管理」4），权限行由 `backend/admin/src/main/resources/db/schema.sql` 灌入；**角色授权需在「角色管理 → 分配权限」手工勾选**，勾选后相关账号**重新登录**才生效（超管持 `*` 不受限）。前端 `router` 里列表页 `path` 必须与 `sys_permission.route` 逐字一致，否则侧栏点不开。
->
-> **分类筛选取子树匹配**：页面只传单个 `categoryId`（可选父分类），admin BFF 取分类树展开为「该节点 + 全部后代」后传给域；**分类列展示全路径**（`categoryPath`，如 `服饰 / 男装 / T恤`），由 BFF 读时调 goods-center 解析，解析失败时前端回退落库快照的分类名。
-
-## 商品编辑的 SKU 规格编辑器（SkuEditor）
+## 商品 SKU 规格编辑器（`views/spu/SpuSkuManageDialog.vue`）
 
 - **规格维度配置**：动态添加「规格名（颜色/内存/…）+ 规格值」，按**笛卡尔积**自动生成全部 SKU 组合
 - **编辑回显**：按现有 SKU 规格反推维度；已有组合保留其 `sku.id`（后端据此做 diff，SKU 主键保持稳定），新组合 `id=null`
 - 行内规格值重复 / 组合重复自动拦截
 - 每个 SKU 可单独维护商家编码（skuCode）与图片
 
-## 技术要点
+## 换肤与主题
 
-- **响应拦截**：`src/api/request.ts` 里 `axios` 拦截器校验 `RespData.code === 200` 即放行，非 200 按码分流（`401` 清登录态并跳登录页、`403` warning、其余 `ElMessage.error(msg)`）后 reject；解包由其后带泛型的 `ApiClient`（`get<T>` / `post<T>` …）统一做，**调用方直接拿到 `data` 本身**（业务提示统一来自后端）
-- **代理**：`vite.config.ts` 将 `/admin`、`/discovery` 转发至 `http://localhost:8080`（网关），开发期前后端同源（网关按 StripPrefix 分发到端 BFF admin）
-- 分页参数为 `pageNum/pageSize`，与后端 `BasePageVO` 对应；分页响应为 `PageResult<T>` = `{ total, records }`，跨文件复用的形状集中在 `src/types/`（`api.ts` / `auth.ts` / `goods.ts`），页面私有的表单对象就近在各自 SFC 内声明
+设计令牌集中在 `src/styles/tokens.css`（文件头即说明）：顶部色板是**唯一换肤入口**，同文件的「EP 主题映射」把 `--el-color-*` 指到令牌色，故按钮 / 标签 / 表格自动随主色走；明暗双主题把 `.dark` 挂在 `<html>`，选择持久化在 `localStorage`（键名与首帧防闪烁脚本见 `index.html`）。不依赖 EP 的自定义区域直接套 `src/styles/components.css` 的预设类。
 
 ## 本地开发
 
 ```bash
 npm install
-npm run dev        # → http://localhost:5173（需后端网关 8080 与 goods-center 8081 / admin 8082 / store 8083 已启动）
+npm run dev        # → http://localhost:5173（需网关 8080 与 admin BFF 8082 已启动）
 npm run type-check # vue-tsc --noEmit（只查类型，不出产物）
 npm run build      # vue-tsc --noEmit && vite build，产物输出 dist/
 ```
 
-## 目录结构
+`vite.config.ts` 把 `/admin` 与 `/discovery` 转发到网关 8080（开发期前后端同源）。分页参数为 `pageNum`/`pageSize`，对应后端 `BasePageVO`；分页响应为 `PageResult<T>` = `{ total, records }`。
 
-```
-src/
-├── api/                 # axios 封装（request.ts）+ 分类/品牌/商品/用户/角色/权限/店铺/店铺商品接口模块
-├── types/               # 跨文件复用的类型：api.ts(RespData/PageResult) + auth.ts + goods.ts + router.d.ts(RouteMeta 增强)
-├── router/              # 路由（默认跳转分类管理；店铺管理 /shop、店铺商品 /shop-goods[/:id]）
-├── styles/              # Design Token 基础层（换肤/EP主题映射/组件预设）
-│   ├── tokens.css       #   可调变量色板 + 浅/暗令牌 + EP --el-* 主题映射
-│   ├── base.css         #   Reset + 排版 + 滚动条（纯 var 驱动）
-│   └── components.css   #   .btn/.card/.input/.badge/.container-section 预设
-├── views/
-│   ├── category/        # CategoryManage + CategoryFormDialog
-│   ├── brand/           # BrandManage + BrandFormDialog
-│   ├── spu/             # SpuManage + SpuFormDialog(基础+规格配置) + SpuSkuManageDialog + SpuPreviewDialog
-│   ├── user/            # UserManage + UserFormDialog + AssignRoleDialog
-│   ├── role/            # RoleManage + RoleFormDialog + AssignPermissionDialog + AssignUserDialog
-│   ├── permission/      # PermissionManage + PermissionFormDialog
-│   ├── shop/            # ShopManage（店铺列表 + 详情抽屉 + 审核弹窗）
-│   └── shopgoods/       # ShopGoodsManage（店铺商品列表 + 锁定/解锁）+ ShopGoodsDetail（只读详情）
-├── App.vue              # 布局壳：侧边导航（商品/系统管理）+ 顶栏（页名/明暗切换）
-└── main.ts              # Element Plus（zh-cn）+ 暗色 css-vars + tokens/base/components + 路由
-```
+页面契约见 [docs/contracts/admin.md](../../docs/contracts/admin.md)。
