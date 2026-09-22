@@ -193,11 +193,12 @@ public class CartBffService {
             throw new ServiceException("该规格已下架，请重新选择");
         }
         TradeCartItemAddDTO payload = new TradeCartItemAddDTO();
+        payload.setCustomerId(customerId);
         payload.setSpuId(dto.getSpuId());
         payload.setSkuId(dto.getSkuId());
         payload.setQuantity(dto.getQuantity());
         return BffFeignCall.call("trade-center", TRADE_DOWN_MSG,
-                () -> tradeCenterClient.addCartItem(customerId, payload));
+                () -> tradeCenterClient.addCartItem(payload));
     }
 
     /**
@@ -210,9 +211,10 @@ public class CartBffService {
      */
     public void updateQuantity(Long customerId, Long id, MallCartItemUpdateDTO dto) {
         TradeCartItemUpdateDTO payload = new TradeCartItemUpdateDTO();
+        payload.setCustomerId(customerId);
         payload.setQuantity(dto.getQuantity());
         BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.updateCartItemQuantity(customerId, id, payload);
+            tradeCenterClient.updateCartItemQuantity(id, payload);
             return null;
         });
     }
@@ -226,9 +228,10 @@ public class CartBffService {
      */
     public void setItemSelected(Long customerId, Long id, MallCartSelectDTO dto) {
         TradeCartSelectDTO payload = new TradeCartSelectDTO();
+        payload.setCustomerId(customerId);
         payload.setSelected(dto.getSelected());
         BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.setCartItemSelected(customerId, id, payload);
+            tradeCenterClient.setCartItemSelected(id, payload);
             return null;
         });
     }
@@ -243,9 +246,10 @@ public class CartBffService {
      */
     public void setAllSelected(Long customerId, MallCartSelectDTO dto) {
         TradeCartSelectDTO payload = new TradeCartSelectDTO();
+        payload.setCustomerId(customerId);
         payload.setSelected(dto.getSelected());
         BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.setAllCartItemsSelected(customerId, payload);
+            tradeCenterClient.setAllCartItemsSelected(payload);
             return null;
         });
     }
@@ -259,9 +263,10 @@ public class CartBffService {
      */
     public void removeItems(Long customerId, MallCartItemIdsDTO dto) {
         TradeCartItemIdsDTO payload = new TradeCartItemIdsDTO();
+        payload.setCustomerId(customerId);
         payload.setIds(dto.getIds());
         BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.removeCartItems(customerId, payload);
+            tradeCenterClient.removeCartItems(payload);
             return null;
         });
     }

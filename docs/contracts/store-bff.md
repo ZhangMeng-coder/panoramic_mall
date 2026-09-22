@@ -42,8 +42,9 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | POST | /orders/{orderNo}/ship | — | String, TradeOrderShipDTO | RespData<Void> | — | 待实现 |
 
 > ⚠ **订单 3 条标 `待实现`**（契约先行）。列表**全状态可见**、含「待支付」（商户需要看到谁下了单没付钱）；
-> `storeId` **不出现在入参里**——锚点由本层从登录态取（`type=store` 的 `loginUser.getId()`），
-> 域侧路径是 `/order/store/{storeId}/…`，见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
+> 本层页面入参**不带 `storeId`**——锚点由本层从登录态取（`type=store` 的 `loginUser.getId()`）后
+> **并入域侧入参 DTO 的 `storeId` 字段**（域侧路径不带锚点，见 [cross-cutting.md](./cross-cutting.md) 第 22 条），
+> 域侧方法见 [trade-center.md](./trade-center.md) 第二节。
 > 出参 `TradeOrderVO` 是**域契约类型**（`trade-center-interface`），本层直接下发、不另造一套；
 > 状态文案取其中的 `storeAdminLabel`（C 端取的是 `mallLabel`，同一个枚举两个字段）。
 > ⚠ 路径标识用 **`orderNo`**，不是自增 id。
