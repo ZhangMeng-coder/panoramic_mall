@@ -180,7 +180,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void delete(Long storeId, Long id) {
+    public void delete(Long id, Long storeId) {
         StoreGoodsSpu spu = getOwnedOrThrow(storeId, id);
         assertNotLocked(spu, "删除");
         // R8：存在已上架 SKU 时拒绝删除

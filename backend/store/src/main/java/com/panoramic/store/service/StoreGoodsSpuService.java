@@ -97,10 +97,10 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     /**
      * 删除商品：存在上架 SKU 时拒绝（R8）；否则软删 SPU 并级联软删其下全部 SKU
      *
-     * @param storeId 店主账号 id
      * @param id      店铺商品 id
+     * @param storeId 店主账号 id（作用域；与 {@link #detail(Long, Long)} 同次序，也和 Feign / controller 一致）
      */
-    void delete(Long storeId, Long id);
+    void delete(Long id, Long storeId);
 
     /**
      * SKU 整单替换：无 id 者新增（下架态），带 id 者更新，存量缺失者删除。

@@ -106,7 +106,7 @@ public class GoodsController {
     @DeleteMapping("/spu/{id}")
     public void delete(@PathVariable("id") Long id,
                        @RequestParam("storeId") Long storeId) {
-        storeGoodsSpuService.delete(storeId, id);
+        storeGoodsSpuService.delete(id, storeId);
     }
 
     /**
