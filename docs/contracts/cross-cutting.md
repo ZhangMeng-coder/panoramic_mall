@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 21 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 23 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -283,7 +283,32 @@ layer: cross-cutting
 
 ---
 
-## 五、已删除的契约（**反向哨兵**）
+## 五、域接口形状与数据权限
+
+### 22. 域接口按**能力**通用，数据作用域由调用方自设
+
+| | |
+|---|---|
+| 契约 | 域接口按**能力**定义、不按**端**：同一能力对所有调用方只有**一条路径**，路径段与 Feign 方法名里不出现端别子段（`customer` / `store` / `platform`），也没有「顾客侧方法 / 商户侧方法」。**数据权限锚点不进路径段**，只作为**入参 DTO 的字段**（收参形状见第 23 条）。域内**不判身份、不看 `X-User-Type`、不做端别分流**，只做「传了就按它筛，没传就是不限定」 |
+| ⚠ 作用域何时可省 | 作用域字段**只在该能力存在「合法全量视角」时才允许省略**（订单分页 / 详情：admin 要看全部 → 可选），其余一律**必填**（订单四个写、购物车 8 条、店主自有的店与商品）。「写接口一律必填」是这条的特例，不是判据本身 |
+| 定义位置 | 域侧：`backend/trade-center/.../controller/OrderController.java` + `order/application/OrderApplicationService.java` + `order/infrastructure/jdbc/JdbcOrderRepository.java`；`backend/store/.../controller/{ShopController,GoodsController}.java` + `service/impl/{StoreShopServiceImpl,StoreGoodsSpuServiceImpl}.java`。**调用方纪律的取值处**：`backend/store-bff/.../bff/StoreShopBffService.java#currentStoreId`、`backend/mall-bff/.../service/CartBffService.java` |
+| 消费位置 | 三端 BFF 各自的域调用。⚠ 作用域的值**只能取自登录态**（`LoginUser.getId()`），**禁止**从前端入参透传——前端传来的 id 一旦被当作作用域，等于把数据权限交给页面 |
+| 破坏后果 | ① 端 BFF 漏传作用域 → **静默越权**：读=看到全量（列表照常渲染）、写=操作到别人的数据；编译不报错、日志无异常；② 反向：域内为省事自己按 `X-User-Type` 分流 → 域内长出应用层鉴权，第 15 条「防线在网络层」的前提被绕过 |
+| 核对方式 | **人工核对**（「必须带自己的 id」无法静态表达）。**形状信号**：契约表里同一能力出现多行端别变体（`/x/customer/{id}/…` 与 `/x/store/{id}/…` 并存）= 本条违规 |
+
+### 23. 域接口入参**除路径变量外只留一个 DTO**
+
+| | |
+|---|---|
+| 契约 | 内部契约（域接口）的入参：**参数总数 ≥2 时，除路径变量外的全部入参并进同一份 DTO**；**禁止** `(Long, Long, DTO)` 这类位置裸参——位置约定不写进类型，编译器与检查器都守不住。单参数（含单个路径变量）仍可用裸类型。⚠ **路径变量不并入 DTO**：它是资源标识、命名而非位置参数（`GET /shops/{id}` 直接用裸 `id` 合规） |
+| 定义位置 | 各域 Feign 声明（`*‑interface` 的 `contract.<域>.api.*Client`）+ 对应域 controller；入参 DTO 定义在各 `<域>-interface` 的 `dto` 包 |
+| 消费位置 | 三端 BFF 的域调用入参组装 |
+| 破坏后果 | 位置裸参一多，「第 2 个 `Long` 是 `skuId` 还是 `spuId`」只能靠注释与调用方记忆——**契约表里那种「位置约定」补丁**（如「多个 `Long` 时第一个是 `storeId`」）就是这样长出来的；传错不报错、只写错数据 |
+| 核对方式 | **人工核对**。⚠ 本**原则上可静态核对**（`drift-check.mjs` 已解析 controller / Feign 的注解块，加一条「非路径参数 >1 且非单个 DTO → 失败」不难），本轮未做——要守就另开任务 |
+
+---
+
+## 六、已删除的契约（**反向哨兵**）
 
 这些契约曾经存在、已被有意移除。任何人重新引入都意味着**回退了一次架构决策**，因此列为"必须不存在"的哨兵：
 

@@ -24,11 +24,13 @@
   - **⚠ 4xx/5xx 按 HTTP 状态码分野**：**4xx** → `ServiceException`（熔断忽略，端 BFF 原样透传页面）；**5xx** → 回落 `Default()` 产出 `FeignException`（**照常计入失败率**）。⚠ 域内兜底 `@ExceptionHandler(Exception.class)` 返回的正是 **HTTP 500 + `{code,msg}`**——**5xx 绝不能也还原成 `ServiceException`**，否则连真故障一起被忽略，熔断永远不打开。新增域的兜底异常处理须保持这个形状。
   - **降级 + 异常剥壳一律走 `common` 的 `BffFeignCall.call(下游名, 降级文案, action)`**：沿 cause 链剥开熔断/异步包装找出原始 `ServiceException`，**400/403/404 原样透传**（由统一异常处理还原给页面），其余（熔断/连接/序列化/其它业务码）打日志后降级为各端自己的「…暂不可用，请稍后重试」。端 BFF **不要**再各写一份 `call(Supplier)`。
 - **公共类型**：Feign interface 的入参/出参 DTO 在 common 维护（与接口同源），调用方与被调用方引用**同一份类型**，禁止各自复制一份导致漂移。
+- **一次能力一条路径（域接口按能力通用，2026-09-22）**：同一能力**不分端**——路径段与 Feign 方法名里不出现 `customer` / `store` / `platform` 之类端别子段，「顾客侧方法 / 商户侧方法」这种成对方法一律合并。**数据权限锚点不进路径段**，只作为**入参 DTO 的字段**：端 BFF 若有端别数据权限差异，**把自己登录态里的 id 作为查询条件传进去**（取 `LoginUser.getId()`，**禁止从前端入参透传**），域内只做「传了就按它筛，没传就是不限定」，**不判身份、不按端分流**。⚠ 作用域**只在该能力存在合法全量视角时才可省**（订单分页 / 详情：admin 要看全部），其余必填。见 cross-cutting 第 22 条。
+- **域接口入参除路径变量外只留一个 DTO（2026-09-22）**：参数 ≥2 时，除路径变量外的入参一律并进同一份 DTO；**禁止** `(Long, Long, DTO)` 这类位置裸参（位置约定不写进类型，编译器守不住、只能靠契约表注释，传错不报错只写错数据）。单参数（含单个路径变量）可裸类型；**路径变量不并入 DTO**。见 cross-cutting 第 23 条。
 - **不包 RespData**：内部 Feign 方法**直接返回业务结果类型**（`Xxx`/`List<Xxx>`/`boolean`…），错误走异常/统一处理传播；RespData（`{code,msg,data}`）仅用于对外页面/网关接口。
 - **信任与防线（鉴权与权限判定全部收敛在端 BFF）**：**域服务不做任何鉴权、不做任何权限判断、不校验 token**。内部调用只透传身份头 `X-User-Id` / `X-User-Type`（网关注入 → 端 BFF 经 Feign 原样转发），域服务把它直取填 `UserContext`，**仅用于两件事**：审计字段自动填充（`UserType:UserId`）与 `audit_by` 留痕——读 ≠ 判断，读身份不等于做鉴权。端 BFF 的 `@PreAuthorize` 是唯一授权点。⚠ **不再有内部令牌 `X-Internal-Token`**（已删除）：域端口只在内网可达是前提，否则可伪造 `X-User-Id`——防线在网络层，不在应用层。
   - **⚠ 端 BFF 身份类型绑定是跨端隔离的唯一防线（2026-09-17）**：每个端 BFF 在**自己的** `application.yml` 声明 `panoramic.auth.user-type`（admin=`admin` / store-bff=`store` / mall-bff=`user`），`AuthTokenFilter` 重建 `LoginUser` 后比对 `userType`，**不匹配即按未认证处理（HTTP 401）**——与「未登录」同一出口，不自写响应。⚠ 网关侧只按 `type` claim 拼 Redis 键查登录态，**不校验该 type 与目标路由是否匹配**，故此断言是唯一防线：缺则任一端 token 都能被另一端 BFF 当成本端身份（**已实测**：顾客 token 打 `/store/**` 被当成店主，`StoreShopBffService#currentStoreId` 把 `loginUser.getId()` 直接当 `store_id`；`mall_user.id` 与 `store_shop.id` 同库自增**必然撞号**，C 端注册公网可达 → **注册即越权**）。⚠ 该配置**无默认值，漏配启动即失败**（取向同 `config.import` 不带 `optional:`）。见 cross-cutting 第 9 条。
   - **缺头即不填充、不拦截**：域内身份过滤器（`GoodsUserIdentityFilter` / `StoreUserIdentityFilter` 等）在缺 `X-User-Id` 时直接放行（审计留空），**不得回 401**——那等于在域内做鉴权。
-- **store 域数据权限与三侧划分（D4/D5/D6）**：owner / platform / 跨店通用（无锚点）三侧的划分与分流点（**由「端 BFF 调哪一侧」决定，域内不做身份断言**）、`store_id` 数据权限适配、新增方法怎么选侧，以及审核门禁 / 中台版本比对 / 分类全路径解析 / 锁定只读的**端侧口径**——**一律见** [`backend/store/README.md`](backend/store/README.md)「三、职责与边界」、[`backend/store-bff/README.md`](backend/store-bff/README.md)「2. 业务门禁」与 [`docs/contracts/store.md`](docs/contracts/store.md) 第三节。**下面两条是唯一常驻在此的**：它们最容易踩中，且失败即**静默数据错**（不报错、只写坏数据），故不放去按需打开的文件。
+- **store 域数据权限（D4/D5/D6）**：⚠ 2026-09-22 起**不再按「端」分侧**（口径见 cross-cutting 第 22 条）——`storeId` 是**入参 DTO 里的一项作用域**，店主侧必填、平台侧不传（跨店那条本就无锚点），**「调哪条、传不传」全在端 BFF**，域内不做身份断言、也没有 `assertOwner` / `requirePlatformAdmin` 之类的判断。各能力的作用域是否必填、`store_id` 数据权限适配，以及审核门禁 / 中台版本比对 / 分类全路径解析 / 锁定只读的**端侧口径**——**一律见** [`backend/store/README.md`](backend/store/README.md)「三、职责与边界」、[`backend/store-bff/README.md`](backend/store-bff/README.md)「2. 业务门禁」与 [`docs/contracts/store.md`](docs/contracts/store.md) 第三节。**下面两条是唯一常驻在此的**：它们最容易踩中，且失败即**静默数据错**（不报错、只写坏数据），故不放去按需打开的文件。
   - **推导量由域内单一入口维护**：`StoreGoodsSpuServiceImpl#refreshDerived` 是**推导量统一刷新入口**，内含两个不变量写者——`refreshShelfStatus`（`SPU上架 ⟺ ≥1 SKU 上架`）与 `refreshMinPrice`（`min_price = 名下上架未删 SKU 的最低价`）。前端不得直接传 SPU 上下架；已上架 SKU 锁定其规格/价格（须先下架才能改/删），存在上架 SKU 时 SPU 规格配置只读、SPU 不可删除。⚠ `refreshMinPrice` 必须**独立**比较（不得复用上下架的状态早退：下架高价 SKU 后上下架不变、最低价却变了），且 `min_price` 可被清成 null，回写只能走 `lambdaUpdate().set(...)`——`updateById` 跳过 null 列，会把「SKU 全下架 → 清空 min_price」静默丢掉。
   - **平台锁定（R12）**：`store_goods_spu` 的 `lock_status/lock_reason/lock_user/lock_time` 四列即锁定态（不建独立锁定表）。**锁定 = 名下已上架 SKU 级联下架 → 由 `refreshShelfStatus` 推导 SPU 下架**（不变量仍是唯一写者，绝不直接改 `shelf_status`）；**锁定期 owner 侧整行只读**（编辑/删除/改 SKU/上下架一律拒绝，`assertNotLocked` 域内强制，不只靠前端禁用按钮）；**解锁只清锁定字段、不恢复上架**（店主手动重上）；锁定写入用条件更新（`where lock_status=0`）防并发重复锁定，解锁必须 `lambdaUpdate().set(col, null)` 显式清。`lock_user` 是**业务列**（D7），存审计同格式 `UserType:UserId`；**商户端不展示锁定人**，仅管理端展示。
 **鉴权与登录态（各端各管各的）**：每个端 BFF 只提供**自己身份**的登录接口（admin → `/auth/login` 签 `type=admin`；store-bff → `/auth/register|login` 签 `type=store`；mall-bff → `/auth/sms-code|register|login` 签 `type=user`）。三端共用同一把 `jwt-secret` 与同一套 `type` claim 契约（`LoginUser.CLAIM_USER_TYPE`），但**登录用户模型与 Redis 键命名空间按身份隔离**：
@@ -44,7 +46,7 @@
 
 ## 对外契约清单（docs/contracts）
 
-**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `customer-center.md` / `trade-center.md`）③ 跨服务隐式（`cross-cutting.md`，共 21 条），外加基础设施（`gateway.md`）。
+**所有服务的对外契约统一登记在 [`docs/contracts/`](docs/contracts/README.md)**，不在各模块 README 或本文件里另立一份。三层：① 页面级（`admin.md` / `store-bff.md` / `mall-bff.md`）② 内部 Feign（`goods-center.md` / `store.md` / `customer-center.md` / `trade-center.md`）③ 跨服务隐式（`cross-cutting.md`，共 23 条），外加基础设施（`gateway.md`）。
 
 ⚠ **检查器的端 BFF 名单不硬编码**：`drift-check.mjs` 从网关 `bff-services` 的值推导服务名单、从路由（`uri: lb://<svc>` ↔ `Path=/<前缀>/**`）推导前缀，进而逐个核对「两侧白名单互为子集」；某个端 BFF 推不出唯一前缀即**直接失败**（不降级为警告）。新增端 BFF 时不要回头去改检查器的名单。
 
@@ -54,7 +56,7 @@
 
 1. **改任何对外接口**（增删改路径 / 方法 / 权限串 / 入出参类型）时，**同一改动内**更新对应 `<服务>.md`。只改代码不改契约表，视为未完成。
 2. **契约先行**：接口可以先定契约、后写实现——契约先行写下的行，把「状态」列填 **`待实现`**（留空即「已实现」）；**实现完成后同一改动内把该列摘回留空**，不摘检查器会报错（反向哨兵，防标记烂掉后这张表开始骗人）。`待实现` 行只校验路径/方法/权限串的写法，**不查**入出参类型是否存在、权限串是否已在种子里——契约先行时那些同样还没写，查了契约就落不了盘。前端可以照 `待实现` 的行先把页面写起来。
-3. **改跨服务隐式契约**（响应形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串与路由一致性等）时，**必须**同步更新 `docs/contracts/cross-cutting.md`——这些约定任何一方单边改动都不会编译报错，只会在运行时静默断链，所以只能靠登记 + 核对。
+3. **改跨服务隐式契约**（响应形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串与路由一致性、**域接口形状与数据作用域口径**等）时，**必须**同步更新 `docs/contracts/cross-cutting.md`——这些约定任何一方单边改动都不会编译报错，只会在运行时静默断链，所以只能靠登记 + 核对。
 4. **提交前跑一次检查器**，差集非空不得提交：`node docs/contracts/drift-check.mjs`（退出码 0 = 一致；非 0 按输出逐条修正）。
 
 **文件专项专用**：模块 README 只写服务说明（职责 / 架构位置 / 实体标记 / 边界），❌ 不列接口清单；契约文件只写接口与形状，❌ 不写业务规则散文；`db/*.sql` 只写表结构与种子。一个文件只有一个职责，同一内容不写两遍。⚠ 散文逐句可被证伪、返工成本极高（2026-09-17 那次三轮返工全在散文上），而**清单式记账写第二份就是制造第二个会漂移的地方**——凡「同一事实的第二份表述」，一律删。

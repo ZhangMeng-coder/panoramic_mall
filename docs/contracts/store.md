@@ -76,7 +76,7 @@ C 端输出前必须由端 BFF 裁剪 —— 见 [cross-cutting.md](./cross-cutt
 **交易协作侧**是第四侧：调用方是**域**（trade-center）而不是端 BFF，路径子段天然带 `trade` 以示区分。
 它不复用「跨店通用」——那条的语义是**查询**、调用方是端 BFF；也不塞进 `platform`（那条写死在管理端）。
 ⚠ 该侧的存在使 store 域首次被**域间**调用，打破了「域只依赖自己的 `<域>-interface`」的结构隔离，
-是**唯一登记的跨域依赖例外**（见 [cross-cutting.md](./cross-cutting.md) 第 14 条与第 22 条）。
+是**唯一登记的跨域依赖例外**（见 [cross-cutting.md](./cross-cutting.md) 第 14 条）。
 
 ## 四、形状规则
 

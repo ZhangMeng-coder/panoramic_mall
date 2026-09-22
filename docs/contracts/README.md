@@ -24,17 +24,19 @@
 
 ## 文件一览
 
-| 文件 | 覆盖 | 条数 | 层 |
-|---|---|---|---|
-| [cross-cutting.md](./cross-cutting.md) | 跨服务隐式契约 | 21 条 | ③ |
-| [gateway.md](./gateway.md) | 网关路由 / 白名单 / 守卫 | 3 条路由 | 基础设施 |
-| [admin.md](./admin.md) | admin 端 BFF 对外接口 | 55 | ① |
-| [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | 20 | ① |
-| [goods-center.md](./goods-center.md) | 标准商品域内部接口 | 19 | ② |
-| [store.md](./store.md) | 店铺域内部接口 | 23 | ② |
-| [customer-center.md](./customer-center.md) | 顾客域内部接口 | 8 | ② |
-| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | 24 | ① |
-| [trade-center.md](./trade-center.md) | 交易域内部接口（购物车） | 8 | ② |
+| 文件 | 覆盖 | 层 |
+|---|---|---|
+| [cross-cutting.md](./cross-cutting.md) | 跨服务隐式契约 | ③ |
+| [gateway.md](./gateway.md) | 网关路由 / 白名单 / 守卫 | 基础设施 |
+| [admin.md](./admin.md) | admin 端 BFF 对外接口 | ① |
+| [store-bff.md](./store-bff.md) | 店铺端 BFF 对外接口 | ① |
+| [goods-center.md](./goods-center.md) | 标准商品域内部接口 | ② |
+| [store.md](./store.md) | 店铺域内部接口 | ② |
+| [customer-center.md](./customer-center.md) | 顾客域内部接口 | ② |
+| [mall-bff.md](./mall-bff.md) | 商城前台 BFF 对外接口 | ① |
+| [trade-center.md](./trade-center.md) | 交易域内部接口（购物车 + 订单） | ② |
+
+> ⚠ **本表不列条数**（2026-09-22 删）：那列是手抄的第二份事实、无人核对，且早已漂移（store 写 23 实为 26、trade-center 写 8 实为 18）。条数以各契约文件自己的表格为准。
 
 ## 契约表格式（硬约定，检查器依赖）
 
