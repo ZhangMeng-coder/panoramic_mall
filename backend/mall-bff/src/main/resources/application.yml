@@ -26,11 +26,11 @@ spring:
         server-addr: @nacos.server-addr@
 
 # 服务侧白名单（路由前缀已剥离）：C 端自助的取码/注册/登录与**首页宫格的分类树**（/catalog/categories）放行，
-# 其余（/auth/logout、/auth/me、/auth/phone、/profile、/addresses*、/cart*、/catalog/goods、/catalog/facets、
-# /catalog/goods/{id}）需顾客登录态
+# 其余（/auth/logout、/auth/me、/auth/phone、/profile、/addresses*、/cart*、/orders*、/catalog/goods、
+# /catalog/facets、/catalog/goods/{id}）需顾客登录态
 # （common 本地认证链：JWT + Redis 快照，type=user）。
-# ⚠ /profile、/addresses* 与 /cart* 都是「登录顾客对自己数据」的写/读，不进白名单
-#   （顾客 id 取自登录态，域侧只按该 id 过滤，故拿不到别人的行）；
+# ⚠ /profile、/addresses*、/cart* 与 /orders* 都是「登录顾客对自己数据」的写/读，不进白名单
+#   （顾客 id 取自登录态，域侧只按该 id 过滤，故拿不到别人的行 / 别人的单）；
 #   /auth/phone 是换绑手机号，同样必须已登录。⚠ 本行是「哪些端点要登录」的清单，新增端点时同步登记。
 # ⚠ 白名单是「精确路径」而不是 `/catalog/**` 前缀：分级是「首页免登录、一涉及商品查询与详情就鉴权」，
 # 写成前缀会把商品分页 / 筛选 / 详情一起放开（前台裸露）。这条与网关侧逐字对应，两边同一改动内一起改。

@@ -32,8 +32,10 @@ import java.util.List;
  * {@code com.panoramic.contract.customer} 包。映射<b>逐字段手工写</b>、不用
  * {@code BeanUtils.copyProperties}（域 VO 日后加字段不会自动漏到页面）。</p>
  *
- * <p>⚠ 域侧 {@code getAddress}（单条详情）<b>本期不编排</b>：页面契约里没有「取单条地址」的端点
- * （列表已带全字段，编辑页用列表里的那份即可），域方法存在 ≠ 必须编排。</p>
+ * <p>⚠ 域侧 {@code getAddress}（单条详情）<b>不由本类编排</b>：页面契约里没有「取单条地址」的端点
+ * （列表已带全字段，编辑页用列表里的那份即可），域方法存在 ≠ 必须编排。它的调用方是
+ * {@code OrderBffService}——下单要的是<b>地址快照</b>（顺带完成归属校验），取回后直接组成
+ * trade-center 的下单入参，不经过本类的页面类型。</p>
  */
 @Slf4j
 @Service
