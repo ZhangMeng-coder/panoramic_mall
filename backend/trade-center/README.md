@@ -17,7 +17,7 @@
 |---|---|---|
 | 被谁调（购物车） | mall-bff（**C 端顾客自助购物车**），已接 | `trade-center-interface` 的 `TradeCenterClient`，带熔断降级 |
 | 被谁调（订单） | **三端 BFF 都要调**：mall-bff（顾客侧）/ store-bff（商户侧）/ admin（管理端全量）——各端**订单编排尚未创建**，页面级那几行见 `docs/contracts/{mall-bff,store-bff,admin}.md` 的订单 `待实现` 行 | 同上 |
-| 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |
+| 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；下游仍是内存脚手架时见下面「阶段一/阶段二」 |
 
 ⚠ 订单接口**按能力通用**（不按端分侧）：三端调的是同一批端点，差别只在**传不传作用域**
 （cross-cutting 第 22 条）；写侧的作用域必填，**域内还有一道 400 断言**（`ScopeGuard`，绕过 MVC 时兜住）。
@@ -25,8 +25,8 @@
 - 顾客账号 `mall_user`（手机号 / 密码 / 登录态）归 **mall-bff**；顾客资料与收货地址归 **customer-center**；
   店铺商品（SPU / SKU / 价格 / 上下架）归 **store 域**。本域**只记 `spuId` / `skuId` 的 id 引用，不持商品快照**
   （加购时刻的价格到结算时早已过期，任何快照都是错的）
-- 本域只依赖 `common`（**不依赖 `common-auth`**）→ 结构上拿不到认证链：**不做鉴权、不碰 token、不查登录态**，
-  防线在网络层（8087 端口只在内网可达），不在应用层
+- 本域依赖 `common`（**不依赖 `common-auth`**；另有上表那一条跨域依赖 `store-interface`，它同样不带认证链）
+  → 结构上拿不到认证链：**不做鉴权、不碰 token、不查登录态**，防线在网络层（8087 端口只在内网可达），不在应用层
 - ⚠ 本域**破例**加载了 Redis（见下节），但这不改变上面任何一条：Redis 里没有身份、没有登录态，**它不是鉴权组件**
 
 > 📋 对外接口清单见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)。

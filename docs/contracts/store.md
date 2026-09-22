@@ -65,7 +65,7 @@ typeDirs: backend/store-interface/src/main/java
 |---|:--:|---|---|
 | **有作用域维度**（作用域必填，无全量视角） | 11 | saveShop, submitShop, pageStoreGoods, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock | `storeId` 进 DTO，**必填**（`@NotNull(groups = StoreScopeGroup.class)`） |
 | **无作用域维度**（该能力存在合法全量视角） | 10 | getShop, pageShops, auditShop, listShopOptions, storeGoodsDetail, pageStoreGoodsCrossShop, crossShopFacets, batchSpuDetail, lockStoreGoods, unlockStoreGoods | 无字段，或**可空**（`storeGoodsDetail`：传了就按它筛，没传就是不限定） |
-| **交易协作**（域间调用，非端 BFF） | 3 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder | 无锚点，**待实现** |
+| **交易协作**（域间调用，非端 BFF） | 3 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder | 无锚点，**待实现**；调用方是**域**不是端，见 [cross-cutting.md](./cross-cutting.md) 第 24 条（`trade-center` → `store` 是唯一的跨域调用边） |
 
 **作用域值只能来自调用方的登录态**（端 BFF 取 `LoginUser.getId()`，**禁止**从前端入参透传）：
 域侧只做「传了就按 `store_id` 筛，没传就是不限定」，**不判身份、不按端分流**——

@@ -11,7 +11,7 @@ layer: cross-cutting
 > 本页的改动**必须**与代码同一改动内提交（见 [README.md](./README.md) 维护规则第 2 条）。
 > 文末的哨兵清单由 `drift-check.mjs` 读取执行。
 
-以下 23 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
+以下 24 条中，标 ⚠ **已知风险** 的是当前已经存在的重复实现/不一致点 —— **本次只登记、不修复**。
 登记的目的就是让它们可见；要不要修是独立决策。
 
 ---
@@ -170,9 +170,11 @@ layer: cross-cutting
 | `datasource-mysql.yml` | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `datasource-redis.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ |
 | `auth.yml` | ✅ | ✅ | ✅ | ✅ | — | — | — | — |
-| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — | — | — |
+| `feign-circuitbreaker.yml` | — | ✅ | ✅ | ✅ | — | — | — | ✅ |
 
 > 规律：**端 BFF（admin / store-bff / mall-bff）一律加载四个**；域服务只依赖 `common`，结构上拿不到认证链，所以不加载 `auth` / 熔断配置。
+>
+> ⚠ **`trade-center` 是唯一加载 `feign-circuitbreaker` 的域**：它既是被调方、**也是调用方**——下单流水线经 Feign 调 store 域（商品快照 / 扣减库存），属**域间协作**（第 24 条）。⚠ 但它**仍不加载 `auth.yml`**：「调域」不等于「被鉴权」，域内照旧不做任何权限判断。新增域时若也要调别的域，**同样要在此矩阵补列并说明用途**。
 >
 > ⚠ mall-bff **已接** goods-center（分类树）与 store（商品分页 / 筛选聚合），其 `feign-circuitbreaker.yml` **不再是空转**——三端 BFF 都已在调域，「端 BFF 一律加载四个」的规律不变。
 >
@@ -185,7 +187,7 @@ layer: cross-cutting
 | 契约 | 业务 4xx（`ServiceException`）**不计**熔断失败率、原样透传给页面；5xx / 连接 / 熔断**计入**并降级为各端「…暂不可用」 |
 | 定义位置 | Nacos `feign-circuitbreaker.yml:43-44` 的 `resilience4j.circuitbreaker.configs.default.ignore-exceptions` = `com.panoramic.common.exception.ServiceException` |
 | 实现位置 | `common/.../feign/InternalApiErrorDecoder.java` —— **按 HTTP 状态码分野**：4xx → `ServiceException`；5xx → 回落 `Default()` 产出 `FeignException` |
-| 消费位置 | admin、store-bff、**mall-bff**（三端均已调域，均引 resilience4j）；降级包装走 `common/.../feign/BffFeignCall.java` |
+| 消费位置 | admin、store-bff、**mall-bff**（三端均已调域，均引 resilience4j）；降级包装走 `common/.../feign/BffFeignCall.java`。⚠ **`trade-center` 也在此列**（域间协作，第 24 条）：它同样经 `InternalApiErrorDecoder` 分野，但**不**用 `BffFeignCall`——域间调用不做「暂不可用」式降级，见第 24 条 |
 | 破坏后果 | 5xx 也还原成 `ServiceException` → 熔断**永远打不开**，下游故障直接拖垮调用方；反之若 4xx 计入 → 店主连续几次操作失误就把熔断打开，后续**正常**请求被降级成 500 |
 | 核对方式 | 哨兵 `ignore-exceptions`、`ServiceException`、`InternalApiErrorDecoder` |
 
@@ -196,9 +198,10 @@ layer: cross-cutting
 | 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
 | 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 公共类型」 |
 | 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java`、`customer-center-interface/.../contract/customer/api/CustomerCenterClient.java`、`trade-center-interface/.../contract/trade/api/TradeCenterClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
+| ⚠ 唯一登记的跨域依赖边 | `trade-center` → `store-interface`（下单要 store 域的商品快照 / 扣库存，见第 24 条）。⚠ 这条边使「各域只依赖自己的 `<域>-interface`」的**编译期守卫对本域失效**——守卫本就靠「引用别域类型会编译失败」生效，多一条依赖边就多一个守卫失效的点，故**只能靠登记 + 人工核对**。新增任何「域依赖别域 interface」的边都必须在此登记并说明用途；不登记 = 悄悄绕过守卫 |
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
 | 核对方式 | 检查器第 5 项：契约表里的入出参类型名必须能在该服务 `contract-meta` 的 `typeDirs` 里找到对应 `.java` |
-| 结构保障 | 各域模块只依赖**自己那个** `-interface`（`common` 里没有契约类型），跨域引用会**当场编译失败**；新建域时必须同步建 `<域>-interface` 模块 |
+| 结构保障（⚠ 已有例外） | 各域模块只依赖**自己那个** `-interface`（`common` 里没有契约类型），跨域引用会**当场编译失败**；新建域时必须同步建 `<域>-interface` 模块。⚠ **这条保障对 `trade-center` 已不成立**——它真实依赖 `store-interface`（见上一行与第 24 条），跨域引用对它不再编译失败，**只剩登记 + 人工核对** |
 
 ### 15. 域端口只在内网可达（**安全前提，非代码约束**）
 
@@ -283,7 +286,7 @@ layer: cross-cutting
 
 ---
 
-## 五、域接口形状与数据权限
+## 五、域接口形状、数据权限与域间协作
 
 ### 22. 域接口按**能力**通用，数据作用域由调用方自设
 
@@ -305,6 +308,21 @@ layer: cross-cutting
 | 消费位置 | 三端 BFF 的域调用入参组装 |
 | 破坏后果 | 位置裸参一多，「第 2 个 `Long` 是 `skuId` 还是 `spuId`」只能靠注释与调用方记忆——**契约表里那种「位置约定」补丁**（如「多个 `Long` 时第一个是 `storeId`」）就是这样长出来的；传错不报错、只写错数据 |
 | 核对方式 | **人工核对**。⚠ 本**原则上可静态核对**（`drift-check.mjs` 已解析 controller / Feign 的注解块，加一条「非路径参数 >1 且非单个 DTO → 失败」不难），本轮未做——要守就另开任务 |
+
+### 24. 域间协作：`trade-center` → `store`（**唯一的跨域调用边**）
+
+| | |
+|---|---|
+| 契约 | 业务域之间只允许**这一条**调用边：`trade-center` 经 Feign 调 `store` 域，用于下单流水线的 `goods-check`（取 SKU 快照）与 `stock-check`（扣减库存）/ 失败回补。域侧端点在 `store` 域的 `/internal/store/goods/trade/**`（3 条，形状见 [store.md](./store.md) 第二节）。⚠ **调用方是域、不是端**：因此这 3 条**不判身份、无作用域锚点**（按资源 id `skuId` / `orderNo` 操作），也不进任何端的数据权限口径 |
+| 为什么是 Feign 而不是各存一份数据 | 商品可见性与库存是 **store 域的事实**（`store_goods_spu/sku`），交易域存快照即制造第二个会漂移的真相源。⚠ 域间**不共享库表**——连表读在物理上做得到（同库），但它绕过对方域的所有不变量（上下架推导、锁定只读、库存守卫），是本条明令禁止的捷径 |
+| ⚠ 守卫失效（本条存在的首要原因） | 「各域只依赖自己的 `<域>-interface`」的编译期守卫**对本域失效**：本域 pom 里真实存在 `store-interface`（见第 14 条登记）。故本边**只能靠登记 + 人工核对**——多一条不登记的依赖边不会被任何检查器拦下 |
+| 身份头（三跳） | 网关注入 → 端 BFF 透传 → `trade-center` 收下 → 再经 `StoreFeignConfiguration` 的 `RequestInterceptor` **原样透传**给 `store`（复用既有的那份，**不新写配置类、不新造头**，第 6/7 条）。⚠ 熔断把调用挪到独立线程：`RequestContextHolder` 与 `UserContext` 两处**都可能取不到** → `store` 域审计**留空**（不报错）。这是**既定行为**（残留登记在 `todo.md` 残留 3），身份头只影响审计留痕、不影响正确性——因为域内不做鉴权 |
+| ⚠ 降级方向与端 BFF **相反** | 端 BFF 的域调用失败 → `BffFeignCall` 降级为「…暂不可用」（页面要能渲染）。**域间调用不得这样降级**：`store` 不可达 / 熔断打开时，**下单必须整体失败**（异常上抛，订单不落库），绝不能吞掉异常继续建单——那会产出「没扣库存的订单」。故本域**不用** `BffFeignCall`，让 `InternalApiErrorDecoder` 还原出的异常一路抛到调用方。⚠ **例外是回补**：`revertByOrder` 失败挂 `addSuppressed`、不覆盖主异常（补偿路径宁可不做也不能炸，见 `OrderCreateCoordinator#revertCreated`）→ store 整片不可达时**可能出现「库存已扣、订单未落库、回补也失败」的窗口**（跨域无分布式事务，Seata 未上，见 `todo.md` T12） |
+| 4xx/5xx 分野与熔断 | 与第 13 条**同一条规则、同一份实现**（`InternalApiErrorDecoder` + Nacos `feign-circuitbreaker.yml` 的 `ignore-exceptions`）：下游业务 4xx → `ServiceException`，原样透传给调用方页面、不计熔断失败率；5xx → 计入、由熔断保护调用方。⚠ `trade-center` 是全仓**唯一加载该配置的域**（第 12 条矩阵），且域内不鉴权 — **「加载熔断配置」不等于「加载认证链」** |
+| 定义位置 | `backend/trade-center/pom.xml`（`store-interface` 依赖）、`TradeCenterApplication`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`）、`trade-center/application.yml`（`config.import` 含 `nacos:feign-circuitbreaker.yml`）；调用处为订单流水线的两个 adapter（`GoodsQueryAdapter` / `StockAdapter`，见 `trade-center/README.md`） |
+| 消费位置 | `store` 域 `GoodsController` 的 `/goods/trade/**` 3 条 + `StoreGoodsSpuService#platformSkuSnapshotBySkuIds` / `StoreGoodsSkuStockService#deduct|revertByOrder` |
+| 破坏后果 | ① 新增第二条域间边却**不在此登记** → 绕过「别域实体不进本域」的编译期守卫，静默长出跨域耦合；② 域间调用学端 BFF 做降级 → **静默产出未扣库存的订单**（超卖）；③ 反向：把 `store` 的表连进 `trade-center` → 绕过对方域的全部不变量（上下架推导 / 锁定只读 / 库存守卫），且两域从此不能再独立演进；④ 域端口一旦暴露公网 → 与第 15 条同罪（本边不引入新的公网路由，`/internal/**` 仍只在内网可达） |
+| 核对方式 | 哨兵 `store-interface`（出现在 `backend/trade-center/pom.xml`）与 `com.panoramic.contract.store`（出现在 `TradeCenterApplication`）。⚠ 域侧端点形状按 [store.md](./store.md) 第二节核对 |
 
 ---
 
@@ -333,7 +351,9 @@ layer: cross-cutting
     { "literal": "${panoramic.auth.user-type}", "in": ["backend/common-auth"], "why": "端 BFF 身份类型绑定的消费处（第 9 条）；⚠ 必须带 ${} 占位符形式——裸属性名会被类注释里的散文假性满足" },
     { "literal": "user-type:", "in": ["backend/admin", "backend/store-bff", "backend/mall-bff"], "why": "三端 BFF 各须显式声明本端身份类型（第 9 条）" },
     { "literal": "ignore-exceptions", "in": ["backend/nacos-config"], "why": "熔断忽略 ServiceException（第 13 条）" },
-    { "literal": "InternalApiErrorDecoder", "in": ["backend/common/src/main/java/com/panoramic/common/feign"], "why": "4xx/5xx 分野的实现处（第 13 条）" }
+    { "literal": "InternalApiErrorDecoder", "in": ["backend/common/src/main/java/com/panoramic/common/feign"], "why": "4xx/5xx 分野的实现处（第 13 条）" },
+    { "literal": "store-interface", "in": ["backend/trade-center/pom.xml"], "why": "唯一的跨域调用边（第 24 条）；⚠ 该边使「各域只依赖自己的 interface」的编译期守卫对本域失效，只能靠登记" },
+    { "literal": "com.panoramic.contract.store", "in": ["backend/trade-center/src/main/java/com/panoramic/trade/TradeCenterApplication.java"], "why": "trade-center 只扫 store 域的 Feign 客户端包——多扫一个包 = 静默多一条未登记的跨域边（第 24 条）" }
   ],
   "absence": [
     { "literal": "X-Internal-Token", "in": ["backend"], "ext": [".java", ".yml", ".yaml"], "why": "2026-09-10 已删除的内部令牌，不得复活" },

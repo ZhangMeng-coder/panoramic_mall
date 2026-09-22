@@ -5,15 +5,19 @@ spring:
   application:
     name: trade-center
   config:
-    # 共享配置统一收敛到 Nacos：本服务引入 datasource-mysql(含 mybatis-plus) 与 datasource-redis。
+    # 共享配置统一收敛到 Nacos：本服务引入 datasource-mysql(含 mybatis-plus)、datasource-redis 与 feign-circuitbreaker。
     # ⚠ 本域**是全仓库唯一加载 datasource-redis.yml 的域服务**（购物车加购去重 + 行数读穿透缓存的
     #    旁路缓存），属 cross-cutting.md 第 12 条「Nacos 加载矩阵」的登记例外；
     #    其余域服务（goods-center / store / customer-center）都不引它。
-    # ⚠ 域服务不做鉴权、不碰登录态，故不引入 auth.yml；也不走 Feign 客户端，故不引入 feign-circuitbreaker.yml。
+    # ⚠ 本域**也是唯一加载 feign-circuitbreaker.yml 的域服务**：下单要经 Feign 调 store 域
+    #    （商品快照 / 扣库存），域间调用同样要熔断与 4xx-5xx 分野，见 cross-cutting 第 24 条。
+    # ⚠ 域服务不做鉴权、不碰登录态，故**仍不引入 auth.yml**——「调域」与「被鉴权」是两件事：
+    #    本域拿不到认证链、也不做任何权限判断，身份头只读来填 UserContext / 透传下游。
     # ⚠ 不带 optional: 前缀——配置中心不可用或该 dataId 缺失时**启动即失败**，不做静默降级
     import:
       - nacos:datasource-mysql.yml
       - nacos:datasource-redis.yml
+      - nacos:feign-circuitbreaker.yml
   cloud:
     nacos:
       # 以下配置来自父项目 pom.xml 中的 properties（@...@ 为 Maven 资源过滤占位符）
@@ -30,7 +34,9 @@ spring:
 #    各端订单编排尚未创建（页面契约见 docs/contracts/{mall-bff,store-bff,admin}.md）。
 #    订单 6 条接口**按能力通用、不分侧**（cross-cutting 第 22 条）：三端调的是同一个端点，
 #    差别只在传不传作用域（读侧可选、写侧必填）。
-# 服务端不启用 Feign 客户端扫描。鉴权与权限判定全部收敛在端 BFF（各 BFF 从登录态取锚点 customerId / storeId），本服务只做两件事：
+# 服务端**启用 Feign 客户端扫描**（只扫 store 域：com.panoramic.contract.store，见 TradeCenterApplication）——它是被调方，
+# 同时**也是调用方**：下单流水线的 goods-check / stock-check 要问 store 域要商品快照并扣减库存（域间协作，cross-cutting 第 24 条）。
+# 鉴权与权限判定全部收敛在端 BFF（各 BFF 从登录态取锚点 customerId / storeId），本服务只做两件事：
 #   1) 执行领域逻辑（购物车 trade_cart_item、订单 trade_order 等 5 张表，全按传入锚点过滤）；
 #   2) TradeUserIdentityFilter 把网关注入的信任头 X-User-Id / X-User-Type 直取填 UserContext
 #      （不校验 token、不做权限判断；缺头则不填充，审计字段留空）。

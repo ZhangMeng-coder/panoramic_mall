@@ -1,7 +1,11 @@
 # ============================================================
 # Nacos 共享配置：Feign 熔断（data-id: feign-circuitbreaker.yml, GROUP: DEFAULT_GROUP）
-# 由端 BFF（admin / store-bff / mall-bff）经 spring.config.import 加载。gateway 与业务域
-# （goods-center / store）不加载——它们不走 Feign 客户端。
+# 由端 BFF（admin / store-bff / mall-bff）经 spring.config.import 加载。gateway 不加载。
+#
+# ⚠ 加载方还有 **trade-center**（唯一的域侧例外）：本域既是被调方，**也是调用方**——
+#   下单要经 Feign 调 store 域（商品快照 / 扣减库存），域间调用同样要熔断与 4xx-5xx 分野。
+#   其余业务域（goods-center / store / customer-center）都不走 Feign 客户端，故不加载本文件。
+#   见 docs/contracts/cross-cutting.md 第 12 条加载矩阵与第 24 条「域间协作」。
 #
 # 为什么收敛到这里：admin 与 store-bff 的这段配置**逐字相同**，原先各持一份——
 # 改一个阈值要改两处并重新打包两个服务；2026-09-10 修「业务 4xx 误计熔断」时就是两边同改的。

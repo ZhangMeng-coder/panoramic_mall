@@ -27,6 +27,18 @@
             <artifactId>trade-center-interface</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!--
+          ⚠ 本域是**唯一**依赖「别的域的 interface」的域（域间协作：下单要查 store 域的商品快照与扣库存）。
+          这破了「各域只依赖自己的 <域>-interface」那条编译期守卫——那条守卫正是靠「引用别域类型会编译失败」
+          生效的，本边一旦存在，守卫对本域失效。故它是**登记例外**，见 docs/contracts/cross-cutting.md 第 24 条。
+          ⚠ 只加这一个：openfeign / loadbalancer / resilience4j 这些通道件已由 common 作普通依赖传出（R15），
+          不需要在本 pom 再声明。
+        -->
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>store-interface</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- Spring Boot Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
