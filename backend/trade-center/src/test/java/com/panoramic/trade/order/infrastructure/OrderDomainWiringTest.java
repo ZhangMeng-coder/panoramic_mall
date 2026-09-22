@@ -25,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -53,6 +54,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -112,7 +114,7 @@ class OrderDomainWiringTest {
      */
     private static final Pattern MAVEN_PLACEHOLDER = Pattern.compile("@[A-Za-z0-9_.\\-]+@");
 
-    /** 商品 / 库存指向谁（{@code mock} 侧的内存脚手架已随 T4b 删除，本键只剩这一个取值） */
+    /** 商品 / 库存指向谁（{@code mock} 侧那份装配已随 T4b 删除，本键只剩这一个取值） */
     private static final String STORE_ADAPTER_KEY = "panoramic.trade.order.store-adapter";
 
     private static final String FEIGN = "feign";
@@ -248,6 +250,34 @@ class OrderDomainWiringTest {
 
             assertThat(context.getBeanNamesForType(GoodsQueryPort.class)).hasSize(1);
             assertThat(context.getBeanNamesForType(StockPort.class)).hasSize(1);
+        }
+    }
+
+    @Test
+    @DisplayName("store-adapter 写错取值 → 一个 bean 都不装配、取用即找不到（含已作废的 mock）")
+    void wrongStoreAdapterValueAssemblesNothing() {
+        // ⚠ 本格是 MockStoreConfigurationTest#otherAdapterValueDisablesTheMockBeans 的继任者：
+        //    那个哨兵随 mock 装配一起删掉后，「写错取值 → 零 bean → 启动失败」这条断言一度无人守。
+        //    ⚠ `mock` 是**曾经的合法值**：它在 T4b 被作废，但仍是最可能被照旧文档写出来的那个错值，
+        //    故与拼错（mockk）/ 空串并列——三者都必须落到同一个出口。
+        for (String wrong : new String[]{"mock", "mockk", ""}) {
+            try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+                context.getEnvironment().getPropertySources()
+                        .addFirst(new MapPropertySource("wrong-store-adapter",
+                                Map.of(STORE_ADAPTER_KEY, wrong)));
+                context.register(StoreFeignAdapterConfiguration.class, StoreClientTestDoubleConfiguration.class);
+                context.refresh();
+
+                assertThat(context.getBeanNamesForType(GoodsQueryPort.class))
+                        .as("store-adapter=%s 不该装配出任何下游端口", wrong).isEmpty();
+                assertThat(context.getBeanNamesForType(StockPort.class))
+                        .as("store-adapter=%s 不该装配出任何下游端口", wrong).isEmpty();
+                // 上下文能起来（条件不匹配只是不建 bean，不是报错），**取用**时才炸——
+                // 这正是 application.yml 里写的那句「启动即报找不到 bean」，而非悄悄接单。
+                assertThatThrownBy(() -> context.getBean(GoodsQueryPort.class))
+                        .as("store-adapter=%s 时取用该端口必须失败", wrong)
+                        .isInstanceOf(NoSuchBeanDefinitionException.class);
+            }
         }
     }
 

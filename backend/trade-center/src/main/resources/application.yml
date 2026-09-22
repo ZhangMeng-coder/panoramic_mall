@@ -58,7 +58,7 @@ panoramic:
       # 商品 / 库存指向谁：feign = 经 StoreClient 调真实 store 域（下单流水线的 goods-check 取 SKU 快照 /
       # stock-check 扣减库存）；阶段一的 mock 内存脚手架已随 T4b 删除（todo 残留 9），故本键只剩这一个取值。
       # ⚠ matchIfMissing 已在 T4b 翻到 feign 侧（原先在 mock 侧）：本行仍是**显式**写下的，缺了它也只是
-      #    回到「当前唯一存在的装配」。写错一个值（feigned / 空串）则一个 bean 都不装配，
+      #    回到「当前唯一存在的装配」。写错一个值（feigned / 已作废的 mock / 空串）则一个 bean 都不装配，
       #    启动即报「找不到 GoodsQueryPort / StockPort 的 bean」——起不来，而不是悄悄接单。
       store-adapter: feign
       # 订单仓库：jdbc = 真实落库 / memory = 内存实现（无数据源场景，如装配层单测）。

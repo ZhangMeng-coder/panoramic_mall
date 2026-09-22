@@ -22,7 +22,8 @@ import java.util.function.Predicate;
  *
  * <p>⚠ <b>临时脚手架</b>：真实落库已是 {@code JdbcOrderRepository}（默认），本类保留下来是给
  * 单测与「无数据源」场景用的（{@code panoramic.trade.order.repository=memory}）。
- * 商品 / 库存两个下游同样是内存脚手架，store 域落地后随 T4b 一起删除（todo 残留 9）。</p>
+ * 商品 / 库存两个下游的内存脚手架**已随 T4b 移入测试树**（{@code src/test/.../support/InMemoryGoodsQueryPort} /
+ * {@code InMemoryStockPort}）——它们只服务单测，不再是可装配的生产分支；本类则因上面那个开关仍在 main。</p>
  *
  * <p>⚠ <b>它必须能表达「未提交的占位」</b>，否则先占键的语义在单测里就不成立：真实实现里
  * 键与订单在同一个事务里——业务失败则**键随事务一起消失**。内存实现没有事务，于是用一个
