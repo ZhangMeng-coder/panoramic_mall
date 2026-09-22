@@ -47,8 +47,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: '/orders',
         name: 'orders',
-        component: () => import('../views/placeholder/PlaceholderView.vue'),
-        meta: { title: '订单管理', description: '订单管理功能开发中，敬请期待。' }
+        component: () => import('../views/order/OrderManage.vue'),
+        meta: { title: '订单管理' }
       },
       {
         path: '/stock',
