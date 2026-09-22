@@ -85,8 +85,6 @@
           />
         </template>
       </el-table-column>
-      <!-- 占用库存只读：交易域写入，本期恒 0，不参与本页编辑 -->
-      <el-table-column prop="lockedStock" label="占用" width="80" align="center" />
     </el-table>
 
     <el-pagination

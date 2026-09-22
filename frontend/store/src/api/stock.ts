@@ -30,8 +30,6 @@ export interface StockRow {
   shelfStatus: number
   /** 总库存（商户维护） */
   stock: number
-  /** 已废弃（2026-09-21）：占用库存不参与可用库存口径、不再写入，恒 0；字段保留，只读展示 */
-  lockedStock: number
   /** 低库存预警阈值，null = 不预警 */
   warnStock: number | null
 }

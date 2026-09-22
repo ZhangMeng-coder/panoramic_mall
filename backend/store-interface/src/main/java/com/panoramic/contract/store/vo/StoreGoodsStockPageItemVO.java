@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * SKU 库存分页列表项（owner 侧：店铺端「库存管理」列表；store 域出参）。
- * <p>一行一条 SKU（商品名 / 规格 / 编码 / 价格 / 上下架 / 库存三列），
+ * <p>一行一条 SKU（商品名 / 规格 / 编码 / 价格 / 上下架 / 库存两列），
  * 供店主就地改库存与批量设库存。</p>
  */
 @Data
@@ -58,12 +58,6 @@ public class StoreGoodsStockPageItemVO {
      * 总库存（商户维护）
      */
     private Integer stock;
-
-    /**
-     * <b>已废弃</b>（2026-09-21）：不参与可用库存口径、不再写入，恒 0；只读展示，不参与本页编辑。
-     * 字段保留（对外契约不删，契约删字段属破坏性改动），DDL 删列见仓库根 todo.md 残留 1
-     */
-    private Integer lockedStock;
 
     /**
      * 低库存预警阈值（NULL = 不预警）

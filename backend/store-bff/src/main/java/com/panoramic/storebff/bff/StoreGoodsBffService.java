@@ -162,7 +162,7 @@ public class StoreGoodsBffService {
 
     /**
      * 库存管理分页（仅当前店主名下 SKU）：域分页直出，本层不做聚合。
-     * <p>库存三列（总库存 / 占用 / 预警）由域侧读库存表回填；本层不含任何库存口径计算。
+     * <p>库存两列（总库存 / 预警）由域侧读库存表回填；本层不含任何库存口径计算。
      * 作用域由本层无条件覆盖。</p>
      */
     public PageResult<StoreGoodsStockPageItemVO> pageStock(StoreGoodsStockPageQueryDTO dto) {

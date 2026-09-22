@@ -144,15 +144,14 @@ UPDATE store_goods_spu s
 --   独立后库存行的写锁只覆盖库存行本身（R14）。
 --   不冗余 store_id / spu_id：归属链 sku_id → store_goods_sku.spu_id → store_goods_spu.store_id。
 --   available(可用库存) = stock；C 端展示的一律是它。
---   ⚠ locked_stock 已于 2026-09-21 废弃（不参与任何口径、不再写入），但**列与建表语句保留**：
---     旧库仍有它，删了新旧库结构会分叉；ALTER TABLE ... DROP COLUMN 是销毁性操作，见仓库根 todo.md 残留 1。
+--   ⚠ locked_stock 已于 2026-09-21 废弃、2026-09-22 删除列（T14）：不参与任何口径、不再写入；
+--     旧库由 T14 的 DROP COLUMN 收敛，新旧库结构重新一致，本文件的 CREATE TABLE 即最终形状。
 --   warn_stock 仅商户端低库存预警用，NULL = 不预警，**不进 C 端**。
 --   库存不参与「SPU上架 ⟺ ≥1 SKU 上架」不变量，也不参与 C 端可见性（零库存不触发下架、商品照常可见）。
 CREATE TABLE IF NOT EXISTS store_goods_sku_stock (
   id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   sku_id       BIGINT UNSIGNED NOT NULL                COMMENT 'store_goods_sku.id（一 SKU 一行）',
   stock        INT             NOT NULL DEFAULT 0      COMMENT '总库存（商户维护）',
-  locked_stock INT             NOT NULL DEFAULT 0      COMMENT '已废弃（2026-09-21）：不参与可用库存口径、不写入；待落库期 DROP',
   warn_stock   INT             DEFAULT NULL            COMMENT '低库存预警阈值（NULL = 不预警，仅商户端用）',
   create_user  VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -164,8 +163,8 @@ CREATE TABLE IF NOT EXISTS store_goods_sku_stock (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SKU 库存（与 store_goods_sku 1:1）';
 
 -- 4.1 存量回填（幂等，纯 INSERT、不改任何存量行）：未删 SKU 一律补 0 行
-INSERT INTO store_goods_sku_stock (sku_id, stock, locked_stock, warn_stock, is_delete)
-SELECT s.id, 0, 0, NULL, 0 FROM store_goods_sku s
+INSERT INTO store_goods_sku_stock (sku_id, stock, warn_stock, is_delete)
+SELECT s.id, 0, NULL, 0 FROM store_goods_sku s
 WHERE s.is_delete = 0
   AND NOT EXISTS (SELECT 1 FROM store_goods_sku_stock t WHERE t.sku_id = s.id);
 

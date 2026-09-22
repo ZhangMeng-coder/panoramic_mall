@@ -31,7 +31,7 @@
 | `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段） |
 | `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
-| `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `warn_stock`；`locked_stock` **已废弃**（2026-09-21，不参与口径、不再写入，列待落库期删）；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
+| `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `warn_stock`；`locked_stock` **已废弃并删列**（2026-09-21 废弃、2026-09-22 删列，不参与口径、不再写入）；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
 | `store_goods_sku_stock_log` | **store（本域）** | SKU 库存变动流水（`sku_id` / `order_no` / `kind` = `OUT` 出库 · `REVERT` 回补 / `change_quantity` 恒正 / `occurred_at`）；**只增不改**（不提供 update / delete 入口）；唯一键 `(order_no, sku_id, kind)` 是回补幂等的落库兜底 |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 

@@ -40,13 +40,6 @@ public class StoreGoodsSkuStock extends BaseEntity {
     private Integer stock;
 
     /**
-     * <b>已废弃</b>（2026-09-21 裁定）：不参与可用库存口径、不得新增写入；该列是先前自加的预留，
-     * 流程不清晰、回冲操作繁琐。DDL 删列见仓库根 todo.md「残留 / 后续」第 1 行。
-     */
-    @Deprecated
-    private Integer lockedStock;
-
-    /**
      * 低库存预警阈值（NULL = 不预警，仅商户端用）
      */
     private Integer warnStock;

@@ -340,7 +340,6 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
             vo.setSpecAttrs(readJsonList(sku.getSpecAttrs(), new TypeReference<List<SpecAttr>>() {}));
             StoreGoodsSkuStock st = stockMap.get(sku.getId());
             vo.setStock(st == null || st.getStock() == null ? 0 : st.getStock());
-            vo.setLockedStock(st == null || st.getLockedStock() == null ? 0 : st.getLockedStock());
             vo.setWarnStock(st == null ? null : st.getWarnStock());
             return vo;
         }).collect(Collectors.toList());
