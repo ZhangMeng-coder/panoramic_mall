@@ -183,3 +183,16 @@ INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort,
 INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
   (421, 42, '商品查询',     3, 'store:goods:list', NULL, 0),
   (422, 42, '商品锁定解锁', 3, 'store:goods:lock', NULL, 1);
+
+-- ============================================================
+-- 幂等权限种子：订单管理（平台 admin 后台，业务经 admin 端 BFF /admin/orders/** 编排落 trade-center 域）
+--   顶级目录(5) → 页面 订单管理(51, 带路由 /order，perms=trade:order) → 按钮 查询
+--   路由 /order 必须与前端 router 的 path 逐字一致，否则侧栏菜单点不开。
+-- ⚠ 角色授权不在本文件内：本文件只种权限项，sys_role_permission 的授权一律在「角色管理→分配权限」UI 勾选。
+-- ============================================================
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort, route) VALUES
+  (5,  0, '订单管理', 1, NULL,          'folder-opened', 2, NULL),
+  (51, 5, '订单列表', 2, 'trade:order', 'menu',          1, '/order');
+
+INSERT IGNORE INTO sys_permission (id, parent_id, name, type, perms, icon, sort) VALUES
+  (511, 51, '订单查询', 3, 'trade:order:list', NULL, 0);

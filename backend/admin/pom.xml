@@ -28,7 +28,8 @@
             <artifactId>common-auth</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <!-- 内部契约：两个域的 Feign 客户端 + 同源 DTO/VO（本端是调用方，两者都消费） -->
+        <!-- 内部契约：三个域的 Feign 客户端 + 同源 DTO/VO（本端是调用方，三者都消费；
+             trade 域取平台侧订单分页 / 详情，只读） -->
         <dependency>
             <groupId>com.panoramic</groupId>
             <artifactId>goods-center-interface</artifactId>
@@ -37,6 +38,11 @@
         <dependency>
             <groupId>com.panoramic</groupId>
             <artifactId>store-interface</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.panoramic</groupId>
+            <artifactId>trade-center-interface</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- Spring Boot Web -->

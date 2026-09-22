@@ -9,10 +9,10 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 # 平台管理端 BFF（admin）对外契约 · 第 ① 层
 
 > 平台管理后台接口（8082），经网关 `/admin/**` 对外（`StripPrefix=1` 后落到本服务的
-> `/auth/**`、`/roles/**`、`/users/**`、`/permissions/**`、`/shop/**`、`/goods/**`）。
+> `/auth/**`、`/roles/**`、`/users/**`、`/permissions/**`、`/shop/**`、`/goods/**`、`/orders/**`）。
 > 签发 `type=admin` 的登录令牌；是本仓库**接口最多的服务**，也是 `@PreAuthorize` 授权的**唯一位置**。
 
-**共 57 个接口 / 10 个 Controller**（已实现 55 + **待实现 2**：订单查询，见下 `order/OrderController`）。
+**共 57 个接口 / 10 个 Controller**。
 
 ## 一、接口清单
 
@@ -116,12 +116,12 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | PUT | /goods/brands/{id} | goods:brand:edit | Long, BrandUpdateDTO | RespData<Void> | GoodsBrandController.java:77 |  |
 | DELETE | /goods/brands/{id} | goods:brand:delete | Long | RespData<Void> | GoodsBrandController.java:88 |  |
 
-### order/OrderController — `/orders`（2，**待实现**）
+### order/OrderController — `/orders`（2）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | — | 待实现 |
-| GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | — | 待实现 |
+| GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | OrderController.java:45 |  |
+| GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | OrderController.java:54 |  |
 
 > ⚠ **管理端对订单只读**——只有这两个查询端点，**没有任何写动作**（改状态 / 改单 / 删单都不做）。
 > 订单的状态流转入口只在两端：C 端 `pay` / `receive`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。
@@ -130,9 +130,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > `OrderPageQueryDTO`（**admin 本地**编排查询对象，与 `ShopGoodsPageQueryDTO` 同款做法）；
 > 自增 id **不出现在契约里**，路径标识用 **`orderNo`**。出参 `TradeOrderVO` 是域契约类型，直接下发。
 
-> ⚠ **实现期需补 `trade:order:list` 的三方一致**：`sys_permission` 种子（含菜单，按「目录 X → 页 X1 → 按钮 X11+」）
-> ↔ 前端 `v-perm` ↔ 本行——见 [cross-cutting.md](./cross-cutting.md) 第 16 条。契约先行的行**不查**权限种子，
-> 故这一条现在还是空的，实现对不上检查器会报出来。
+> ⚠ **`trade:order:list` 的三方一致**：`sys_permission` 种子（目录 `5 订单管理` → 页 `51 订单列表`（`route=/order`）
+> → 按钮 `511 订单查询`，按「目录 X → 页 X1 → 按钮 X11+」）与**本行**已就位——见
+> [cross-cutting.md](./cross-cutting.md) 第 16 条。⚠ 前端 `v-perm` 属**前端任务**（admin 前端订单页），
+> **尚未**就位，故此处**不是**「三方已齐」；且这一项检查器守不住（第 3 项只查「`v-perm` ⊆ 契约表 / 种子」
+> 一向，**少了 `v-perm` 不报**），补齐只能靠人工核对。
 
 > 「路径」列不带网关前缀 `/admin`。例：`/shop/goods/page` 对外完整路径是 `/admin/shop/goods/page`。
 
@@ -161,7 +163,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 来源 | 类型 |
 |---|---|
 | **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO |
-| `trade-center-interface`（`com.panoramic.contract.trade.vo`） | 订单（**待实现**）：TradeOrderVO |
+| `trade-center-interface`（`com.panoramic.contract.trade.vo`） | 订单：TradeOrderVO |
 | 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺类型清单见 [store.md](./store.md) 第五节 |
 
 > `LoginResultVO` / `CurrentUserVO` 两端**各持一份**（不共享，身份空间不同）——见 [store-bff.md](./store-bff.md) 第四节。
@@ -173,7 +175,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 |---|---|---|
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD；分类树与分类全路径 |
 | store(8083) | Feign `StoreClient`（跨店通用能力：**不传作用域 = 全量**） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉。⚠ 店铺详情走 `getShop`（域侧**查不到返空**，404 文案由本层定）；商品详情走 `storeGoodsDetail`，跨店视角**不传** `storeId` |
-| trade-center(8087) | Feign `TradeCenterClient`（**待实现**） | 平台侧订单分页 / 详情（**只读**，无写动作） |
+| trade-center(8087) | Feign `TradeCenterClient` | 平台侧订单分页 / 详情（**只读**，无写动作） |
 
 全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 `ShopGoodsBffService` 与 `StoreShopBffService` 是本层两个主要编排类。
