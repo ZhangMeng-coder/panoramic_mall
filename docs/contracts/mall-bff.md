@@ -110,7 +110,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 下单出参 | 一次提交会按 `storeId` **拆成多笔**（一单一店），故出参是 `List<MallOrderVO>`，顺序 = `storeId` 升序（确定）。页面按「一笔一单」展示与支付 |
 | 重复提交 | `requestId` **必填**（客户端生成，**这是页面的义务、域内刻意不设校验**）；命中即**原样返回首次那批**——不重建、不二次扣库存、连商品都不再校验。⚠ **生成规格**：非空、**≤64 字符**（域列 `VARCHAR(64)`）、同一顾客名下唯一即可——随机 UUID 足够。⚠ **键的作用域是 `(customer_id, request_id)`**，故它只需**唯一性、不需保密性**，不是安全令牌（别人的 `requestId` 在本人的 `customer_id` 下不匹配）。⚠ **同一次提交重试应沿用同一个 `requestId`**：沿用走 L1 原样返回首批；换新的只剩 L2 指纹窗口兜底。⚠ **L2 是有限窗口、别当无时限保证**：指纹 = `sha256(customerId\|source\|storeId\|排序后的 skuId:qty)`，**不含 `requestId`、不含地址**；窗口 = `panoramic.trade.order.idempotency-window-seconds`（当前 **300 秒**）。故换新 id 重试时：**超过 300 秒、或 `source` / `storeId` / 任一 `skuId:qty` 变了，都会真下出第二单**（重试时别把 `DIRECT` 改成 `CART`）。两级幂等（请求级 + 指纹窗口）口径见 [trade-center.md](./trade-center.md) 与 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节 |
 | 假支付 | `MallOrderPayDTO.amount` 必须**等于订单总额**才算支付成功。⚠ **校验落在域内**（金额是领域规则，本层只透传），不一致回 `400`「支付金额与订单总额不一致（应付 X 元，实付 Y 元）」 |
-| 订单状态文案 | 状态名与文案**由域下发**（枚举名 + `mallLabel`）。⚠ **本层不重写文案**——两端各写一份必漂移；商户端用的是同一枚举的另一个字段（`storeAdminLabel`），如 `PAID` 在 C 端叫「已支付」、商户端叫「待发货」 |
+| 订单状态文案 | 状态名与文案**由域下发**（`status` = 枚举名，`statusMallLabel` = 顾客可读文案）。⚠ **本层不重写文案**——两端各写一份必漂移；商户端 / 管理端读的是域 VO 上的另一个字段 `statusStoreAdminLabel`（**不在 `MallOrderVO` 上、C 端不下发**），如 `PAID` 在 C 端叫「已支付」、商户端叫「待发货」。⚠ 别写成 `mallLabel` / `storeAdminLabel`——那是枚举 `OrderStatus` **内部**的字段名，域 VO 上带 `status` 前缀 |
 | 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |
 
 ## 三、前端契约的**视觉与结构**基准

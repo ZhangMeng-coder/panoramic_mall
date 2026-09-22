@@ -49,7 +49,9 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 照页面行实现却以为要传 `storeId`、或照域侧类型当页面入参，都会得到「同一类型两层含义不同」的错觉；
 > 口径见 [cross-cutting.md](./cross-cutting.md) 第 22 条，域侧方法见 [trade-center.md](./trade-center.md) 第二节。
 > 出参 `TradeOrderVO` 是**域契约类型**（`trade-center-interface`），本层直接下发、不另造一套；
-> 状态文案取其中的 `storeAdminLabel`（C 端取的是 `mallLabel`，同一个枚举两个字段）。
+> 状态文案取其中的 `statusStoreAdminLabel`（C 端取的是 `statusMallLabel`，同一个枚举两个字段）。
+> ⚠ 别写成 `storeAdminLabel` / `mallLabel`——那是枚举 `OrderStatus` **内部**的字段名，域 VO 上的同义字段带 `status` 前缀；
+> 照枚举名取会拿到 `undefined`、状态列直接空白（且**不会报错**，是静默的）。
 > ⚠ 路径标识用 **`orderNo`**，不是自增 id。
 
 > ⚠ **与上一条相对的另一半：本层**多数**页面入参**直接复用域 DTO**（`ShopSaveDTO` / `StoreGoodsSpuSaveDTO` /

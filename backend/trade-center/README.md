@@ -179,8 +179,9 @@
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供；**Redis** 由 `datasource-redis.yml` 提供
   （`REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` 可覆盖）。连接其他库请注入环境变量
   `MYSQL_HOST`/`MYSQL_PORT`/`MYSQL_DB`/`MYSQL_USERNAME`/`MYSQL_PASSWORD`（账号密码勿写入代码或提交到仓库）
-- **Nacos 共享配置加载**：引入 `datasource-mysql.yml` **与** `datasource-redis.yml`，且 import **不带 `optional:`**
-  ——缺任一 dataId 则启动失败。加载矩阵见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 12 条
+- **Nacos 共享配置加载**：本服务**加载哪些 data-id 一律看** [cross-cutting.md](../../docs/contracts/cross-cutting.md)
+  第 12 条的**加载矩阵**（此处**刻意不列清单**——同一事实的第二份表述必漂移，本行已因此漏过两次：先漏
+  `feign-circuitbreaker`、接 Seata 时又漏 `seata`）；import 一律**不带 `optional:`**，缺任一 dataId 则启动失败
 - MyBatis-Plus：主键 `IdType.AUTO`（`trade_cart_item.id` 自增）；**本表 `is_delete` 恒 0**（物理删除，
   见上文「为什么走物理删除」）；驼峰映射
 - 启动类扫描 `com.panoramic` 以加载 common 的全局异常处理、分页插件、字段自动填充与安全链
