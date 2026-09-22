@@ -75,6 +75,20 @@ const routes: RouteRecordRaw[] = [
         name: 'permission',
         component: () => import('../views/permission/PermissionManage.vue'),
         meta: { title: '权限管理' }
+      },
+      {
+        // ⚠ path 必须与 sys_permission.route（页 51 订单列表）逐字一致，否则侧栏菜单点不开
+        path: '/order',
+        name: 'order',
+        component: () => import('../views/order/OrderManage.vue'),
+        meta: { title: '订单管理' }
+      },
+      {
+        // 详情页：侧栏仍高亮「订单管理」（Layout 认 meta.activeMenu）
+        path: '/order/:orderNo',
+        name: 'orderDetail',
+        component: () => import('../views/order/OrderDetail.vue'),
+        meta: { title: '订单详情', activeMenu: '/order' }
       }
     ]
   },
