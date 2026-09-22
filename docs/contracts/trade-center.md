@@ -14,7 +14,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 > **不暴露公网路由**，只被**端 BFF** 经内部 Feign 调用（购物车 ← mall-bff；订单同理按能力被各端 BFF 调用）。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 14 个接口**：**购物车 8** + **订单 6**（**按能力**，不按端分侧）。
+**共 15 个接口**：**购物车 8** + **订单 7**（**按能力**，不按端分侧）。
 两条线**均已实现**（状态列无 `待实现`）。
 
 ## 一、归属与形状
@@ -25,8 +25,8 @@ typeDirs: backend/trade-center-interface/src/main/java
 - **按能力通用，不分侧**（[cross-cutting.md](./cross-cutting.md) 第 22 条）：同一能力**不分端**，
   路径段与方法名里不出现 `customer` / `store` / `platform` 之类端别子段，也**没有**成对的
   「顾客侧方法 / 商户侧方法」。⚠ 购物车 8 条的 `customerId` **一直必填**；
-  订单 6 条里**读侧（分页 / 详情）的作用域可选**（管理端本就是合法全量视角），
-  **写侧（下单 / 支付 / 发货 / 收货）必填**——写没有「合法全量视角」，省掉作用域就是「能改任意一笔单」。
+  订单 7 条里**读侧（分页 / 详情）的作用域可选**（管理端本就是合法全量视角），
+  **写侧（下单 / 支付 / 发货 / 收货 / 改地址）必填**——写没有「合法全量视角」，省掉作用域就是「能改任意一笔单」。
 - **作用域是入参 DTO 的字段，不进路径段**（同 §22 / §23）：单参能力收裸 `customerId`，
   其余并进各自 DTO。⚠ **路径变量是资源标识**（`{id}` / `{orderNo}`），不并入 DTO。
 - **域内不做任何身份判断**：不判 `X-User-Type`、不校验 token、无 `@PreAuthorize`；
@@ -68,7 +68,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 > 删除接口用 **`POST .../items/remove` + `@RequestBody`**（而非 `DELETE` 带 body，或逐个 `DELETE`）：
 > 批量删除口径与跨店通用侧同形，见 [cross-cutting.md](./cross-cutting.md) 第 18 条。
 
-### 2. 订单（6 条，**按能力**）
+### 2. 订单（7 条，**按能力**）
 
 域内订单领域模型与接口层均已落地（领域口径见 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节）。
 
@@ -78,6 +78,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 | pageOrders | POST | /order/page | `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:160 | OrderController.java:60 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
 | getOrder | GET | /order/{orderNo} | `String`, `TradeOrderQueryDTO` | `TradeOrderVO` | TradeCenterClient.java:171 | OrderController.java:68 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
 | payOrder | POST | /order/{orderNo}/pay | `String`, `TradeOrderPayDTO` | `void` | TradeCenterClient.java:185 | OrderController.java:77 | `mall-bff/OrderBffService` |  |
+| updateOrderAddress | PUT | /order/{orderNo}/address | `String`, `TradeOrderAddressUpdateDTO` | `void` | TradeCenterClient.java:178 | OrderController.java:81 | `mall-bff/OrderBffService` |  |
 | shipOrder | POST | /order/{orderNo}/ship | `String`, `TradeOrderShipDTO` | `void` | TradeCenterClient.java:196 | OrderController.java:86 | `store-bff/StoreOrderBffService` |  |
 | receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `void` | TradeCenterClient.java:207 | OrderController.java:95 | `mall-bff/OrderBffService` |  |
 
@@ -106,7 +107,18 @@ typeDirs: backend/trade-center-interface/src/main/java
 > 端 BFF 原样透传即可。
 
 > ⚠ **三个动作（支付 / 发货 / 收货）出参是 `void`**：写接口只表达「命令已生效」，页面重拉列表或详情拿新状态。
-> 别再给它们各配一份订单 VO 出参——那是同一份形状的第二个出口。
+> 别再给它们各配一份订单 VO 出参——那是同一份形状的第二个出口。改地址同理（`void`，改完重拉详情）。
+
+> ⚠ **改地址（`updateOrderAddress`）与三个动作的三点不同**，别按「第四个动作」对齐：
+> ① **用 `PUT`**——语义是「替换该订单的地址子资源」（幂等），三个动作是命令语义的 `POST`；
+> ② **不是状态流转**：状态原地不变、**不写 `trade_order_status_log`**（轨迹的语义是「走过哪些状态」，
+> 其 `seq` 连续性是对账依据；混进与状态无关的行会让两种语义都不可断言）。留痕靠审计字段；
+> ③ **只在 `PENDING_PAYMENT` 允许**：闸门是**业务规则**（付款后顾客与商家对「寄到哪儿」的共识不该被单方面
+> 改写），与状态机的「下标 +1」无关，故落在聚合内而不是 `OrderStatusFlow` 里。非待支付回 400，
+> 提示语可直接展示（「订单当前状态「已支付」不允许修改收货地址」）。
+> ⚠ 它改的**只是这一笔订单的地址快照**，不动顾客地址簿、也不影响别的订单——正是「存快照而非存 id」的另一面。
+> 落库是**条件更新**（条件 = 库里仍为待支付）：0 行时复用同一句 400，避免「读之后被支付抢先」时
+> 盲写掉一笔已支付订单的地址。
 
 > ⚠ **三个动作不幂等，重复提交由状态机拒**：每个动作只推一格，第二次同动作就是「重复变更」
 > → `400`「订单状态不能从「已支付」重复变更到「已支付」」（提示语已带两侧文案，可直接展示）。
@@ -119,7 +131,7 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | 包 | 类型 |
 |---|---|
-| `dto` | TradeCartItemAddDTO, TradeCartItemIdsDTO, TradeCartItemUpdateDTO, TradeCartSelectDTO；订单：TradeOrderCreateDTO, TradeOrderAddressDTO, TradeOrderPageQueryDTO, TradeOrderQueryDTO, TradeOrderReceiveDTO, TradeOrderPayDTO, TradeOrderShipDTO |
+| `dto` | TradeCartItemAddDTO, TradeCartItemIdsDTO, TradeCartItemUpdateDTO, TradeCartSelectDTO；订单：TradeOrderCreateDTO, TradeOrderAddressDTO, TradeOrderAddressUpdateDTO, TradeOrderPageQueryDTO, TradeOrderQueryDTO, TradeOrderReceiveDTO, TradeOrderPayDTO, TradeOrderShipDTO |
 | `vo` | TradeCartItemVO；订单：TradeOrderVO, TradeOrderPageVO |
 
 > ⚠ 订单分页出参刻意叫 `TradeOrderPageVO` 而**不再加一个 `PageResult`**：本仓库已有 `contract.goods.vo` /

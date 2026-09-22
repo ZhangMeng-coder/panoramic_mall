@@ -145,6 +145,24 @@ public interface OrderRepository {
     void update(OrderModel order);
 
     /**
+     * 改收货地址后的落库（改地址动作调用）
+     *
+     * <p>⚠ <b>它不是 {@link #update} 的一个用法</b>，故单开一个方法：{@code update} 是**状态变更**的落库
+     * （按轨迹的倒数第二项做条件更新、并补写轨迹尾巴），而改地址**状态不变、不写轨迹**——
+     * 两者唯一重叠的只有「同一个订单号」，合并只会让一个方法背两套语义（且 {@code update} 对
+     * 「只有一项轨迹的新单」是直接抛错的）。</p>
+     *
+     * <p>只写四个收货地址列。⚠ <b>同样是条件更新，条件是「库里仍为待支付」</b>：改地址允许的前提
+     * 是在**读**的那一刻是待支付，而从读到写之间这笔单可能已被支付——盲写会让那笔已支付订单的地址
+     * 在付款后被改掉（正是域闸门要防的事）。0 行时抛 400，且提示语与**顺序调用**得到的完全一致
+     * （由 {@code OrderModel#assertAddressChangeable} 生成，用库里的当前状态重跑那道闸门）。</p>
+     *
+     * @param order 地址已换过的订单（库内地址列将被它的地址快照覆盖）
+     * @throws com.panoramic.common.exception.ServiceException 库里已不在待支付（HTTP 400）
+     */
+    void updateAddress(OrderModel order);
+
+    /**
      * 按订单号 + 可选作用域查一笔订单（**唯一的详情读路径**：删掉了「按顾客查 / 按店铺查 / 裸查」三条）
      *
      * <p>⚠ <b>作用域参与收窄是刻意的</b>：写成「查回来再比 customerId」时，漏了那句判断就是越权读别人的订单，

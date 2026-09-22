@@ -53,8 +53,14 @@ public final class OrderModel {
     private final Long storeId;
     private final String storeName;
     private final OrderSource source;
-    /** 收货地址快照（下单当时；此后顾客改地址不影响已下的单） */
-    private final OrderAddress address;
+    /**
+     * 收货地址快照（下单当时；此后顾客改地址簿不影响已下的单）
+     *
+     * <p>⚠ 它是本类**唯一可变的事实字段**（故不是 {@code final}）：待支付状态下可经
+     * {@link #changeAddress} 换成地址簿里的另一条——改的是**这一笔订单**寄到哪儿，
+     * 与顾客地址簿无关，也不影响别的订单。</p>
+     */
+    private OrderAddress address;
     /** 请求级幂等键（裁定 D6 第一级）；可为 null = 本次提交不做请求级去重 */
     private final String requestId;
     /** 订单指纹（裁定 D6 第二级）；由 {@link OrderFingerprint} 算出，不含金额与时间 */
@@ -361,6 +367,46 @@ public final class OrderModel {
     }
 
     /**
+     * 改收货地址（覆盖地址快照；**仅待支付可改**）
+     *
+     * <p>⚠ <b>这不是状态流转</b>：状态原地不变、**轨迹不追加一行**——轨迹的语义是「这笔单走过哪些状态」，
+     * 它的 {@code seq} 连续性是对账依据（见 {@link #requireReadableTrail}），
+     * 往里面塞一条与状态无关的记录会把它从「状态轨迹」变成「操作日志」，两种语义混在一起就都不可断言了。
+     * 改地址的留痕靠 {@code BaseEntity} 的审计字段。</p>
+     *
+     * <p>⚠ <b>为什么只允许待支付</b>：付款之后再改地址，等于顾客与商家对「这单寄到哪儿」的共识
+     * 在发货前被单方面改写（而包裹可能已经按旧地址在路上）。故它是一道**业务闸门**，
+     * 与状态机的「下标 +1」无关，故写在这里而不是 {@link OrderStatusFlow} 里。</p>
+     *
+     * @param newAddress 新的地址快照（**必填**；其构造器已做长度与空白校验）
+     * @throws IllegalStateException 模型尚未 seal（未封存的模型不能被当成订单用）
+     * @throws ServiceException      非待支付状态（HTTP 400，提示语可直接展示）
+     */
+    public void changeAddress(OrderAddress newAddress) {
+        Objects.requireNonNull(newAddress, "收货地址不能为空");
+        assertSealed();
+        assertAddressChangeable(status);
+        this.address = newAddress;
+    }
+
+    /**
+     * 改地址的状态闸门（**仅待支付**）
+     *
+     * <p>⚠ <b>公开静态</b>是为了让落库实现的条件更新「0 行」时能拿到**同一句提示**
+     * （它只能用库里的当前状态重新跑一遍这道闸门）：与 {@link OrderStatusFlow#assertCanTransition}
+     * 被 {@code JdbcOrderRepository#update} 复用的手法同形——同一句提示只此一份。</p>
+     *
+     * @param status 订单当前状态
+     * @throws ServiceException 不是待支付（HTTP 400）
+     */
+    public static void assertAddressChangeable(OrderStatus status) {
+        Objects.requireNonNull(status, "订单状态不能为空");
+        if (status != OrderStatus.PENDING_PAYMENT) {
+            throw new ServiceException(400, "订单当前状态「" + status.getMallLabel() + "」不允许修改收货地址");
+        }
+    }
+
+    /**
      * 改状态并留下轨迹（**包内可见**：唯一合法的调用者是同包的 {@link OrderStatusFlow}）
      *
      * <p>⚠ seal 检查放在这里而不是只放在 {@link #transitionTo}：本方法是所有状态变更的**唯一**写入口，
@@ -413,7 +459,8 @@ public final class OrderModel {
     }
 
     /**
-     * @return 收货地址快照（下单当时；不可变值对象）
+     * @return 收货地址快照（下单当时的地址；待支付期间可能被 {@link #changeAddress} 换成另一条，
+     *         此后不再变——值对象本身不可变，换的是这一笔订单持有的那一个）
      */
     public OrderAddress getAddress() {
         return address;

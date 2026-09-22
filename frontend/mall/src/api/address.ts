@@ -1,5 +1,5 @@
 import { request } from './request'
-import type { AddressPayload, AddressVO } from '../types/address'
+import type { AddressPayload, AddressStatus, AddressVO } from '../types/address'
 
 /**
  * 顾客收货地址接口（经网关 `/mall/**` 前缀转发到 mall-bff 8085）。
@@ -35,5 +35,17 @@ export const addressApi = {
   /** 设为默认：**改默认位的唯一路径**（入参只有 id、没有请求体，出参 void） */
   setDefault(id: number): Promise<void> {
     return request.post<void>(`/mall/addresses/${id}/default`)
+  },
+
+  /**
+   * 我的地址状态（有没有地址 + 默认地址 id）—— **下单前的分支依据**（见 `useAddressGate`）。
+   *
+   * ⚠ 它**不回地址列表**：要给人看的地址照旧走 `list()`。服务端把它当派生态**缓存**，
+   * 故「有默认地址」这条主路径上页面不必再拉一次列表。
+   * ⚠ 缓存会陈旧（TTL 30 分钟 + 四个写路径主动失效）：拿它给的 `defaultAddressId` 下单，
+   * 可能撞上域侧 404「地址不存在」——**页面必须能退回重选**，见 `useAddressGate`。
+   */
+  status(): Promise<AddressStatus> {
+    return request.get<AddressStatus>('/mall/addresses/status')
   }
 }

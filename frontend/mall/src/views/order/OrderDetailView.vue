@@ -3,6 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TopBar from '../../components/TopBar.vue'
 import SiteFooter from '../../components/SiteFooter.vue'
+import AddressPicker from '../../components/AddressPicker.vue'
+import ModalShell from '../../components/ModalShell.vue'
 import { orderApi } from '../../api/order'
 import { showToast } from '../../composables/useToast'
 import type { OrderVO } from '../../types/order'
@@ -14,7 +16,7 @@ import { grad } from '../../utils/gradient'
  * 订单详情（`/orders/:orderNo`，**需登录态**——路由 meta.requiresAuth 拦）。
  * 骨架同商品详情页：顶栏 + 页脚 + 1280 容器 + 面包屑；**不带万能搜索框**（它不是商品浏览页）。
  *
- * 七条口径（都不是随手写的）：
+ * 八条口径（都不是随手写的）：
  * ① **一切以服务端为准 + 成功后重拉**：状态、状态文案、金额、小计**全部**用服务端下发的值，
  *    写操作（支付 / 确认收货）成功后**重新拉详情**——状态迁移由域决定，前端不自造、不本地改。
  * ② **状态文案只取 `statusMallLabel`**；`status` 枚举名只用来判「显示哪个操作」，
@@ -22,12 +24,18 @@ import { grad } from '../../utils/gradient'
  * ③ **支付金额的比对在域内**（金额是领域规则）：页面只负责把顾客填的数送过去，
  *    不一致时域侧回 400「支付金额与订单总额不一致（应付 X 元，实付 Y 元）」——
  *    拦截器已统一弹后端 msg，本页**不再包一层自己的文案**。
- * ④ **支付面板行内展开**（本端没有模态层，引入遮罩等于新增一个全局视觉基座）：
- *    金额输入与确认按钮就地出现，`?pay=1` 进入时自动展开（列表页「去支付」的落点）。
+ * ④ **支付面板行内展开**：金额输入与确认按钮就地出现，`?pay=1` 进入时自动展开（列表页「去支付」的落点）。
+ *    ⚠ 本端虽已有模态基座（`ModalShell`），但它在**本页**只装改地址那一个弹窗（见 ⑧）——
+ *    支付面板仍旧就地展开，别顺手把它也搬进弹窗。
  * ⑤ **确认收货走行内两步确认**（同购物车页的破坏性动作），不用 `window.confirm`。
  * ⑥ **`shipNo` 为 null 时不渲染「快递单号」那一行**（别显示 "null"）。
  * ⑦ **`address` 为空快照时不渲染地址块**：后端映射处显式判空（形态上可为 null），
  *    这里不臆造一块空地址出来。
+ * ⑧ **改收货地址只摆给「待支付」看**（地址块旁与支付面板内各一个入口，同一个弹窗）：
+ *    闸门在**域内**（非待支付一律 400「订单当前状态「…」不允许修改收货地址」），
+ *    这里不摆一个注定失败的按钮。⚠ 它与下单**同一个口径**：页面只给 `addressId`，
+ *    地址内容由服务端取回并校验归属；改的是**本单的快照**，**不动顾客地址簿**。
+ *    改完**重拉详情**（快照由服务端下发，见文件头 ①）。
  */
 
 const route = useRoute()
@@ -54,6 +62,10 @@ const paying = ref(false)
 /** 确认收货的行内两步确认态 */
 const confirmingReceive = ref(false)
 const receiving = ref(false)
+
+/** 改收货地址的弹窗与在途态（见文件头 ⑧） */
+const addressOpen = ref(false)
+const addressSaving = ref(false)
 
 /** 并发序号：连点两笔单时，后发的请求作废先发的响应（与列表页同一手法） */
 let seq = 0
@@ -146,6 +158,49 @@ async function receive(): Promise<void> {
   }
 }
 
+/* ---- 改收货地址（见文件头 ⑧） ---- */
+
+/**
+ * 能不能改收货地址：**仅待支付**。域内是同一道闸门（非待支付回 400），这里判一次只为
+ * **不摆出一个注定失败的入口**——判据与按钮渲染同源，不各写一遍。
+ */
+const canChangeAddress = computed(() => order.value?.status === ORDER_STATUS_PENDING_PAYMENT)
+
+/** 开改地址弹窗（地址块旁与支付面板内两个入口共用） */
+function openAddress(): void {
+  if (!canChangeAddress.value || addressSaving.value) return
+  addressOpen.value = true
+}
+
+/** 关弹窗（取消 / Esc / 点遮罩）—— 提交在途不关，与 `ModalShell` 的 `closable` 同一口径 */
+function closeAddress(): void {
+  if (addressSaving.value) return
+  addressOpen.value = false
+}
+
+/**
+ * 提交新地址（弹窗里的主按钮）。成功后**重拉详情**：地址快照由服务端下发，页面不本地改（同文件头 ①）。
+ *
+ * ⚠ 失败**不关弹窗**：非待支付（状态在别处被推进）/ 地址不存在（别人删了）的中文文案由拦截器弹出，
+ * 顾客可以换一条——关掉弹窗只会让他再点一次入口。
+ */
+async function submitAddress(addressId: number): Promise<void> {
+  const o = order.value
+  if (!o || addressSaving.value) return
+
+  addressSaving.value = true
+  try {
+    await orderApi.updateAddress(o.orderNo, { addressId })
+    addressOpen.value = false
+    showToast('收货地址已修改', 'success')
+    await load(o.orderNo)
+  } catch {
+    // 拦截器已弹后端 msg
+  } finally {
+    addressSaving.value = false
+  }
+}
+
 /* ---- 展示辅助 ---- */
 
 /** 规格文案，如「颜色：曜石黑 / 容量：256G」；无规格时是空对象 → 空串，模板不渲染这一行 */
@@ -189,6 +244,7 @@ watch(
     payOpen.value = false
     payAmount.value = ''
     confirmingReceive.value = false
+    addressOpen.value = false
     failedImgs.value = []
     void load(no)
   },
@@ -243,9 +299,20 @@ watch(
             </div>
           </dl>
 
-          <!-- 收货地址快照：下单当时的值（此后改 / 删地址都不影响本单）；空快照不渲染（见文件头 ⑦） -->
+          <!-- 收货地址快照：下单当时的值（此后去地址簿改 / 删那条都不影响本单）；空快照不渲染（见文件头 ⑦） -->
           <div v-if="order.address" class="order-detail__addr">
-            <h2 class="order-detail__block-title">收货地址</h2>
+            <div class="order-detail__addr-head">
+              <h2 class="order-detail__block-title">收货地址</h2>
+              <!-- 改地址入口（仅待支付；与支付面板内那个是同一个弹窗，见文件头 ⑧） -->
+              <button
+                v-if="canChangeAddress"
+                class="order-detail__link"
+                type="button"
+                @click="openAddress"
+              >
+                修改地址
+              </button>
+            </div>
             <p class="order-detail__addr-line">
               <b class="order-detail__addr-name">{{ order.address.receiverName }}</b>
               <span class="order-detail__addr-phone tnum">{{ order.address.receiverPhone }}</span>
@@ -359,6 +426,20 @@ watch(
               <p class="field__hint">需与订单总额一致才能支付成功</p>
             </div>
 
+            <!-- 支付前发现寄错地址：就地改（仅待支付才渲染，见文件头 ⑧）。
+                 ⚠ 它与上面的「取消」不是一回事：取消只是收起支付面板，这里改的是那一单的快照 -->
+            <p v-if="canChangeAddress" class="order-pay__addr">
+              收货地址有误？
+              <button
+                class="order-detail__link"
+                type="button"
+                :disabled="paying"
+                @click="openAddress"
+              >
+                修改地址
+              </button>
+            </p>
+
             <div class="order-pay__ops">
               <button class="order-pay__submit" type="submit" :disabled="paying">
                 {{ paying ? '支付中…' : '确认支付' }}
@@ -369,6 +450,24 @@ watch(
             </div>
           </form>
         </section>
+
+        <!-- 改地址弹窗：两个入口（地址块旁 / 支付面板内）共用这一个。
+             ⚠ 无障碍名与弹窗里那个可见标题（AddressPicker 的「选择收货地址」）**逐字一致**：
+             读屏读到的名字和眼睛看到的标题不该是两个说法。
+             ⚠ 提交在途时 `closable=false`——那时关掉它，顾客会以为没改，而地址可能已经改了 -->
+        <ModalShell
+          v-if="addressOpen"
+          label="选择收货地址"
+          :closable="!addressSaving"
+          @close="closeAddress"
+        >
+          <AddressPicker
+            :submitting="addressSaving"
+            confirm-text="确认修改"
+            @confirm="submitAddress"
+            @cancel="closeAddress"
+          />
+        </ModalShell>
       </template>
     </div>
   </section>

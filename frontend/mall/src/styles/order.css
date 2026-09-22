@@ -17,7 +17,7 @@
               __sum / __foot / __ops）
      详情     .order-detail__*（面包屑 / 状态条 / 信息面板 / 商品行 .order-line / 合计 / 操作区）
      支付面板 .order-pay / .order-pay__*
-     选地址   .addr-pick / .addr-pick__*（详情页「立即下单」与购物车「去结算」共用）
+     选地址   .addr-pick / .addr-pick__*（装着弹窗里：下单 / 结算 / 改订单地址三处共用）
    ========================================================================== */
 
 .order-page,
@@ -489,6 +489,15 @@
   border-top: 1px solid var(--n200);
 }
 
+/* 地址块的表头行：左标题 + 右「修改地址」（⚠ 入口只在待支付时渲染，见 OrderDetailView ⑧）。
+   标题自带的 margin-bottom 正好当这一行下沿的间距，故这里不另加间隔 */
+.order-detail__addr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
 .order-detail__addr-line {
   display: flex;
   align-items: baseline;
@@ -710,6 +719,14 @@
   margin-top: var(--s-4);
 }
 
+/* 「收货地址有误？」那一行：一句话 + 就地改地址的入口（⚠ 仅待支付渲染，见 OrderDetailView ⑧）。
+   它排在金额输入与两个按钮之间——顾客填金额时才最容易发现寄错了地方 */
+.order-pay__addr {
+  margin-bottom: var(--s-4); /* 与 .field 同一档（间距由上下两块各给一次，不叠） */
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
 /* 两个按钮一行：确认吃掉剩余宽度，取消是行内轻按钮（同 .acct__form-ops） */
 .order-pay__ops {
   display: flex;
@@ -762,17 +779,12 @@
 }
 
 /* ============================================================================
-   选收货地址面板（AddressPicker）—— 详情页「立即下单」与购物车「去结算」共用
+   选收货地址（AddressPicker）—— 详情页「立即下单」/ 购物车「去结算」/ 订单详情「修改地址」共用
+   ----------------------------------------------------------------------------
+   ⚠ 它现在装在**弹窗**里（ModalShell），故这里**没有盒子样式**：
+     白底 / 圆角 / 投影 / 宽度 / 内滚都归 .modal__panel（见 styles/modal.css）。
+     本文件只管盒子**里面**的东西（标题 / 列表 / 两个按钮）。
    ========================================================================== */
-
-.addr-pick {
-  margin-top: var(--s-6);
-  padding: var(--s-5);
-  background: var(--n0);
-  border: 1px solid var(--n200);
-  border-radius: var(--r-lg);
-  box-shadow: var(--sh-sm);
-}
 
 .addr-pick__title {
   color: var(--n900);
@@ -848,9 +860,8 @@
   background: var(--brand-grad-hover);
 }
 
-/* 地址列表：一段窄栏（一行字太长反而难读，同 .acct__form） */
+/* 地址列表：窄栏由弹窗面板给定（.modal__panel 的 560px，一行字太长反而难读，同 .acct__form） */
 .addr-pick__list {
-  max-width: 560px;
   margin-top: var(--s-4);
 }
 
@@ -938,7 +949,6 @@
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  max-width: 560px;
   margin-top: var(--s-5);
 }
 

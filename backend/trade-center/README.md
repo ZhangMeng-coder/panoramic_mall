@@ -16,7 +16,7 @@
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调（购物车） | mall-bff（**C 端顾客自助购物车**），已接 | `trade-center-interface` 的 `TradeCenterClient`，带熔断降级 |
-| 被谁调（订单） | **三端 BFF 都要调**：mall-bff（顾客侧）/ store-bff（商户侧）/ admin（管理端全量）——各端**订单编排尚未创建**，页面级那几行见 `docs/contracts/{mall-bff,store-bff,admin}.md` 的订单 `待实现` 行 | 同上 |
+| 被谁调（订单） | **三端 BFF 都要调**：mall-bff（顾客侧）/ store-bff（商户侧）/ admin（管理端全量只读）——**三端订单编排均已落地**，各端页面级那几条见 `docs/contracts/{mall-bff,store-bff,admin}.md` 的订单表 | 同上 |
 | 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；调用点是订单流水线的两个适配器 `GoodsQueryAdapter` / `StockAdapter`（`infrastructure/feign`），⚠ **域间调用不做降级**——store 不可达即整次下单失败 |
 
 ⚠ 订单接口**按能力通用**（不按端分侧）：三端调的是同一批端点，差别只在**传不传作用域**
@@ -124,7 +124,7 @@
   域只按 `spuId` / `skuId` 出原始行（见 cross-cutting 第 20 条：购物车行是「C 端可见性」不变量的**第三个落点**）。
   同理，全选是**域侧整表**操作，作用面含 BFF 眼里「已失效」的行
 - **不加购时校验商品存在性**：域不持商品、不调 store（加购不做跨域调用）；商品下架 / 不存在由 BFF 与页面处理
-- **不做结账 / 评价**：订单**已落库、已有接口**（**按能力 6 条**，见 `docs/contracts/trade-center.md`）；结账（选地址以外的结算编排、运费、优惠）与评价**不在本期**
+- **不做结账 / 评价**：订单**已落库、已有接口**（**按能力 7 条**，见 `docs/contracts/trade-center.md`）；结账（选地址以外的结算编排、运费、优惠）与评价**不在本期**
 - **不做页面编排**（商品详情拼装、失效标记、汇总金额都在 mall-bff）
 
 ### 6. 信任与防线
@@ -157,6 +157,9 @@
 
 - **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
 - **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
+- **改收货地址（`updateOrderAddress`，2026-09-22）**：**仅 `PENDING_PAYMENT` 允许**（其余状态回 400，提示语可直接展示），改的是**这一笔订单的地址快照**——不动顾客地址簿、也不影响别的订单。
+  ⚠ 它**不是状态流转**：状态原地不变、**不写状态轨迹**（轨迹的语义与 `seq` 连续性对账见上一条，混进与状态无关的行会让两种语义都不可断言），留痕靠审计字段；故它在聚合里是与 `markPaid` / `markShipped` 并列的另一个方法（`OrderModel#changeAddress`），落库也另走 `OrderRepository#updateAddress` 而**不是** `update`（后者是状态变更的落库，对只有一项轨迹的新单直接抛错）。
+  ⚠ 落库是**条件更新**，条件 = 库里仍为待支付：拿模型上的状态盲写，会让「读的那一刻是待支付、读到写之间被支付抢先」的订单在付款后被改地址（正是这道闸门要防的事）；0 行时复用同一句 400（用库里的当前状态重跑那道闸门）
 - **生成流水线**：`goods-check`（商品存在 + 店铺已审核 + SPU/SKU 已上架 + 未平台锁定，并把商品快照冻进订单项）→ `stock-check`（逐行原子扣减；SKU 粒度的出库流水由库存实现自己记，端口不暴露流水）→ `price-compute`（取单价、算行小计与总价、`seal()` 封模型）。三步都是**可插拔实现**（`OrderCreateStep` bean），**启哪些、什么顺序由 `panoramic.trade.order.steps` 决定**，配了不存在的步骤名 → 装配即失败。⚠ 步骤间**只经 `OrderModel` 本体传参**；模型必须走完 `open → 补商品快照 → 补价 → seal` 才能被置为待支付——**顺序写反会直接抛错，不会静默出一张残单**
 - **一单一店**：一次提交按 `storeId` 拆成多笔订单（各店的金额 / 状态 / 扣减相互独立），按 `storeId` 升序处理
 - **订单号**：`yyyyMMddHHmmss` + 4 位序列，生成后查重、冲突则重试（上限 `panoramic.trade.order.order-no-max-retry`）；`Clock` 与序列源可注入——单测靠它钉死时间与「故意撞号」

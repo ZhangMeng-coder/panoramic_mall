@@ -21,6 +21,20 @@ export interface AddressVO {
 }
 
 /**
+ * 地址状态（对齐 `AddressStatusVO`）—— `GET /addresses/status` 的出参。
+ *
+ * ⚠ 它是**控制流用的派生态**，不是地址数据：服务端从地址列表派生并缓存，
+ * 只为让「有没有地址 / 默认是哪条」这两问不必回回拉一遍列表。
+ * 故它**不含**收件人 / 电话 / 明细——要给人看地址就调 `list()`。
+ */
+export interface AddressStatus {
+  /** 有没有地址。⚠ 空地址簿是**合法状态**（照常缓存），不是「读不到」 */
+  hasAddress: boolean
+  /** 默认地址 id；**有地址但没有默认时为 `null`**（删掉默认后不自动递补，见下） */
+  defaultAddressId: number | null
+}
+
+/**
  * 地址保存请求体（对齐 `AddressSaveDTO`，`POST /addresses` 与 `PUT /addresses/{id}` 共用）。
  *
  * ⚠ **刻意不含 `id`、也不含 `isDefault`**：新增 / 编辑靠「调哪个端点」区分，

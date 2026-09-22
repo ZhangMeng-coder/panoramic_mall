@@ -1,0 +1,35 @@
+/* ============================================================================
+   模态基座 —— 遮罩 + 居中弹窗（ModalShell.vue）
+   ----------------------------------------------------------------------------
+   只消费 tokens.css 的令牌：**禁止硬编码色值 / 圆角 / 阴影 / 时长**。
+   ⚠ 本文件是全站**唯一**的遮罩层来源：本端此前只有 toast、没有任何模态层，
+     这里的 90 与 --scrim 是新增的**全局视觉基座**，改它等于改所有弹窗。
+
+   类名清单：.modal（遮罩 + 居中容器）/ .modal__panel（白盒子，宽度即内容宽度）
+   ========================================================================== */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  /* ⚠ 层级 90 **低于** .toast-host 的 100（见 account.css）：下单失败的中文提示
+     必须能盖在弹窗上看得见，否则顾客只看到一个不动的弹窗，不知道刚才为什么没成 */
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-6);
+  background: var(--scrim);
+}
+
+/* 弹窗盒子：560px 是一段窄栏（一行字太长反而难读，同 .acct__form 的取法）。
+   ⚠ max-height + overflow 让长地址列表在**盒子内**滚动，而不是把盒子撑出屏幕 */
+.modal__panel {
+  width: 560px;
+  max-width: 100%;
+  max-height: calc(100vh - var(--s-16));
+  padding: var(--s-5);
+  overflow: auto;
+  background: var(--n0);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-lg);
+}

@@ -4,6 +4,7 @@ import com.panoramic.common.util.UserContext;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.mallbff.dto.AddressSaveDTO;
 import com.panoramic.mallbff.service.CustomerAddressBffService;
+import com.panoramic.mallbff.vo.AddressStatusVO;
 import com.panoramic.mallbff.vo.AddressVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,10 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * C 端收货地址接口（列表 / 新增 / 编辑 / 删除 / 设默认，共 5 条）。
+ * C 端收货地址接口（列表 / **状态** / 新增 / 编辑 / 删除 / 设默认，共 6 条）。
  * <p>⚠ <b>不能少一条、也不能多一条</b>：页面契约里没有「取单条地址详情」的端点
  * （{@code GET /addresses/{id}}），域侧虽有同名方法也不编排——见
  * docs/contracts/mall-bff.md 的接口清单。</p>
+ * <p>⚠ {@code GET /addresses/status} 是**派生态**而不是地址数据（回「有没有地址 + 默认地址 id」，
+ * 不回列表）：它是下单前的分支依据，本层缓存之。它<b>不是</b>「取单条地址详情」的替代——
+ * 路径段 {@code status} 与 {@code {id}} 也不同形。</p>
  * <p>⚠ <b>顾客 id 只能取自 {@code UserContext}</b>（登录态），绝不从请求体 / 路径接收——
  * 域内不做任何鉴权（{@code customerId} 就是数据权限本身），BFF 是唯一授权点。</p>
  * <p>分层：本类只碰 {@link CustomerAddressBffService}，<b>不注入</b> {@code CustomerCenterClient}，
@@ -46,6 +50,17 @@ public class AddressController {
     @GetMapping
     public RespData<List<AddressVO>> list() {
         return RespData.success(customerAddressBffService.list(UserContext.getUserId()));
+    }
+
+    /**
+     * 我的地址状态（有没有地址 + 默认地址 id）——下单 / 改地址前判分支用，**不回地址列表**
+     *
+     * <p>⚠ 它由本层从地址列表派生并**缓存**（缓存口径见 {@code docs/contracts/mall-bff.md}），
+     * 故页面在「有默认地址」这条主路径上不必再拉一次列表。</p>
+     */
+    @GetMapping("/status")
+    public RespData<AddressStatusVO> status() {
+        return RespData.success(customerAddressBffService.status(UserContext.getUserId()));
     }
 
     /**

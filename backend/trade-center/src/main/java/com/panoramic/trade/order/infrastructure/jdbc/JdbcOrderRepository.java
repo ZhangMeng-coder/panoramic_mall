@@ -188,6 +188,31 @@ public class JdbcOrderRepository implements OrderRepository {
         insertStatusTrail(order.getOrderNo(), order.getStatusTrail(), maxSeq + 1, LocalDateTime.now(clock));
     }
 
+    @Override
+    public void updateAddress(OrderModel order) {
+        OrderAddress address = order.getAddress();
+        // ⚠ 条件更新，条件取「库里仍为待支付」而不是用模型上的状态：允许改地址的前提是**读**的那一刻
+        //    是待支付，而从读到写之间这笔单可能已被支付。盲写会让已支付的订单在付款后被改地址。
+        boolean updated = orderService.lambdaUpdate()
+                .eq(TradeOrder::getOrderNo, order.getOrderNo())
+                .eq(TradeOrder::getStatus, OrderStatus.PENDING_PAYMENT.name())
+                .set(TradeOrder::getReceiverName, address.receiverName())
+                .set(TradeOrder::getReceiverPhone, address.receiverPhone())
+                .set(TradeOrder::getReceiverRegion, address.region())
+                .set(TradeOrder::getReceiverDetail, address.detail())
+                .update();
+        if (!updated) {
+            // 与 update(...) 同一手法：提示语不自己写，拿库里的当前状态重跑一遍域闸门，
+            // 于是「顺序调用时已被支付」与「读之后被支付抢先」得到**同一句 400**。
+            // 订单不存在也走这一支：currentStatus 会在那儿抛 IllegalStateException。
+            OrderModel.assertAddressChangeable(currentStatus(order.getOrderNo()));
+            // 上面那句按定义必抛（0 行 = 库里既不是待支付、也就过不了闸门）。
+            // 保留兜底是为了不让「断言没抛」变成一次**静默的成功**——那正是本方法要防的东西。
+            throw new ServiceException(400, "订单 " + order.getOrderNo() + " 的状态已在别处变更，请刷新后重试");
+        }
+        // ⚠ 不写状态轨迹：状态没变（轨迹的语义与 seq 连续性依赖见 OrderRepository#updateAddress）
+    }
+
     /**
      * 本次迁移的**来时状态** = 轨迹的倒数第二项（条件更新的前置条件就取它）
      *

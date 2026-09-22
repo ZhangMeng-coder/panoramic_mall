@@ -2,7 +2,7 @@
 
 全景商城**平台管理后端**（Servlet 技术栈），端口 **8082**，服务前端 `frontend/admin`（5173），网关公网路由 `/admin/** → lb://admin`。
 
-本服务是 `@PreAuthorize` 授权的**唯一位置**（只有平台管理员有 RBAC）。职责分两块：**平台账号与 RBAC**（自持 `sys_*` 表，不经任何下游）+ **业务编排**（商品模板、店铺管理、店铺商品管理，全部下沉到域服务）。
+本服务是 `@PreAuthorize` 授权的**唯一位置**（只有平台管理员有 RBAC）。职责分两块：**平台账号与 RBAC**（自持 `sys_*` 表，不经任何下游）+ **业务编排**（商品模板、店铺管理、店铺商品管理、订单只读查询，全部下沉到域服务）。
 
 ## 一、架构位置
 
@@ -13,11 +13,12 @@
 | 被谁调 | 平台管理前端，经网关 `/admin/**`（`StripPrefix=1`） | HTTP，返回 `RespData` |
 | 本层调谁 | goods-center(8081) | Feign `GoodsCenterClient`：分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD、分类树、分类全路径 |
 | 本层调谁 | store(8083) | Feign `StoreClient`（**不传作用域 = 跨店全量**）：店铺分页/详情/审核、店铺商品跨店分页/详情/锁定/解锁、店铺下拉 |
+| 本层调谁 | trade-center(8087) | Feign `TradeCenterClient`（**不传作用域 = 全平台**）：订单分页 / 详情，**只读** |
 | 与谁**互不调用** | store-bff（店铺端） | 两端身份空间隔离（D2）；**admin 不读店主账号**（D6） |
 
 全部下游调用经 `common` 的 `BffFeignCall` 包装（剥 cause 链还原业务异常 / 其余降级）。本层依赖 `common-auth` 做鉴权——业务域只依赖 `common`，结构上拿不到这条链。
 
-两个主要编排类：`ShopGoodsBffService`（店铺商品）、`StoreShopBffService`（店铺管理）。
+三个主要编排类：`ShopGoodsBffService`（店铺商品）、`StoreShopBffService`（店铺管理）、`AdminOrderBffService`（订单，只读）。
 
 ### 模块边界（谁持什么）
 
@@ -29,6 +30,7 @@
 | 标准商品模板（分类/品牌/SPU/SKU） | goods-center（内部 Feign） |
 | 店铺资料与审核状态机、店铺在售商品 | store 域（内部 Feign） |
 | 分类**子树展开**、分类**全路径**解析、锁定人渲染 | **admin（本模块编排）**，域不持分类表、不做树操作 |
+| 平台侧订单（**全量只读**分页 / 详情） | trade 域（内部 Feign）。⚠ **平台端对订单只读**，不传作用域即全量 |
 
 > 📋 对外接口清单见 [`docs/contracts/admin.md`](../../docs/contracts/admin.md)（条数与落地状态以该表为准，本 README 不另记）。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
@@ -74,6 +76,7 @@
 
 - **店铺管理**：店铺列表 / 详情、**通过 / 驳回（填原因）**，权限串 `store:shop:list` / `store:shop:audit`；**不下发、不展示店主登录账号**
 - **店铺商品管理**（2026-09-12 新增）：全店铺在售商品列表 + 只读详情 + **平台锁定 / 解锁**，权限串 `store:goods:list` / `store:goods:lock`
+- **订单管理**（2026-09-22 新增）：**全平台订单只读**列表 + 详情，权限串 `trade:order:list`；⚠ **平台端对订单只读**——只有两个查询端点、没有任何写动作，状态流转入口只在 C 端 `pay` / `receive` 与商户端 `ship`
 
 本层负责的三件编排工作：
 
@@ -96,6 +99,6 @@
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - **熔断**：`resilience4j.circuitbreaker.configs.default.ignore-exceptions` 必须含 `com.panoramic.common.exception.ServiceException`（业务 4xx 不计失败率），否则店主/管理员连续几次操作失误就会打开熔断、把后续**正常**请求降级成 500。语义见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 13 条
-- `@EnableFeignClients` 扫描 `com.panoramic.contract.goods` 与 `com.panoramic.contract.store`
+- `@EnableFeignClients` 扫描 `com.panoramic.contract.goods` / `com.panoramic.contract.store` / `com.panoramic.contract.trade`
 - 响应结构：成功 `code=200`；业务失败 `code=400` 携带中文提示；系统异常 / 下游不可用 `code=500`
 - 前端 `frontend/admin`（5173）经 Vite dev proxy 走网关

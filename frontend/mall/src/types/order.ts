@@ -113,3 +113,14 @@ export interface OrderPageQuery {
 export interface OrderPayPayload {
   amount: number
 }
+
+/**
+ * 改订单收货地址的请求体（对应 `MallOrderAddressUpdateDTO`）。
+ *
+ * ⚠ 与下单**同一个口径**：页面只给 `addressId`，地址内容由服务端取回并校验归属
+ * （不属本人 → 404「地址不存在」，不区分「不存在」与「不是你的」）。
+ * ⚠ 它改的是**这一笔订单的快照**，**不动顾客地址簿**（改完地址簿还是原样）。
+ */
+export interface OrderAddressUpdatePayload {
+  addressId: number
+}

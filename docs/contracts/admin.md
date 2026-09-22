@@ -131,10 +131,10 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 自增 id **不出现在契约里**，路径标识用 **`orderNo`**。出参 `TradeOrderVO` 是域契约类型，直接下发。
 
 > ⚠ **`trade:order:list` 的三方一致**：`sys_permission` 种子（目录 `5 订单管理` → 页 `51 订单列表`（`route=/order`）
-> → 按钮 `511 订单查询`，按「目录 X → 页 X1 → 按钮 X11+」）与**本行**已就位——见
-> [cross-cutting.md](./cross-cutting.md) 第 16 条。⚠ 前端 `v-perm` 属**前端任务**（admin 前端订单页），
-> **尚未**就位，故此处**不是**「三方已齐」；且这一项检查器守不住（第 3 项只查「`v-perm` ⊆ 契约表 / 种子」
-> 一向，**少了 `v-perm` 不报**），补齐只能靠人工核对。
+> → 按钮 `511 订单查询`，按「目录 X → 页 X1 → 按钮 X11+」）、**本行**与**前端 `v-perm`** 三方均已就位
+> （前端那侧由 `87cbaa3` 补齐）——见 [cross-cutting.md](./cross-cutting.md) 第 16 条。
+> ⚠ 但这一项**检查器守不住**（第 3 项只查「`v-perm` ⊆ 契约表 / 种子」一向，**少了 `v-perm` 不报**），
+> 后续改动仍只能靠人工核对。
 
 > 「路径」列不带网关前缀 `/admin`。例：`/shop/goods/page` 对外完整路径是 `/admin/shop/goods/page`。
 

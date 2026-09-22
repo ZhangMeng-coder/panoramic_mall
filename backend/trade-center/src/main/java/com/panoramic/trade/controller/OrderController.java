@@ -1,5 +1,6 @@
 package com.panoramic.trade.controller;
 
+import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
@@ -14,6 +15,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 订单内部领域接口（trade-center 域下沉纯域）· **按能力六条**，不按端分侧。
+ * 订单内部领域接口（trade-center 域下沉纯域）· **按能力七条**，不按端分侧。
  *
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/trade/order/...}）调用，不向页面暴露公网路由；
  * 方法直接返回业务原类型（不包 {@code RespData}），错误经 {@code TradeDomainExceptionHandler}
@@ -30,7 +32,7 @@ import java.util.List;
  * <p><b>域内不做任何鉴权、不做权限判断、不校验 token</b>：数据作用域（{@code customerId} / {@code storeId}）
  * 由调用方填在**请求体 DTO 的字段**里（不进路径段，cross-cutting 第 22 条），域侧只做「传了就按它筛，
  * 没传就是不限定」。它是否等于「本人 / 本店」由端 BFF 从登录态取，域侧不校验（防线在 BFF）。
- * 读能力（分页 / 详情）的作用域字段**可选**（管理端本就全量视角），写能力（下单 / 支付 / 发货 / 收货）
+ * 读能力（分页 / 详情）的作用域字段**可选**（管理端本就全量视角），写能力（下单 / 支付 / 发货 / 收货 / 改地址）
  * 的**必填**——那份必填由 DTO 上的 {@code @NotNull} 守。</p>
  *
  * <p>⚠ <b>不分端、不判身份</b>：同一笔订单从顾客侧与商户侧都能读到（各自传各自的作用域收窄），
@@ -68,6 +70,17 @@ public class OrderController {
     public TradeOrderVO getOrder(@PathVariable("orderNo") String orderNo,
                                  @Validated TradeOrderQueryDTO dto) {
         return orderApplicationService.getOrder(orderNo, dto);
+    }
+
+    /**
+     * 修改收货地址（**仅待支付**；只改这一笔的地址快照，不动顾客地址簿）。
+     * ⚠ 它是「同状态内字段替换」而不是状态流转，故用 {@code PUT}（替换子资源）——与下面三个
+     * 命令语义的 {@code POST} 刻意不同
+     */
+    @PutMapping("/{orderNo}/address")
+    public void updateOrderAddress(@PathVariable("orderNo") String orderNo,
+                                   @Validated @RequestBody TradeOrderAddressUpdateDTO dto) {
+        orderApplicationService.updateAddress(orderNo, dto);
     }
 
     /**

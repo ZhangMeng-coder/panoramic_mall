@@ -1,6 +1,7 @@
 import { request } from './request'
 import type { PageResult } from '../types/api'
 import type {
+  OrderAddressUpdatePayload,
   OrderCreatePayload,
   OrderPageQuery,
   OrderPayPayload,
@@ -44,5 +45,16 @@ export const orderApi = {
   /** 确认收货（仅「已发货」可收，其余状态由域驳回落 400） */
   receive(orderNo: string): Promise<void> {
     return request.post<void>(`/mall/orders/${orderNo}/receive`)
+  },
+
+  /**
+   * 改收货地址（**仅待支付可改**，闸门在域内 → 其余状态 400 原样透传，
+   * 文案如「订单当前状态「已支付」不允许修改收货地址」）。
+   *
+   * ⚠ 它改的是**这一笔订单的快照**，不动顾客地址簿；出参 `void`，成功后**重新拉详情**
+   * （地址快照由服务端下发，页面不本地改）。
+   */
+  updateAddress(orderNo: string, payload: OrderAddressUpdatePayload): Promise<void> {
+    return request.put<void>(`/mall/orders/${orderNo}/address`, payload)
   }
 }

@@ -4,6 +4,7 @@ import com.panoramic.contract.trade.dto.TradeCartItemAddDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeCartSelectDTO;
+import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
@@ -50,7 +51,7 @@ import java.util.List;
  * （抄一份就是制造第二个会漂移的地方）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表某行的 {@code 待实现} 标记、在此声明该方法、域侧补上实现，
  * 三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前购物车 8 条 + 订单 6 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
+ * 当前购物车 8 条 + 订单 7 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
  */
 @FeignClient(name = "trade-center", contextId = "tradeCenterClient",
         path = "/internal/trade", configuration = TradeFeignConfiguration.class)
@@ -134,7 +135,7 @@ public interface TradeCenterClient {
     @DeleteMapping("/cart")
     void clearCart(@RequestParam("customerId") Long customerId);
 
-    // ── 订单（6 条，按能力定义；作用域由调用方经入参 DTO 自设） ────────────────────
+    // ── 订单（7 条，按能力定义；作用域由调用方经入参 DTO 自设） ────────────────────
 
     /**
      * 下单：一次提交按 {@code storeId} 拆成多笔（一单一店），**返回整批**，顺序 = {@code storeId} 升序
@@ -158,6 +159,24 @@ public interface TradeCenterClient {
      */
     @PostMapping("/order/page")
     TradeOrderPageVO pageOrders(@RequestBody TradeOrderPageQueryDTO dto);
+
+    /**
+     * 修改订单收货地址（**只改这一笔的地址快照，不动顾客地址簿**）：**仅待支付可改**，其余状态一律拒
+     *
+     * <p>⚠ <b>它不是状态流转</b>，而是「同状态内字段替换」：状态不变，故**不写状态轨迹**
+     * （轨迹的语义是「走过哪些状态」，`seq` 连续性对账依赖它）——留痕靠审计字段。</p>
+     *
+     * <p>⚠ <b>用 {@code PUT} 而不是 {@code POST}</b>：语义是「替换该订单的地址子资源」（幂等：
+     * 同一份地址重复提交结果相同），与三个动作命令语义的 `POST` 刻意不同。</p>
+     *
+     * @param orderNo 业务可读单号（资源标识，走路径变量）
+     * @param dto     新的地址快照（四字段）+ **作用域** customerId（必填）
+     * @throws com.panoramic.common.exception.ServiceException 缺少作用域 / 非待支付状态 / 地址非法（HTTP 400）、
+     *                                                       订单不属本人（404）
+     */
+    @PutMapping("/order/{orderNo}/address")
+    void updateOrderAddress(@PathVariable("orderNo") String orderNo,
+                            @RequestBody TradeOrderAddressUpdateDTO dto);
 
     /**
      * 订单详情：传作用域即收窄（顾客 / 店主传各自的 id），都不传即全量（管理端）；

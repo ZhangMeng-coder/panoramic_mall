@@ -4,10 +4,12 @@ import { useRouter } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 import AddressPicker from '../components/AddressPicker.vue'
+import ModalShell from '../components/ModalShell.vue'
 import { cartApi } from '../api/cart'
 import { orderApi } from '../api/order'
 import { refresh as refreshBadge } from '../store/cart'
 import { showToast } from '../composables/useToast'
+import { useAddressGate } from '../composables/useAddressGate'
 import type { CartItem, CartResult } from '../types/cart'
 import type { OrderVO } from '../types/order'
 import { grad } from '../utils/gradient'
@@ -45,12 +47,15 @@ import { newRequestId } from '../utils/requestId'
  *    另外 `+` 还夹了一道**前端镜像的 999 上限**（域侧单行上限，超限必然 400），
  *    免得点出一个注定失败的请求。
  * ⑥ **「去结算」已接真实下单**（`source=CART`）：没勾选任何有效行时按钮不可点（判据就是
- *    页面上勾得到的那些行），点了**就地展开选地址面板**（本端没有模态层，面板由 `AddressPicker`
- *    提供），选好地址按「确认下单」才真的下单。⚠ 提交那一下才生成 `requestId`，期间整块禁用——
+ *    页面上勾得到的那些行），点了先过一道**地址分支**（`useAddressGate` 的三支路，与详情页
+ *    「立即下单」**共用同一处判定**：没地址 → 去添加；有地址没默认 → 弹窗选一条；有默认 → 直接用），
+ *    选定后按「确认下单」才真的下单。⚠ 提交那一下才生成 `requestId`，期间整块禁用——
  *    连点两下会生成两个键，域侧的第一级幂等就失效了，那是**两笔真实订单**。
  *    成功后的分流与详情页「立即下单」相同（一笔跳详情 / 多笔跳列表）；**购物车由服务端在
  *    下单成功后自己清**（前端不再调删除接口），页面只需重拉一次**行数徽标**。
- * ⑦ **破坏性动作走行内两步确认**（本端没有模态层，也不用 `window.confirm`，同收货地址页）：
+ *    ⚠ 选地址那一步走**模态层**（`ModalShell` + `AddressPicker`）。
+ * ⑦ **破坏性动作走行内两步确认**（不用 `window.confirm`，同收货地址页）：模态层只装
+ *    「选地址」那一步，**确认框不上弹窗**——就地展开是既有做法，不因引入模态层而改。
  *    行删除就地变成「确认删除？/ 确认删除 / 取消」；「删除选中」「清空购物车」共用一处
  *    待确认态（`pendingWipe`），同时只留一处确认，不并列弹两块。
  *    ⚠ **唯一例外是「清除失效商品」**（顶部操作条，`invalidCount > 0` 才渲染，点了就删）：
@@ -378,17 +383,21 @@ async function removeInvalid(): Promise<void> {
 
 /* ---- 去结算（source=CART，见文件头 ⑥）---- */
 
-/** 选地址面板是否展开（**不引模态层**：就是就地展开一块，见 AddressPicker） */
-const checkoutOpen = ref(false)
+/**
+ * 下单前的**地址分支**（与详情页「立即下单」共用 `useAddressGate` 那一处判定）。
+ * 本页只提供「怎么下单」：两个行集合的派生与成功后的去向。
+ *
+ * ⚠ **防连点**由 gate 的 `busy` / `submitting` 承担：`requestId` 在「确认」那一下才生成，
+ * 两次点击各生成一个键就不再命中请求级幂等，那是两笔真实订单。
+ */
+const { busy, picking, submitting, start, confirm, close } = useAddressGate({
+  submit: placeCheckout
+})
 
-/** 下单在途。⚠ 它同时是**防连点**的正解：`requestId` 在「确认下单」那一下才生成，
- *  提交期间整块禁用——两次点击各生成一个键就不再命中请求级幂等，那是两笔真实订单 */
-const placing = ref(false)
-
-/** 点「去结算」：展开选地址面板（没勾选任何有效行时按钮本就不可点，这里再兜一层） */
-function openCheckout(): void {
+/** 点「去结算」：过地址分支（没勾选任何有效行时按钮本就不可点，这里再兜一层） */
+async function openCheckout(): Promise<void> {
   if (!checkoutRows.value.length) return
-  checkoutOpen.value = true
+  await start()
 }
 
 /** 下单成功后的分流：一笔 → 该单详情；多笔 → 订单列表 + 提示（与详情页「立即下单」同一口径） */
@@ -402,40 +411,35 @@ async function afterOrdered(orders: OrderVO[]): Promise<void> {
 }
 
 /**
- * 确认下单（选地址面板的「确认下单」）。
+ * 真的建单（gate 的 `submit`）。
  *
  * ⚠ **两个行集合派生自同一份 `checkoutRows`**（见文件头 ⑧）：`items` 要的是 `skuId`，
  * `cartItemIds` 要的是**购物车行 id**——各算一遍就可能对不上，而服务端不做交叉校验，
  * 对不上会**静默删掉没结算的行**。
  * ⚠ 下单成功后**购物车由服务端清**（前端不再调删除接口），这里只重拉行数徽标。
- * ⚠ 失败**不关面板**：域侧 400（商品已下架 / 库存不足）的文案由拦截器弹出，顾客可改地址重试。
+ * ⚠ 失败**不关弹窗**（弹窗的开关归 gate）：域侧 400（商品已下架 / 库存不足）的文案由拦截器
+ * 弹出，顾客可换一条地址重试。
+ * ⚠ 本函数**不设自己的在途标记**：在途是 gate 的 `submitting`。
  */
-async function submitCheckout(addressId: number): Promise<void> {
-  if (placing.value) return
+async function placeCheckout(addressId: number): Promise<void> {
   const rows = checkoutRows.value
+  // 勾选行在打开弹窗后被改空了（理论上到不了：改勾选会重拉列表）——按失败处理，别发一个空单。
+  // ⚠ gate 只认「抛没抛」，故必须抛；提示自己给一句（拦截器只管后端 msg）
   if (!rows.length) {
     showToast('请先勾选要结算的商品', 'info')
-    return
+    throw new Error('请先勾选要结算的商品')
   }
 
-  placing.value = true
-  try {
-    const orders = await orderApi.create({
-      source: 'CART',
-      requestId: newRequestId(),
-      addressId,
-      items: rows.map((r) => ({ skuId: r.skuId, quantity: r.quantity })),
-      cartItemIds: rows.map((r) => r.id)
-    })
-    checkoutOpen.value = false
-    // 徽标口径是**行数**：下单成功后服务端把结算掉的行删了，行数变了，故重拉（本地减不出来）
-    void refreshBadge()
-    await afterOrdered(orders)
-  } catch {
-    // 拦截器已弹后端 msg
-  } finally {
-    placing.value = false
-  }
+  const orders = await orderApi.create({
+    source: 'CART',
+    requestId: newRequestId(),
+    addressId,
+    items: rows.map((r) => ({ skuId: r.skuId, quantity: r.quantity })),
+    cartItemIds: rows.map((r) => r.id)
+  })
+  // 徽标口径是**行数**：下单成功后服务端把结算掉的行删了，行数变了，故重拉（本地减不出来）
+  void refreshBadge()
+  await afterOrdered(orders)
 }
 </script>
 
@@ -623,7 +627,7 @@ async function submitCheckout(addressId: number): Promise<void> {
                   <template v-else>¥{{ trimNum(subtotal(item)) }}</template>
                 </div>
 
-                <!-- 操作：删除是行内两步确认（沿用收货地址页的手法，本端没有模态层） -->
+                <!-- 操作：删除是行内两步确认（沿用收货地址页的手法；弹窗只用于选地址，见文件头 ⑦） -->
                 <div class="cart-item__ops">
                   <template v-if="confirmingId === item.id">
                     <span class="cart__confirm">确认删除？</span>
@@ -648,14 +652,16 @@ async function submitCheckout(addressId: number): Promise<void> {
           </section>
         </div>
 
-        <!-- 去结算：选好地址按「确认下单」才真的下单（`source=CART`）。成功后购物车由服务端清，
-             本页只重拉徽标并跳转（一笔 → 详情 / 多笔 → 列表） -->
-        <AddressPicker
-          v-if="checkoutOpen"
-          :submitting="placing"
-          @confirm="submitCheckout"
-          @cancel="checkoutOpen = false"
-        />
+        <!-- 去结算的选地址弹窗：**有地址但没有默认**时才出现（有默认就静默下单了，见 useAddressGate）。
+             ⚠ 提交在途时 `closable=false`——那时关掉它，顾客会以为没提交，而单可能已经建了 -->
+        <ModalShell v-if="picking" label="选择收货地址" :closable="!submitting" @close="close">
+          <AddressPicker
+            :submitting="submitting"
+            confirm-text="确认下单"
+            @confirm="confirm"
+            @cancel="close"
+          />
+        </ModalShell>
 
         <!-- 底部汇总栏：件数与金额都取服务端值（文件头 ①）；吸底，长列表滚动时也看得见。
              ⚠ 它已在 .container（1280）里面，不要再套一层 container —— 那是 1280 套 1280 的自我重复 -->
@@ -669,17 +675,17 @@ async function submitCheckout(addressId: number): Promise<void> {
                 <span class="cart-sum__sym">¥</span>{{ trimNum(selectedAmount) }}
               </span>
               <!-- 「去结算」：**已接真实下单**（文件头 ⑥）。未勾选有效行时不可点，
-                   点了就地展开选地址面板，选好按「确认下单」才真的下单 -->
+                   点了先过地址分支（没地址去添加 / 没默认弹窗选 / 有默认直接用） -->
               <span v-if="!selectedVisibleIds.length" class="cart-sum__hint">
                 请先勾选要结算的商品
               </span>
               <button
                 class="cart-sum__btn"
                 type="button"
-                :disabled="!selectedVisibleIds.length || busyAll || checkoutOpen"
+                :disabled="!selectedVisibleIds.length || busyAll || busy"
                 @click="openCheckout"
               >
-                去结算
+                {{ busy ? '处理中…' : '去结算' }}
               </button>
             </div>
           </div>

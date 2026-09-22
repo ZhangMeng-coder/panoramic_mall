@@ -2,6 +2,7 @@ package com.panoramic.trade.order.application;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
+import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
@@ -29,8 +30,9 @@ import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * 订单用例入口（按能力六条：下单、分页、详情、支付、发货、收货）：{@code create} / {@code pageOrders} /
- * {@code getOrder} / {@code payOrder} / {@code shipOrder} / {@code receiveOrder}。
+ * 订单用例入口（按能力七条：下单、分页、详情、支付、发货、收货、改收货地址）：{@code create} /
+ * {@code pageOrders} / {@code getOrder} / {@code payOrder} / {@code shipOrder} / {@code receiveOrder} /
+ * {@code updateAddress}。
  *
  * <p>控制器（{@code controller/OrderController}）只做参数绑定与校验，其余全在这里；
  * 编排（拆单 / 两级幂等 / 失败回滚）在 {@link OrderCreateCoordinator}，本类**不重复它的逻辑**——
@@ -46,7 +48,7 @@ import java.util.StringJoiner;
  *
  * <p>⚠ <b>写侧的作用域必填，两道防线</b>（{@code customerId} / {@code storeId}）：写没有「合法全量视角」，
  * 省掉作用域就是「能改任意一笔单」。第一道是各入参 DTO 上的 {@code @NotNull}（只覆盖 MVC 边界）；
- * 第二道是本类四个写方法开头的 {@link ScopeGuard#require}——绕过 MVC 的调用（内部直连 / 单测 / 将来的批处理）
+ * 第二道是本类五个写方法开头的 {@link ScopeGuard#require}——绕过 MVC 的调用（内部直连 / 单测 / 将来的批处理）
  * 只有它能挡，否则 {@code null} 会一路传到仓储、退化成「不限定」并**静默**改掉别人的单。
  * ⚠ 这道护栏是**入参不变量**（参数在不在），不是鉴权（是不是你的单）——后者域内一律不做。</p>
  *
@@ -156,6 +158,24 @@ public class OrderApplicationService {
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         order.markReceived(orderStatusFlow);
         orderRepository.update(order);
+    }
+
+    /**
+     * 修改订单收货地址（**仅待支付**；只改这一笔的地址快照，不动顾客地址簿）
+     *
+     * <p>⚠ 与三个动作一样是「读订单 → 聚合内改 → 落库」三步，故带事务：落库是**条件更新**
+     * （库里必须仍是待支付，见 {@link OrderRepository#updateAddress}），失败即整体回退。</p>
+     *
+     * @param orderNo 业务可读单号
+     * @param dto     新的地址快照 + **作用域** customerId（必填）
+     * @throws ServiceException 缺少作用域 / 非待支付状态 / 地址非法（HTTP 400）、订单不属本人（404）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateAddress(String orderNo, TradeOrderAddressUpdateDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
+        OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
+        order.changeAddress(toAddress(dto.getAddress()));
+        orderRepository.updateAddress(order);
     }
 
     // ── 读侧：作用域可选（不传 = 全量视角） ─────────────────────────────────────

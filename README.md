@@ -1,6 +1,6 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理）**，**商城前台工程**（`frontend/mall`，账号与 C 端商品浏览已接入 mall-bff，首页热门商品列表仍静态）与**商城前台 BFF（mall-bff，C 端顾客账号 + 商品浏览编排）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store / customer-center）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理 + 订单管理）**，**商城前台工程**（`frontend/mall`，账号、C 端商品浏览、购物车与订单已接入 mall-bff，首页热门商品列表仍静态）、**商城前台 BFF（mall-bff，C 端顾客账号 + 商品浏览 / 购物车 / 订单编排）**与**交易域（trade-center，购物车 + 订单）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store / customer-center / trade-center）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用——**唯一的域间调用边**是 trade-center 下单流水线经 Feign 调 store 域（见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 24 条）。
 
 ## 系统架构
 
@@ -17,15 +17,16 @@
 └───────┬─────────────────────────────────────────┬────────────────────────────────────────┘
        │ Nacos 注册发现(:8848)                   │ 内部 Feign（X-User-Id/X-User-Type + 熔断）
 ┌───────────────────────────────────────────┐  ┌───────────────────────────────────────────┐
-│  端 BFF 层（账号表 + type 的 JWT）        │  │  纯域层（不鉴权、无 Redis、无公网路由）   │
+│  端 BFF 层（账号表 + type 的 JWT）        │  │  纯域层（不鉴权、无公网路由）             │
 │  admin（:8082）平台账号 + RBAC + 编排     │  │  goods-center（:8081）分类/品牌/SPU-SKU   │
-│  store-bff（:8084）店主账号 + 店铺商品    │  │  store（:8083）store_shop + 在售商品      │
-│  mall-bff（:8085）顾客账号（已接业务域）  │  │  customer-center（:8086）顾客资料/收货地址│
+│  store-bff（:8084）店主账号 + 商品/订单   │  │  store（:8083）store_shop + 在售商品      │
+│  mall-bff（:8085）顾客账号 + 商品/车/订单 │  │  customer-center（:8086）顾客资料/收货地址│
+│  三端身份空间彼此隔离，互不调用           │  │  trade-center（:8087）购物车 / 订单       │
 └───────────────────────────────────────────┘  └───────────────────────────────────────────┘
-              MySQL 8（库 panoramic_mall：goods_* / sys_* / store_* / mall_* / customer_*）
+              MySQL 8（库 panoramic_mall：goods_* / sys_* / store_* / mall_* / customer_* / trade_*）
 ```
 
-> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰 Redis。业务域与端 BFF（admin / store-bff / mall-bff）之间经**各域自己的 `<域>-interface` 契约模块**（`goods-center-interface` / `store-interface` / `customer-center-interface`，包根 `com.panoramic.contract.<域>`：同源 Feign 客户端 + DTO/VO）互调，只透传身份头 + 熔断降级，域内不做权限判断。三套身份（平台管理员 / 店主 / C 端顾客）的登录会话键与审计字段格式见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 5 / 8 条。⚠ **首页热门商品列表仍为静态 mock**。
+> `common` 是被所有服务共享的纯基座；鉴权装配（JWT/Redis/安全链）单独放在 `common-auth`，**只有端 BFF 依赖它**——业务域结构上拿不到认证链，因此不鉴权、不碰登录态（⚠ **`trade-center` 是唯一加载 `datasource-redis.yml` 的域**，只用它做购物车加购去重与计数缓存、MySQL 仍是唯一事实源，见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 12 条）。业务域与端 BFF（admin / store-bff / mall-bff）之间经**各域自己的 `<域>-interface` 契约模块**（`goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，包根 `com.panoramic.contract.<域>`：同源 Feign 客户端 + DTO/VO）互调，只透传身份头 + 熔断降级，域内不做权限判断。三套身份（平台管理员 / 店主 / C 端顾客）的登录会话键与审计字段格式见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 5 / 8 条。⚠ **首页热门商品列表仍为静态 mock**。
 
 ## 仓库结构
 
@@ -38,13 +39,14 @@
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
 | ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
 | ├── [customer-center/](backend/customer-center/) | 顾客域（8086，下沉纯域）：顾客资料 customer_profile + 收货地址 customer_address | [README](backend/customer-center/README.md) |
-| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 | [README](backend/store-bff/README.md) |
-| ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）+ C 端商品浏览编排（内部 Feign → goods-center 分类树 / store 商品分页与筛选聚合 / customer-center 顾客资料与收货地址） | [README](backend/mall-bff/README.md) |
-| ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 | [README](backend/admin/README.md) |
+| ├── [trade-center/](backend/trade-center/) | 交易域（8087，下沉纯域）：购物车 trade_cart_item + 订单 trade_order_*（DDD 三层，按能力通用、不分端） | [README](backend/trade-center/README.md) |
+| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 + 本店订单（分页 / 详情 / 发货） | [README](backend/store-bff/README.md) |
+| ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）+ C 端商品浏览 / 购物车 / 订单编排（内部 Feign → goods-center 分类树 / store 商品分页与筛选聚合 / customer-center 顾客资料与收货地址 / trade-center 购物车与订单） | [README](backend/mall-bff/README.md) |
+| ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 + 订单管理（平台只读） | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分；三端统一 Vue 3 + Vite + TypeScript + axios） | [README](frontend/README.md) |
-| ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理 | [README](frontend/admin/README.md) |
-| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（5175）：账号 + 商品浏览（搜索 / 分类 / 详情）+ 顾客资料与收货地址，均接 mall-bff；首页热门商品列表仍静态 | [README](frontend/mall/README.md) |
+| ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理、订单管理（只读） | [README](frontend/admin/README.md) |
+| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 + 订单管理（列表 / 详情 / 发货） | [README](frontend/store/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：账号 + 商品浏览（搜索 / 分类 / 详情）+ 购物车 + 我的订单（列表 / 详情 / 支付）+ 顾客资料与收货地址，均接 mall-bff；首页热门商品列表仍静态 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈
@@ -64,54 +66,3 @@
 | Node.js | ≥ 20.19 | 前端构建（Vite 7 要求） |
 | Nacos | `127.0.0.1:8848`（nacos/nacos） | 服务注册与发现 |
 | MySQL | 连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供 | 库 `panoramic_mall`；主机 / 端口 / 账号 / 密码可用环境变量 `MYSQL_HOST/MYSQL_PORT/MYSQL_USERNAME/MYSQL_PASSWORD/MYSQL_DB` 覆盖 |
-
-## 快速开始
-
-```bash
-# 1. 启动外部依赖：Nacos、MySQL。
-#    库与表用各模块的 db/schema.sql 创建（均 IF NOT EXISTS，可重复执行）：
-#      goods-center → goods_*；admin → sys_* 权限表 + 权限种子；store → store_shop + store_goods_*；store-bff → store_user；mall-bff → mall_user
-#      customer-center → customer_profile + customer_address
-#    另需把 backend/nacos-config/ 下的共享配置发布到 Nacos（服务侧 import 不带 optional:，缺任一则启动失败）：
-#      datasource-mysql.yml / datasource-redis.yml / auth.yml / feign-circuitbreaker.yml → 见 backend/nacos-config/README.md
-
-# 2. 安装后端父 POM、common / common-auth 与各 <域>-interface 契约模块（首次或改动后）
-#    ⚠ <域>-interface 被端 BFF 依赖：漏装则单独 `-pl <端 BFF> spring-boot:run` 解析不到（清单见 backend/README.md）
-cd backend && mvn -N install && mvn -pl common,common-auth,goods-center-interface,store-interface,customer-center-interface install
-
-# 3. 启动后端服务（各一个终端；连远程 MySQL 时先注入环境变量，如
-#    MYSQL_HOST=xxx MYSQL_PORT=3306 MYSQL_USERNAME=xxx MYSQL_PASSWORD=xxx MYSQL_DB=panoramic_mall）
-mvn -pl gateway spring-boot:run         # 8080 网关
-mvn -pl goods-center spring-boot:run    # 8081 商品域（纯域）
-mvn -pl admin spring-boot:run           # 8082 平台管理（端 BFF）
-mvn -pl store spring-boot:run           # 8083 店铺域（纯域）
-mvn -pl store-bff spring-boot:run       # 8084 店铺端 BFF
-mvn -pl mall-bff spring-boot:run        # 8085 商城前台 BFF（C 端）
-mvn -pl customer-center spring-boot:run # 8086 顾客域（纯域）
-
-# 4. 验证链路
-curl http://localhost:8080/discovery/services
-
-# 5. 启动前端（各一个终端）
-cd frontend/admin && npm install && npm run dev   # → http://localhost:5173
-cd frontend/store && npm install && npm run dev   # → http://localhost:5174
-cd frontend/mall  && npm install && npm run dev   # → http://localhost:5175
-```
-
-## 开发路线（规划）
-
-- [x] 后端基础设施（网关 / Nacos 注册 / common 工具包）
-- [x] 商品中台（分类、品牌、SPU/SKU 管理）+ 管理后台页面
-- [x] 登录与 RBAC 权限体系（用户/角色/权限 + 动态菜单/按钮）
-- [x] 店铺管理 + 店主端一期（frontend/store，开店审核闭环）
-- [x] 店主端商品管理（在售商品 SPU/SKU 增删改、按 SKU 上下架联动、中台模板关联与版本同步）
-- [x] BFF 化收口：goods-center 下沉纯域、store-center 拆为 store（域）+ store-bff（店铺端 BFF）、admin 店铺管理 BFF 编排、网关公网收敛为端 BFF 白名单
-- [x] 管理后台店铺商品管理（全店铺查询/只读详情/平台锁定解锁，分类子树筛选）+ 商品类别全路径展示
-- [x] 商城前台工程（frontend/mall）：Vue 3 + Vite + TypeScript，首页六区块 + 静态数据
-- [x] 商城前台 BFF 一期（mall-bff）：C 端顾客账号（手机号 + 模拟短信验证码，签发 `type=user`）+ 网关 `/mall/**` 路由
-- [x] mall 前台接入账号接口：登录 / 注册两页 + 顶栏登录态 + 刷新重建
-- [x] C 端商品搜索与分类浏览（2026-09-17）：store 域分页通用化（`cross-shop/spu/page`）+ 新增筛选聚合 `facets`；mall-bff 接 goods-center 分类树与 store 商品数据，新增 catalog 接口（仅 `/mall/catalog/categories` 公开免鉴权）；mall 前台搜索区真跳转 + 分类展示区读真实分类树 + 新增搜索结果页 / 分类商品页
-- [x] 前端三端技术形态拉平：admin / store 由 Vue 3 + JS 转为 **Vue 3 + TypeScript（`strict`）**，与 mall 统一为 Vue 3 + Vite + TS + axios，`vue-tsc` 挂进三端构建
-- [ ] 商城前台二期剩余：首页**热门商品列表**等其余区块接真实数据（搜索区与分类展示区已完成）
-- [ ] trade-center 下沉（购物车 / 订单 / 评价）
-- [ ] 开店后其余业务：店主订单、图片上传等（店主端已留占位入口）

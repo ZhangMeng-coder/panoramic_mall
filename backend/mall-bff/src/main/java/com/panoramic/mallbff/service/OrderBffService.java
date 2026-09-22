@@ -7,6 +7,7 @@ import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.trade.api.TradeCenterClient;
 import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
+import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
@@ -14,6 +15,7 @@ import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
+import com.panoramic.mallbff.dto.MallOrderAddressUpdateDTO;
 import com.panoramic.mallbff.dto.MallOrderCreateDTO;
 import com.panoramic.mallbff.dto.MallOrderPageQueryDTO;
 import com.panoramic.mallbff.dto.MallOrderPayDTO;
@@ -25,15 +27,16 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * C 端订单编排（下单 / 列表 / 详情 / 支付 / 确认收货）。
+ * C 端订单编排（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址）。
  *
  * <p><b>三层归属</b>：订单本体（单据、状态、明细快照、金额）属 <b>trade-center</b>，
  * 收货地址属 <b>customer-center</b>，本层只做「取地址 → 组下单参数 → 调域 → 成功后清车」的页面编排，
  * 不复制任何域的表、也不重写状态文案（文案由域下发，见 {@link MallOrderVO}）。</p>
  *
  * <p><b>锚点一律取自登录态</b>（调用方传 {@code UserContext.getUserId()}，本类不碰登录态）：
- * 五个方法都把它填进域入参 DTO（{@code page} / {@code detail} 是可选作用域，本层<b>无条件</b>写成本人，
- * 因为 C 端只有「我的订单」一个视角；{@code create} / {@code pay} / {@code receive} 上域侧是必填）。
+ * 六个方法都把它填进域入参 DTO（{@code page} / {@code detail} 是可选作用域，本层<b>无条件</b>写成本人，
+ * 因为 C 端只有「我的订单」一个视角；{@code create} / {@code pay} / {@code receive} / {@code updateAddress}
+ * 上域侧是必填）。
  * 绝不从请求体 / 路径接送——域内不做任何鉴权，这个 id 就是数据权限本身。</p>
  *
  * <p>⚠ <b>读路径没有本层的「锚点非空」断言，是有意为之、且有一条必须守住的依赖</b>：
@@ -61,7 +64,7 @@ import java.util.List;
  * 不会重复下单）。套一层降级文案等于凭空给页面一个「清车失败」的假出口，而那时页面什么都做不了。
  * 故这里直接 {@code try/catch} + {@code log.warn}，<b>不让下单整体失败</b>。</p>
  *
- * <p><b>写路径直透</b>：支付 / 收货是「用户点了就生效」的原子操作，本层不二次判定、不补偿，
+ * <p><b>写路径直透</b>：支付 / 收货 / 改地址是「用户点了就生效」的原子操作，本层不二次判定、不补偿，
  * 一律经 {@link BffFeignCall} 调 trade-center。下游业务 4xx（金额不符 / 非法状态迁移 400、
  * 订单不存在或不属本人 404）<b>原样透传</b>给页面，其余（熔断 / 连接等）才降级为
  * {@link #ORDER_DOWN_MSG}。</p>
@@ -168,6 +171,30 @@ public class OrderBffService {
         payload.setAmount(dto.getAmount());
         BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
             tradeCenterClient.payOrder(orderNo, payload);
+            return null;
+        });
+    }
+
+    /**
+     * 修改订单收货地址（**仅待支付可改**，闸门在域内）
+     *
+     * <p>⚠ <b>与下单同一个取地址路径</b>（{@link #addressSnapshot}）：页面只传 {@code addressId}，
+     * 地址内容由本层取回并校验归属（域侧按 {@code id + customerId} 过滤，不属本人回 404「地址不存在」），
+     * 再组快照传给 trade-center——域结构上调不到 customer-center，页面也无权自造地址内容。</p>
+     *
+     * <p>⚠ 它**不动顾客地址簿**，故与地址簿的四个写路径不同：这里<b>不失效地址状态缓存</b>
+     * （那缓存说的是「地址簿有没有地址 / 默认是哪条」，与某一笔订单寄到哪儿无关）。</p>
+     *
+     * @param customerId 顾客账号 id（只能取自登录态）
+     * @param orderNo    业务可读单号
+     * @param dto        新的地址 id
+     */
+    public void updateAddress(Long customerId, String orderNo, MallOrderAddressUpdateDTO dto) {
+        TradeOrderAddressUpdateDTO payload = new TradeOrderAddressUpdateDTO();
+        payload.setCustomerId(customerId);
+        payload.setAddress(addressSnapshot(customerId, dto.getAddressId()));
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
+            tradeCenterClient.updateOrderAddress(orderNo, payload);
             return null;
         });
     }

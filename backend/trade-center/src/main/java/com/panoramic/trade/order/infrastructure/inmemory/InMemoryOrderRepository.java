@@ -108,6 +108,17 @@ public class InMemoryOrderRepository implements OrderRepository {
         //    把本类当成「先占键与读侧作用域」的参照实现，别当成并发语义的参照实现。
     }
 
+    @Override
+    public synchronized void updateAddress(OrderModel order) {
+        Objects.requireNonNull(order, "订单不能为空");
+        if (!existsByOrderNo(order.getOrderNo())) {
+            throw new IllegalStateException("订单 " + order.getOrderNo() + " 不在仓库里，无法更新");
+        }
+        // ⚠ 与 update(...) 同一处表达不了的东西：真实实现是「库里仍为待支付」的条件更新，
+        //    0 行即 400。本类持的是活引用、地址在聚合上已经换完，「读之后被支付抢先」这一幕
+        //    在内存实现下验不到——只能靠真库（同 update 的说明）。
+    }
+
     // ── 读侧 ────────────────────────────────────────────────────────────────────
 
     @Override

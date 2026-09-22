@@ -5,6 +5,7 @@ import TopBar from '../components/TopBar.vue'
 import SearchBar from '../components/SearchBar.vue'
 import SiteFooter from '../components/SiteFooter.vue'
 import AddressPicker from '../components/AddressPicker.vue'
+import ModalShell from '../components/ModalShell.vue'
 import { catalogApi } from '../api/catalog'
 import { cartApi } from '../api/cart'
 import { orderApi } from '../api/order'
@@ -12,6 +13,7 @@ import { LOGIN_REQUIRED_MSG } from '../api/request'
 import { getToken } from '../store/auth'
 import { refresh as refreshCartBadge } from '../store/cart'
 import { showToast } from '../composables/useToast'
+import { useAddressGate } from '../composables/useAddressGate'
 import type { GoodsDetail, GoodsDetailSku } from '../types/catalog'
 import type { OrderVO } from '../types/order'
 import { grad } from '../utils/gradient'
@@ -31,11 +33,12 @@ import { newRequestId } from '../utils/requestId'
  *    （剥脚本 / 事件属性 / 样式；白名单只此一份，admin 端同字段共用），本页**不需要、也不得**
  *    自己再拼一遍 HTML。
  *    ⚠ 别改回 `{{ }}` 插值：那样店主写的 `<p>` 会原样露在页面上。
- * ③ **「加入购物车」与「立即下单」都已接入**：购物车走 `/cart` 八行、下单走 `/orders` 一行
+ * ③ **「加入购物车」与「立即下单」都已接入**：购物车走 `/cart` 八行、下单走 `/orders` 六行
  *    （契约 docs/contracts/mall-bff.md），本页规格区下方摆数量 + 两个动作。
- *    ⚠ 「立即下单」不是「立即购买」：它**不跳支付页**（C 端没有收银台），而是**就地展开选地址面板**
- *    （`AddressPicker`，本端不引模态层），由顾客选好地址按「确认下单」才真的下单；
- *    下单成功按「一笔 / 多笔」分流（一单一店，一次提交可能拆成多笔）。
+ *    ⚠ 「立即下单」不是「立即购买」：它**不跳支付页**（C 端没有收银台），而是先过一道**地址分支**
+ *    （`useAddressGate` 的三支路：没地址 → 去添加；有地址没默认 → 弹窗选一条；有默认 → 直接用），
+ *    选定后按「确认下单」才真的下单；下单成功按「一笔 / 多笔」分流（一单一店，一次提交可能拆成多笔）。
+ *    ⚠ 选地址那一步走的是**模态层**（`ModalShell` + `AddressPicker`）——本端唯一的模态层就是它。
  */
 
 const route = useRoute()
@@ -287,23 +290,25 @@ async function addToCart(): Promise<void> {
 
 /* ---- 立即下单（source=DIRECT）---- */
 
-/** 选地址面板是否展开（**不引模态层**：就是就地展开一块，见 AddressPicker） */
-const pickerOpen = ref(false)
-
 /**
- * 下单在途。⚠ 它同时是**防连点**的正解：`requestId` 在「确认下单」那一下才生成，
+ * 下单前的**地址分支**（三分支与判定全在 `useAddressGate`——与购物车结算共用那一处）。
+ * 本页只提供「怎么下单」：建单参数与成功后的去向。
+ *
+ * ⚠ **防连点**由 gate 的 `busy` / `submitting` 承担：`requestId` 在「确认」那一下才生成，
  * 若两次点击各生成一个键，域侧的第一级幂等（按 `(customer_id, request_id)`）就**失效**，
- * 连点两下就是两笔真实订单。故提交期间按钮禁用（AddressPicker 的 `submitting`）。
+ * 连点两下就是两笔真实订单。故读状态与提交期间，入口按钮、弹窗整块禁用。
  */
-const ordering = ref(false)
+const { busy, picking, submitting, start, confirm, close } = useAddressGate({
+  submit: placeOrder
+})
 
 /** 「立即下单」可点：与加购同一判据（选中规格 + 未售罄 + 没有请求在途） */
 const canBuyNow = computed(() => {
   const sku = activeSku.value
-  return sku !== null && sku.availableStock > 0 && !ordering.value
+  return sku !== null && sku.availableStock > 0 && !busy.value
 })
 
-/** 点「立即下单」：未登录先提示去登录（同加购）；已登录则展开选地址面板 */
+/** 点「立即下单」：未登录先提示去登录（同加购）；已登录则过那道地址分支（见 `useAddressGate`） */
 async function openBuyNow(): Promise<void> {
   if (!canBuyNow.value) return
 
@@ -313,7 +318,7 @@ async function openBuyNow(): Promise<void> {
     return
   }
 
-  pickerOpen.value = true
+  await start()
 }
 
 /**
@@ -331,31 +336,29 @@ async function afterOrdered(orders: OrderVO[]): Promise<void> {
 }
 
 /**
- * 确认下单（选地址面板的「确认下单」）：**这一刻**生成 requestId（每次确认一个），
- * 提交期间面板整块禁用（防连点，见 `ordering`）。
+ * 真的建单（gate 的 `submit`）：**这一刻**生成 requestId（每次提交一个）。
  *
- * ⚠ 失败**不关面板**：域侧 400（商品已下架 / 库存不足）的中文文案由拦截器弹出，
- * 顾客可以改地址或直接重试——关掉面板等于逼他再点一次「立即下单」。
+ * ⚠ 失败**不关弹窗**（弹窗的开关归 gate：只有提交成功它才关）——域侧 400（商品已下架 /
+ * 库存不足）的中文文案由拦截器弹出，顾客可以换一条地址或直接重试；关掉弹窗等于逼他再点一次。
+ * ⚠ 本函数**不设自己的在途标记**：在途是 gate 的 `submitting`（同一个动作不该有两份状态）。
  */
-async function submitOrder(addressId: number): Promise<void> {
+async function placeOrder(addressId: number): Promise<void> {
   const sku = activeSku.value
-  if (!sku || ordering.value) return
-
-  ordering.value = true
-  try {
-    const orders = await orderApi.create({
-      source: 'DIRECT',
-      requestId: newRequestId(),
-      addressId,
-      items: [{ skuId: sku.id, quantity: buyQty.value }]
-    })
-    pickerOpen.value = false
-    await afterOrdered(orders)
-  } catch {
-    // 拦截器已弹后端 msg
-  } finally {
-    ordering.value = false
+  // 规格没了（理论上到不了：入口按钮按 `activeSku` 禁用、规格一变弹窗也会关）——按**失败**处理，
+  // 别发一个没有商品的单。⚠ gate 只认「抛没抛」，故这里必须抛；提示也自己给一句：
+  // 它不走拦截器（那是给后端 msg 用的），不提示的话弹窗会停在那里不说明理由
+  if (!sku) {
+    showToast('请先选择规格', 'info')
+    throw new Error('请先选择规格')
   }
+
+  const orders = await orderApi.create({
+    source: 'DIRECT',
+    requestId: newRequestId(),
+    addressId,
+    items: [{ skuId: sku.id, quantity: buyQty.value }]
+  })
+  await afterOrdered(orders)
 }
 
 /** 换图重试一次：上一张图的加载失败态不该粘到新图上（与 CatalogCard 同款处理） */
@@ -366,8 +369,8 @@ watch(activeImage, () => {
 /** 换规格：数量重置为 1（不同 SKU 库存不同，继承上一个规格的数量会得到「一选就超上限」的怪状态） */
 watch(activeSku, () => {
   buyQty.value = 1
-  // 面板里正要下的是**上一个规格**，规格一换就把它收起（留着会让顾客对着新规格下旧规格的单）
-  pickerOpen.value = false
+  // 弹窗里正要下的是**上一个规格**，规格一换就把它收起（留着会让顾客对着新规格下旧规格的单）
+  close()
 })
 
 /**
@@ -524,20 +527,28 @@ watch(goodsId, (id) => void load(id), { immediate: true })
                 {{ adding ? '加入中…' : '加入购物车' }}
               </button>
 
-              <!-- 立即下单：就地展开选地址面板（不是「立即购买」——C 端没有收银台，见文件头 ③） -->
+              <!-- 立即下单：先过地址分支，不是「立即购买」（C 端没有收银台，见文件头 ③） -->
               <button class="detail__buy-now" type="button" :disabled="!canBuyNow" @click="openBuyNow">
-                立即下单
+                {{ busy ? '处理中…' : '立即下单' }}
               </button>
             </div>
             <p v-if="buyHint" class="detail__buy-hint">{{ buyHint }}</p>
 
-            <!-- 选收货地址：在**本页就地展开**（本端没有模态层），选好按「确认下单」才真的下单 -->
-            <AddressPicker
-              v-if="pickerOpen"
-              :submitting="ordering"
-              @confirm="submitOrder"
-              @cancel="pickerOpen = false"
-            />
+            <!-- 选收货地址弹窗：**有地址但没有默认**时才出现（有默认就静默下单了，见 useAddressGate）。
+                 ⚠ 提交在途时 `closable=false`——那时关掉它，顾客会以为没提交，而单可能已经建了 -->
+            <ModalShell
+              v-if="picking"
+              label="选择收货地址"
+              :closable="!submitting"
+              @close="close"
+            >
+              <AddressPicker
+                :submitting="submitting"
+                confirm-text="确认下单"
+                @confirm="confirm"
+                @cancel="close"
+              />
+            </ModalShell>
           </div>
         </div>
 

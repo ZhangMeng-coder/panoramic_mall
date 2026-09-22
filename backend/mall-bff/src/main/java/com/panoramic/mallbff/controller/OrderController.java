@@ -3,6 +3,7 @@ package com.panoramic.mallbff.controller;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.mallbff.dto.MallOrderAddressUpdateDTO;
 import com.panoramic.mallbff.dto.MallOrderCreateDTO;
 import com.panoramic.mallbff.dto.MallOrderPageQueryDTO;
 import com.panoramic.mallbff.dto.MallOrderPayDTO;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -20,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * C 端订单接口（下单 / 列表 / 详情 / 支付 / 确认收货，共 5 条）。
+ * C 端订单接口（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址，共 6 条）。
  *
  * <p><b>形状</b>：本类只碰 {@link OrderBffService}，<b>不注入</b>任何 Feign 客户端，
  * 页面类型 ↔ 域契约类型的映射收在该 service 内。出参一律包 {@code RespData}（含 {@code void} 的写路径）。</p>
@@ -85,6 +87,19 @@ public class OrderController {
     public RespData<Void> pay(@PathVariable("orderNo") String orderNo,
                               @Valid @RequestBody MallOrderPayDTO dto) {
         orderBffService.pay(UserContext.getUserId(), orderNo, dto);
+        return RespData.success();
+    }
+
+    /**
+     * 修改收货地址（**仅待支付可改**，闸门在域内 → 其余状态 400 原样透传）
+     *
+     * <p>⚠ 入参是 {@code addressId} 而不是地址字段：地址由本层取回 + 校验归属后组快照传域
+     * （见 {@link OrderBffService#updateAddress}）。出参 {@code Void}，页面改完重拉详情。</p>
+     */
+    @PutMapping("/{orderNo}/address")
+    public RespData<Void> updateAddress(@PathVariable("orderNo") String orderNo,
+                                        @Valid @RequestBody MallOrderAddressUpdateDTO dto) {
+        orderBffService.updateAddress(UserContext.getUserId(), orderNo, dto);
         return RespData.success();
     }
 

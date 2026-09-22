@@ -12,8 +12,9 @@ import type { AddressPayload, AddressVO } from '../../types/address'
  * ① **顺序与默认位一律以服务端为准**：列表默认地址排最前（服务端返回时就排好），
  *    每个写操作之后**重拉列表**而不是在本地挪行 / 拼条目——否则「首条自动默认」这条
  *    服务端行为就得在前端再实现一遍。
- * ② **删除用行内两步确认**，不弹窗、不用 `window.confirm`：本端从没有模态层（只有 toast），
- *    引入遮罩等于新增一个全局视觉基座；原生 confirm 又与 C 端观感不符且阻塞事件循环。
+ * ② **删除用行内两步确认**，不弹窗、不用 `window.confirm`：删一条地址就地展开即可，
+ *    不为它抬一层遮罩——本端的模态基座（`ModalShell`）只用于下单流程选地址；
+ *    原生 confirm 又与 C 端观感不符且阻塞事件循环。
  * ③ **删掉默认地址后只提示、不递补**（spec D7）：删掉的若是默认地址且还有别的地址，
  *    提示用户去设新的默认，**不在前端顺手再调一次 `setDefault`**。
  * ④ **客户端校验不严于域侧**：只做「非空 + 长度上限」（上限由各输入的 `maxlength` 兜住）。
@@ -349,7 +350,7 @@ async function makeDefault(a: AddressVO): Promise<void> {
 
           <div class="acct__addr-ops">
             <!-- 删除是**行内两步**：本行按钮组就地变成「确认删除 / 取消」，文案显式区分，
-                 不弹窗、不用 window.confirm（本端没有模态层，见文件头 ②） -->
+                 不弹窗、不用 window.confirm（见文件头 ②） -->
             <template v-if="confirmingId === a.id">
               <span class="acct__addr-confirm">确认删除？</span>
               <button
