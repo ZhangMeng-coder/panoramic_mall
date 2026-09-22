@@ -260,8 +260,8 @@ layer: cross-cutting
 
 | | |
 |---|---|
-| 契约 | C 端「商品可见」只有**一个口径**：店铺 `status=2`（已审核通过）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。⚠ **三处落点、判定位置各不相同，别只改一处**：① **列表**把这三个条件**当查询参数传给域**（跨店通用接口，域只做等值/IN 过滤）；② **详情**按 id 取一条（域侧 `platformStoreGoodsDetail`，**本身不含任何可见性约束**）与 ③ **购物车行**（域侧 `trade-center` 只回 `spuId` / `skuId` 原始行）都必须取回后**在端 BFF 逐条重判**。三处是同一不变量的三个落点，**单边改动不会编译报错**，只会让「列表搜得到、点进去说下架」或「车里还留着已下架商品」 |
-| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）；判定的**实现只有一处**：`#isVisible`（+ 店铺状态按 `storeId` 记忆化的 memo），由 `#visibleDetailOrNull`（单条：详情 `#detail` 与加购校验共用）与 `#visibleSpuIds`（批量：购物车列表用）两个出口复用 —— ⚠ **新增需要判可见性的读，一律走这两个出口，不要再写第三份判定**；域侧 `store-interface/.../contract/store/api/StoreClient.java#platformStoreGoodsDetail` / `#platformSpuBatch` + `store/controller/GoodsController.java` |
+| 契约 | C 端「商品可见」只有**一个口径**：店铺 `status=2`（已审核通过）+ `shelfStatus=1`（上架）+ `lockStatus=0`（未锁定）。⚠ **三处落点、判定位置各不相同，别只改一处**：① **列表**把这三个条件**当查询参数传给域**（跨店通用接口，域只做等值/IN 过滤）；② **详情**按 id 取一条（域侧 `storeGoodsDetail`，**本身不含任何可见性约束**）与 ③ **购物车行**（域侧 `trade-center` 只回 `spuId` / `skuId` 原始行）都必须取回后**在端 BFF 逐条重判**。三处是同一不变量的三个落点，**单边改动不会编译报错**，只会让「列表搜得到、点进去说下架」或「车里还留着已下架商品」 |
+| 定义位置 | mall-bff `CatalogBffService#goods`（把条件传下去）；判定的**实现只有一处**：`#isVisible`（+ 店铺状态按 `storeId` 记忆化的 memo），由 `#visibleDetailOrNull`（单条：详情 `#detail` 与加购校验共用）与 `#visibleSpuIds`（批量：购物车列表用）两个出口复用 —— ⚠ **新增需要判可见性的读，一律走这两个出口，不要再写第三份判定**；域侧 `store-interface/.../contract/store/api/StoreClient.java#storeGoodsDetail` / `#batchSpuDetail` + `store/controller/GoodsController.java` |
 | 消费位置 | mall-bff `CatalogController` 的 `/catalog/goods`、`/catalog/goods/{id}`，`CartController` 的 `/cart`（购物车读）与 `POST /cart/items`（加购前置校验）；同一个域方法另有 admin BFF 消费（管理端不走 C 端口径） |
 | ⚠ 购物车行的差异 | 购物车的不可见行**不 404、也不从列表里删掉**：打 `invalid` 标记后**照常下发**（顾客要看得见才敢删它），只是不进件数与金额——见 [mall-bff.md](./mall-bff.md)「购物车不可买口径」。⚠ **SPU 上架 ≠ 名下每个 SKU 都在售**（第 20 条的不变量只保证「至少一个在售」），故购物车行与加购**还要**多判一条「该 SKU 在售」 |
 | 不可见响应 | 不存在 / 已下架 / 被锁定 / 店铺未过审 → 一律业务码 **404**「商品不存在或已下架」，**不区分原因**（区分了就等于给外人一个探测商品是否存在 / 是否被锁的接口） |
