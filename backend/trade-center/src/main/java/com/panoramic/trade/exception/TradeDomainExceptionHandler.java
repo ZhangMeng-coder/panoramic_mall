@@ -13,8 +13,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.stream.Collectors;
 
@@ -71,6 +73,31 @@ public class TradeDomainExceptionHandler {
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<RespData<Void>> handleMessageNotReadable(HttpMessageNotReadableException e) {
         return badRequest("请求参数格式错误");
+    }
+
+    /**
+     * 缺必填的请求参数（如漏传 {@code customerId}）→ <b>400</b>
+     *
+     * <p>⚠ 这两类（缺参 / 取值类型不符）在 Spring 里都不是 {@code IllegalArgumentException} 的子类，
+     * 不显式接住就会落到下面的兜底 {@code Exception} → **500**。后果有两层：
+     * ① 同一件事出现两种失败模式——走 DTO 的接口漏传字段回 400（{@code @NotNull} 拦的），
+     * 走裸 {@code @RequestParam} 的漏传却回 500；
+     * ② 5xx 会被端 BFF 按 cross-cutting 第 13 条**计入熔断失败率**，调用方漏一个参数就可能把熔断打开，
+     * 后续正常请求全被降级——那是真故障才该有的后果。故「调用方漏传参数」一律 400。</p>
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<RespData<Void>> handleMissingParameter(MissingServletRequestParameterException e) {
+        return badRequest("缺少请求参数：" + e.getParameterName());
+    }
+
+    /**
+     * 参数取值无法转成目标类型（如 {@code customerId=} 空串转 {@code Long}、{@code /items/abc}) → <b>400</b>
+     *
+     * <p>判据同上：它是调用方的入参错误，不是服务故障。</p>
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<RespData<Void>> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return badRequest("请求参数取值非法：" + e.getName());
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

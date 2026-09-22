@@ -11,6 +11,7 @@ import com.panoramic.trade.config.CartRedisCache;
 import com.panoramic.trade.entity.TradeCartItem;
 import com.panoramic.trade.mapper.TradeCartItemMapper;
 import com.panoramic.trade.service.TradeCartItemService;
+import com.panoramic.trade.support.ScopeGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
@@ -97,6 +98,7 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     public Long addItem(TradeCartItemAddDTO dto) {
         // 作用域取自入参 DTO（cross-cutting 第 22/23 条）：不进路径段，域侧只做「按它筛」
         Long customerId = dto.getCustomerId();
+        ScopeGuard.require(customerId, "顾客 id");
         Long skuId = dto.getSkuId();
 
         // ── 支路 1：提示集命中 → 直接原子自增（省去一次「先查后插」）
@@ -153,6 +155,7 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     public void updateQuantity(Long id, TradeCartItemUpdateDTO dto) {
         // 作用域取自入参 DTO（cross-cutting 第 22/23 条）：不进路径段，域侧只做「按它筛」
         Long customerId = dto.getCustomerId();
+        ScopeGuard.require(customerId, "顾客 id");
         // ⚠ 用 lambdaUpdate().set(...) 而非 updateById(entity)：语义是「整份覆盖数量」，
         //    updateById 会跳过 null 列、且要求先读出整行。
         // ⚠ 已知取舍：ChainUpdate#update() 走的是 update(null)，**不触发审计自动填充**，
@@ -178,6 +181,7 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     @Transactional(rollbackFor = Exception.class)
     public void setItemSelected(Long id, TradeCartSelectDTO dto) {
         Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
+        ScopeGuard.require(customerId, "顾客 id");
         boolean updated = lambdaUpdate()
                 .eq(TradeCartItem::getId, id)
                 .eq(TradeCartItem::getCustomerId, customerId)   // ⚠ 必须带 customerId：只按 id 更新等于开了越权写入口
@@ -193,6 +197,7 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     @Transactional(rollbackFor = Exception.class)
     public void setAllSelected(TradeCartSelectDTO dto) {
         Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
+        ScopeGuard.require(customerId, "顾客 id");
         // ⚠ 这是**域侧整表**操作（按 customerId 一把改），作用面含 mall-bff 眼里「已失效」的行——
         //    域不持商品、不知道也不判可见性（见 docs/contracts/trade-center.md 第一节最后一条）。
         //    失效行被一并改写无副作用：调用方不展示它，结算也未接入。
@@ -207,6 +212,7 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     @Transactional(rollbackFor = Exception.class)
     public void removeItems(TradeCartItemIdsDTO dto) {
         Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
+        ScopeGuard.require(customerId, "顾客 id");
         List<Long> ids = dto.getIds();
         if (ids == null || ids.isEmpty()) {
             // 空列表直接返回：别拼出 `IN ()`（语法错误 → 域兜底 500，而这次「什么都没删」本该是成功的空操作）

@@ -351,17 +351,14 @@ public class JdbcOrderRepository implements OrderRepository {
 
     @Override
     public Optional<OrderModel> findOrder(OrderQuery query) {
-        return findOne(Wrappers.<TradeOrder>lambdaQuery()
-                .eq(TradeOrder::getOrderNo, query.orderNo())
-                // 两个作用域都是可选的：null = 不限定（条件不入 SQL），不是「筛 null 值」
-                .eq(query.customerId() != null, TradeOrder::getCustomerId, query.customerId())
-                .eq(query.storeId() != null, TradeOrder::getStoreId, query.storeId()));
+        // ⚠ 与分页走**同一份**条件构造（filterWrapper → applyCommonFilters）：详情没有「第二套」翻译口径。
+        //    写成两处时，改好分页那处、漏了这里不会有任何东西报错——正是「漏传作用域 = 静默取任意一笔」那个洞。
+        return findOne(filterWrapper(query));
     }
 
     @Override
     public OrderPage pageOrders(OrderPageQuery query) {
-        // 作用域与筛选条件一并交给 applyCommonFilters（它是「可选条件 → SQL 条件」的唯一翻译点）
-        return page(Wrappers.lambdaQuery(), query);
+        return page(query);
     }
 
     // ── 内部：查询与组装 ────────────────────────────────────────────────────────
@@ -372,13 +369,25 @@ public class JdbcOrderRepository implements OrderRepository {
     }
 
     /**
-     * 分页查询（可选条件一律经 {@link #applyCommonFilters} 追加，本方法只负责翻页与组装）
+     * 分页查询（条件一律经 {@link #filterWrapper} 构造，本方法只负责翻页与组装）
      */
-    private OrderPage page(LambdaQueryWrapper<TradeOrder> wrapper,
-                           OrderPageQuery query) {
-        applyCommonFilters(wrapper, query);
-        Page<TradeOrder> page = orderService.page(new Page<>(query.pageNum(), query.pageSize()), wrapper);
+    private OrderPage page(OrderPageQuery query) {
+        Page<TradeOrder> page = orderService.page(new Page<>(query.pageNum(), query.pageSize()), filterWrapper(query));
         return new OrderPage(page.getTotal(), assemble(page.getRecords()));
+    }
+
+    /**
+     * 构造一份「**作用域 + 筛选 + 排序**」查询条件——分页（{@link #pageOrders}）与详情（{@link #findOrder}）
+     * 共用这**唯一**一个入口
+     *
+     * <p>⚠ 详情必须也走这里：它是一个写路径的前置读（改状态前先取单），而「作用域没进查询」在详情上的后果
+     * 比在分页上更重——分页会多返回几行，详情会**取到别人的那一笔并改它**。两者共用一份翻译，
+     * 「改了一处漏了另一处」这个改法才不成立。单测 {@code JdbcOrderRepositoryFiltersTest} 钉的就是它。</p>
+     */
+    static LambdaQueryWrapper<TradeOrder> filterWrapper(OrderPageQuery query) {
+        LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
+        applyCommonFilters(wrapper, query);
+        return wrapper;
     }
 
     /**
@@ -392,9 +401,10 @@ public class JdbcOrderRepository implements OrderRepository {
      * 两个作用域字段传的是 {@code query.customerId()} / {@code query.storeId()} 这类**裸取值**，
      * 没有解引用，故不需要额外的局部变量。</p>
      *
-     * <p>⚠ <b>作用域与筛选条件的翻译只此一处</b>（顾客 / 商户 / 管理端调用方全走同一条
-     * {@link #pageOrders}），单测 {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段——
-     * 它守的是「不传即不限定」这条默认路径：省略任一作用域时，SQL 里都不能多出对应条件。</p>
+     * <p>⚠ <b>作用域与筛选条件的翻译只此一处</b>：分页（{@link #pageOrders}）与详情（{@link #findOrder}）
+     * 都经 {@link #filterWrapper} 调用本方法，没有任何第二条翻译路径。单测
+     * {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段——它守的是「不传即不限定」这条默认路径：
+     * 省略任一作用域时，SQL 里都不能多出对应条件。</p>
      */
     static void applyCommonFilters(LambdaQueryWrapper<TradeOrder> wrapper, OrderPageQuery query) {
         String statusName = query.status() == null ? null : query.status().name();

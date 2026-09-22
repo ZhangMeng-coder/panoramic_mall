@@ -19,6 +19,7 @@ import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
+import com.panoramic.trade.support.ScopeGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,9 +43,11 @@ import java.util.StringJoiner;
  * 详情 / 动作查询一律返回同一种 404「订单不存在」：**不区分「不存在」与「不属你」**
  * （区分开就等于告诉调用方「这笔单存在，只是不是你的」）。</p>
  *
- * <p>⚠ <b>写侧的作用域必填</b>（{@code customerId} / {@code storeId} 在各自的入参 DTO 上是 {@code @NotNull}）：
- * 写没有「合法全量视角」，省掉作用域就是「能改任意一笔单」。那份「必填」由契约层守（cross-cutting 第 22 条），
- * 本类只负责把它传进查询。</p>
+ * <p>⚠ <b>写侧的作用域必填，两道防线</b>（{@code customerId} / {@code storeId}）：写没有「合法全量视角」，
+ * 省掉作用域就是「能改任意一笔单」。第一道是各入参 DTO 上的 {@code @NotNull}（只覆盖 MVC 边界）；
+ * 第二道是本类四个写方法开头的 {@link ScopeGuard#require}——绕过 MVC 的调用（内部直连 / 单测 / 将来的批处理）
+ * 只有它能挡，否则 {@code null} 会一路传到仓储、退化成「不限定」并**静默**改掉别人的单。
+ * ⚠ 这道护栏是**入参不变量**（参数在不在），不是鉴权（是不是你的单）——后者域内一律不做。</p>
  *
  * <h3>为什么三个动作带事务、下单不带、两个读也带</h3>
  * <p>下单的事务边界在编排器方法上（先占键与订单必须同事务，见
@@ -85,6 +88,7 @@ public class OrderApplicationService {
      * @return 本次提交的整批订单（顺序 = {@code storeId} 升序）
      */
     public List<TradeOrderVO> create(TradeOrderCreateDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
         OrderCreateCommand command = new OrderCreateCommand(dto.getCustomerId(),
                 parseSource(dto.getSource()),
                 toAddress(dto.getAddress()),
@@ -100,10 +104,11 @@ public class OrderApplicationService {
      *
      * @param orderNo 业务可读单号
      * @param dto     支付金额 + **作用域** customerId（必填）
-     * @throws ServiceException 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
+     * @throws ServiceException 缺少作用域 / 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
      */
     @Transactional(rollbackFor = Exception.class)
     public void payOrder(String orderNo, TradeOrderPayDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         // 校验先于迁移，迁移先于落库：任何一处抛出都不写库（见 OrderModel#markPaid 的说明）
         order.markPaid(orderStatusFlow, dto.getAmount());
@@ -115,10 +120,11 @@ public class OrderApplicationService {
      *
      * @param orderNo 业务可读单号
      * @param dto     快递单号 + **作用域** storeId（必填）
-     * @throws ServiceException 单号为空或超长 / 非法迁移（HTTP 400）、订单不属本店（404）
+     * @throws ServiceException 缺少作用域 / 单号为空或超长 / 非法迁移（HTTP 400）、订单不属本店（404）
      */
     @Transactional(rollbackFor = Exception.class)
     public void shipOrder(String orderNo, TradeOrderShipDTO dto) {
+        ScopeGuard.require(dto.getStoreId(), "店铺 id");
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, null, dto.getStoreId()));
         order.markShipped(orderStatusFlow, dto.getTrackingNo());
         orderRepository.update(order);
@@ -129,10 +135,11 @@ public class OrderApplicationService {
      *
      * @param orderNo 业务可读单号
      * @param dto     **作用域** customerId（必填）
-     * @throws ServiceException 非法迁移（HTTP 400）、订单不属本人（404）
+     * @throws ServiceException 缺少作用域 / 非法迁移（HTTP 400）、订单不属本人（404）
      */
     @Transactional(rollbackFor = Exception.class)
     public void receiveOrder(String orderNo, TradeOrderReceiveDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         order.markReceived(orderStatusFlow);
         orderRepository.update(order);

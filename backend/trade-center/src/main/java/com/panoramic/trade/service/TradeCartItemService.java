@@ -18,6 +18,9 @@ import java.util.List;
  * 不属于该顾客的行一律按「不存在」处理（404，不泄露存在性）。
  * ⚠ 作用域**不进路径段**（cross-cutting 第 22 条）：单参的三条（{@code listItems} / {@code countItems} /
  * {@code clearCart}）收裸 {@code customerId}，其余五条从各自 DTO 的字段里取（第 23 条）。
+ * ⚠ 五个写方法的作用域**缺失即 400**（域应用层断言，见 {@code com.panoramic.trade.support.ScopeGuard}）：
+ * DTO 上的 {@code @NotNull} 只覆盖 MVC 边界，绕过 MVC 的调用只有那道断言能挡——{@code null} 到了 SQL 层
+ * 就变成「不限定」，会**静默**改到别人的行。
  * <b>本域不做任何鉴权/身份判断</b>——调用方传的 customerId 是否「本人」由 mall-bff 从登录态取，
  * 域侧不校验（防线在 BFF）。</p>
  * <p>⚠ 本表走<b>物理删除</b>（唯一键 {@code (customer_id, sku_id)} 与逻辑删除互斥）：

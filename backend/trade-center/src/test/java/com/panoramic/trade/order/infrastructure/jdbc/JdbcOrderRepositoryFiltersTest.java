@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.panoramic.common.exception.ServiceException;
 import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrder;
@@ -14,13 +15,15 @@ import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * 分页共用的筛选条件（{@code JdbcOrderRepository#applyCommonFilters}）：**可选筛选项翻成 SQL 条件**。
  *
- * <p>⚠ 为什么只钉这一小段、而不整条分页链路：本类的其余部分要么在内存仓储里有等价物
- * （幂等键语义），要么只能在真库上验。只有这段是「契约可选字段 → SQL 条件」的**唯一**翻译点，
- * 各调用方的分页（顾客 / 商户 / 管理端）全走它，而它没有任何内存实现可对照。</p>
+ * <p>⚠ 为什么只钉这一小段、而不整条读链路：本类的其余部分要么在内存仓储里有等价物
+ * （幂等键语义），要么只能在真库上验。只有这段是「契约可选字段 → SQL 条件」的**唯一**翻译点——
+ * 分页（`pageOrders`）与详情（`findOrder`，写路径的前置读）都经 {@code filterWrapper} 走它，
+ * 而它没有任何内存实现可对照。</p>
  *
  * <p>⚠ 它守的是一个**纯默认路径**的缺陷：{@code eq(condition, col, value)} 的 {@code value}
  * 无条件求值，写成 {@code query.status().name()} 时「不筛状态」就 NPE 成 500。
@@ -84,6 +87,38 @@ class JdbcOrderRepositoryFiltersTest {
         LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
         JdbcOrderRepository.applyCommonFilters(wrapper, query(null, null, null, null));
         assertThat(wrapper.getSqlSegment()).doesNotContain("customer_id").doesNotContain("store_id");
+    }
+
+    @Test
+    @DisplayName("详情与分页走同一份条件构造：传作用域即筛（两者都是 filterWrapper → applyCommonFilters）")
+    void detailReusesTheSameFilterConstruction() {
+        LambdaQueryWrapper<TradeOrder> wrapper = JdbcOrderRepository.filterWrapper(
+                OrderQuery.forDetail("202609221200000001", 7L, 5L));
+
+        assertThat(wrapper.getSqlSegment())
+                .contains("order_no =")
+                .contains("customer_id =")
+                .contains("store_id =");
+    }
+
+    @Test
+    @DisplayName("详情不传作用域即不限定：SQL 段里没有 customer_id / store_id（管理端全量视角）")
+    void detailWithoutScopeIsUnrestricted() {
+        LambdaQueryWrapper<TradeOrder> wrapper = JdbcOrderRepository.filterWrapper(
+                OrderQuery.forDetail("202609221200000001", null, null));
+
+        assertThat(wrapper.getSqlSegment())
+                .contains("order_no =")
+                .doesNotContain("customer_id")
+                .doesNotContain("store_id");
+    }
+
+    @Test
+    @DisplayName("详情单号不能为空：空白单号在入口就被拒（否则会退化成「取任意一笔」）")
+    void detailRequiresOrderNo() {
+        assertThatThrownBy(() -> OrderQuery.forDetail("   ", 7L, null))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("订单号");
     }
 
     @Test

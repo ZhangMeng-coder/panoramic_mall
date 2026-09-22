@@ -37,14 +37,17 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | GoodsController.java:146 |  |
 | PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | GoodsController.java:154 |  |
 | PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | GoodsController.java:164 |  |
-| GET | /orders/page | — | TradeOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | — | 待实现 |
+| GET | /orders/page | — | StoreOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | — | 待实现 |
 | GET | /orders/{orderNo} | — | String | RespData<TradeOrderVO> | — | 待实现 |
-| POST | /orders/{orderNo}/ship | — | String, TradeOrderShipDTO | RespData<Void> | — | 待实现 |
+| POST | /orders/{orderNo}/ship | — | String, StoreOrderShipDTO | RespData<Void> | — | 待实现 |
 
-> ⚠ **订单 3 条标 `待实现`**（契约先行）。列表**全状态可见**、含「待支付」（商户需要看到谁下了单没付钱）；
-> 本层页面入参**不带 `storeId`**——锚点由本层从登录态取（`type=store` 的 `loginUser.getId()`）后
-> **并入域侧入参 DTO 的 `storeId` 字段**（域侧路径不带锚点，见 [cross-cutting.md](./cross-cutting.md) 第 22 条），
-> 域侧方法见 [trade-center.md](./trade-center.md) 第二节。
+> ⚠ **订单 3 条标 `待实现`**（契约先行）。列表**全状态可见**、含「待支付」（商户需要看到谁下了单没付钱）。
+> ⚠ **页面入参 DTO 与域侧入参 DTO 是两回事**（同 [mall-bff.md](./mall-bff.md) 的 `MallOrder*`、[admin.md](./admin.md) 的
+> `OrderPageQueryDTO` 做法）：上面两行是**本层自有**的页面 DTO（`StoreOrderPageQueryDTO` / `StoreOrderShipDTO`），
+> **不持作用域字段**——`storeId` 由本层从登录态取（`type=store` 的 `loginUser.getId()`）后写进**域侧**入参 DTO
+> （`TradeOrderPageQueryDTO.storeId` / `TradeOrderShipDTO.storeId`，后者在域侧是 `@NotNull`）。
+> 照页面行实现却以为要传 `storeId`、或照域侧类型当页面入参，都会得到「同一类型两层含义不同」的错觉；
+> 口径见 [cross-cutting.md](./cross-cutting.md) 第 22 条，域侧方法见 [trade-center.md](./trade-center.md) 第二节。
 > 出参 `TradeOrderVO` 是**域契约类型**（`trade-center-interface`），本层直接下发、不另造一套；
 > 状态文案取其中的 `storeAdminLabel`（C 端取的是 `mallLabel`，同一个枚举两个字段）。
 > ⚠ 路径标识用 **`orderNo`**，不是自增 id。
@@ -70,8 +73,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 来源 | 类型 |
 |---|---|
 | 两个接口模块（`store-interface` 的 `com.panoramic.contract.store.vo`；`goods-center-interface` 的 `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsStockPageItemVO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
-| `trade-center-interface`（`com.panoramic.contract.trade`） | 订单（**待实现**）：TradeOrderVO, TradeOrderPageQueryDTO, TradeOrderShipDTO |
-| **store-bff 私有**（不在任何接口模块，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO` |
+| `trade-center-interface`（`com.panoramic.contract.trade`） | 订单（**待实现**）：出参 TradeOrderVO；**域侧入参**（由本层组装后传给域，不是页面入参）TradeOrderPageQueryDTO, TradeOrderShipDTO |
+| **store-bff 私有**（不在任何接口模块，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO`；订单页面入参（**待实现**）：`storebff/dto/StoreOrderPageQueryDTO`, `storebff/dto/StoreOrderShipDTO` |
 
 ⚠ `StoreGoodsSpuDetailBffVO` 是 **BFF 独有**的详情出参（在 owner 侧 `StoreGoodsSpuDetailVO` 基础上扩展），
 与 platform 侧的 `StoreGoodsSpuPlatformDetailVO` 是同款「子类扩字段」做法，**两者不可互换**。
