@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 订单仓库端口：**先占键**的两级幂等 + 一次提交的整批落库 + 三侧读。
+ * 订单仓库端口：**先占键**的两级幂等 + 一次提交的整批落库 + **读侧作用域**（分页 / 详情各一条路径）。
  *
  * <h3>为什么是「先占键」而不是「查 → 做 → 写」</h3>
  * <p>上一版端口是 check-then-act（先查提交记录 → 一路下单扣库存 → 最后写记录）。它在并发下有
@@ -52,8 +52,8 @@ import java.util.Optional;
  * {@link #occupy} 的键是 {@code (customerId, requestId)} 两列——只按键查会让 A 顾客的订单被
  * B 顾客用同一个键捞走；第二级的指纹里本来就含顾客 id，天然不跨顾客。</p>
  *
- * <p>⚠ 读侧同样按锚点分方法（顾客 / 商户 / 平台），无锚点的那一个只服务平台全量视角——
- * 见 {@link OrderQuery} 与 {@link PlatformOrderQuery} 的说明。</p>
+ * <p>⚠ 读侧只有一条路径（{@link #pageOrders} / {@link #findOrder}）：作用域是 {@link OrderQuery}
+ * 里的**可选字段**，「传了就按它筛，没传就是不限定」——域不判身份、不分端（cross-cutting 第 22 条）。</p>
  */
 public interface OrderRepository {
 
@@ -145,63 +145,30 @@ public interface OrderRepository {
     void update(OrderModel order);
 
     /**
-     * 按订单号查（**平台侧**：管理端是全量视角，没有锚点）
+     * 按订单号 + 可选作用域查一笔订单（**唯一的详情读路径**：删掉了「按顾客查 / 按店铺查 / 裸查」三条）
      *
-     * @param orderNo 业务可读单号
-     * @return 订单；不存在则空
+     * <p>⚠ <b>作用域参与收窄是刻意的</b>：写成「查回来再比 customerId」时，漏了那句判断就是越权读别人的订单，
+     * 而漏判不会报错、只会静默返回。作用域进查询之后，这类调用在 SQL 层就取不到数据。
+     * {@code null} = 不限定（管理端全量视角）。</p>
+     *
+     * @param query 详情查询条件（订单号 + 两个可选作用域，见 {@link OrderQuery#forDetail}）
+     * @return 订单；不存在或不在该作用域内都为空
      */
-    Optional<OrderModel> findByOrderNo(String orderNo);
+    Optional<OrderModel> findOrder(OrderQuery query);
 
     /**
-     * 按顾客 + 订单号查（**顾客侧**：数据权限锚点在查询里，不是查回来再判）
+     * 订单分页（**唯一的分页读路径**：删掉了顾客 / 商户 / 平台三条）
      *
-     * <p>⚠ 锚点参与收窄是刻意的：写成「查回来再比 customerId」时，漏了那句判断就是越权读别人的订单，
-     * 而漏判不会报错、只会静默返回。锚点进查询之后，这类调用在 SQL 层就取不到数据。</p>
+     * <p>⚠ 作用域是 {@link OrderPageQuery} 里的**可选字段**：「传了就按它筛，没传就是不限定」
+     * ——顾客侧传本人 id 即「我的订单」、商户侧传本店 id 即「本店订单」、管理端都不传即全量。
+     * 域内**不判身份、不分端**，同一份条件对任何调用方都一样（cross-cutting 第 22 条）。</p>
      *
-     * @param customerId 顾客 id（锚点）
-     * @param orderNo    业务可读单号
-     * @return 属于该顾客的订单；不属于或不存在都为空
-     */
-    Optional<OrderModel> findByCustomerOrderNo(Long customerId, String orderNo);
-
-    /**
-     * 按店铺 + 订单号查（**商户侧**：锚点在查询里）
+     * <p>⚠ 含 {@code PENDING_PAYMENT}（裁定 R4）：商户侧的作用域下，店主的待办起点不是「已支付」——
+     * 店主需要看见下单后还没付款的那些单，否则无法判断自己要不要备货。这一条是**筛选语义**，
+     * 与作用域无关，故对同一路径的所有调用方一致。</p>
      *
-     * @param storeId 店铺 id（锚点）
-     * @param orderNo 业务可读单号
-     * @return 属于该店铺的订单；不属于或不存在都为空
-     */
-    Optional<OrderModel> findByStoreOrderNo(Long storeId, String orderNo);
-
-    /**
-     * 顾客侧分页（只含该顾客的订单）
-     *
-     * @param customerId 顾客 id（锚点）
-     * @param query      筛选与分页条件（不含锚点）
+     * @param query 筛选与分页条件（含可选作用域 {@code customerId} / {@code storeId}）
      * @return 总数 + 当页订单
      */
-    OrderPage pageCustomerOrders(Long customerId, OrderQuery query);
-
-    /**
-     * 商户侧分页（只含该店铺的订单）
-     *
-     * <p>⚠ 含 {@code PENDING_PAYMENT}（裁定 R4）：商户侧的待办起点不是「已支付」——
-     * 店主需要看见下单后还没付款的那些单，否则无法判断自己要不要备货。</p>
-     *
-     * @param storeId 店铺 id（锚点）
-     * @param query   筛选与分页条件（不含锚点）
-     * @return 总数 + 当页订单
-     */
-    OrderPage pageStoreOrders(Long storeId, OrderQuery query);
-
-    /**
-     * 平台侧分页（全量视角，无锚点）
-     *
-     * <p>⚠ 它与上面两个方法的入参**不是同一个类型**：平台侧多一个「按店铺 / 顾客筛」的能力
-     * （见 {@link PlatformOrderQuery}），而那两个能力对顾客 / 商户侧本就不该存在。</p>
-     *
-     * @param query 筛选与分页条件（不含锚点；含平台侧特有的可选 {@code storeId} / {@code customerId} 筛选）
-     * @return 总数 + 当页订单
-     */
-    OrderPage pagePlatformOrders(PlatformOrderQuery query);
+    OrderPage pageOrders(OrderPageQuery query);
 }

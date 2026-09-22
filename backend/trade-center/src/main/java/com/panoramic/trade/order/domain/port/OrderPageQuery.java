@@ -3,17 +3,15 @@ package com.panoramic.trade.order.domain.port;
 import com.panoramic.trade.order.domain.OrderStatus;
 
 /**
- * 订单分页查询条件的**公共形状**：订单号 / 状态 / 页码 / 页大小 + 两处共同校验。
+ * 订单分页查询条件的**公共形状**：订单号 / 状态 / **两个可选作用域** / 页码 / 页大小 + 两处共同校验。
  *
- * <p>⚠ 它存在的唯一理由是「**三侧共用的那四个字段与它们的两条校验只写一份**」：
- * {@link OrderQuery}（顾客 / 商户侧）与 {@link PlatformOrderQuery}（平台侧）都实现它，
- * 仓储的分页方法按本接口取值；而「哪一侧另有哪些筛选字段」仍旧由**各自的 record** 决定
- * ——锚点（顾客 / 店铺）留在 {@link OrderRepository} 的分页方法入参上，
- * 平台侧特有的两个**可选筛选**（店铺 / 顾客）留在 {@link PlatformOrderQuery} 里。</p>
+ * <p>⚠ 作用域（顾客 / 店铺）在这里是**可选字段**，与契约层同形：订单分页是**有合法全量视角**的能力
+ * （管理端看全量），故「传了就按它筛，没传就是不限定」——见 cross-cutting 第 22 条。域内的分页
+ * 因此只有**一条路径**（{@link OrderRepository#pageOrders}），不再是「顾客 / 商户 / 平台各一条」：
+ * 域不判身份、不分端，同一份条件对任何调用方都一样。</p>
  *
- * <p>⚠ 不要把锚点混进来：平台侧是全量视角，锚点做成可选字段就会顺理成章地出现
- * 「顾客侧传了 storeId」「平台侧漏传 customerId」这类**形态上本不该成立**的调用；
- * 分成三个方法之后，「哪一侧能筛什么」由方法签名说了算（理由见 {@link OrderQuery} 的类注释）。</p>
+ * <p>⚠ 不要把这两个字段当「筛选项」用错地方：写操作（支付 / 发货 / 收货）**没有**合法全量视角，
+ * 它们的作用域在各自的入参 DTO 上**必填**，不走本接口。</p>
  *
  * <p>页码与页大小在这里做一次校验（{@link IllegalArgumentException} 属编程错误）：
  * 契约层已有 {@code @Max(100)} 之类的约束，但那是对**页面入参**的约束；
@@ -30,13 +28,19 @@ public interface OrderPageQuery {
     /** @return 订单状态；{@code null} = 不筛 */
     OrderStatus status();
 
+    /** @return 顾客 id 作用域；{@code null} = 不限定（管理端全量视角） */
+    Long customerId();
+
+    /** @return 店铺 id 作用域；{@code null} = 不限定（管理端全量视角） */
+    Long storeId();
+
     /** @return 页码，从 1 起 */
     int pageNum();
 
     /** @return 每页条数，取值 {@code 1..MAX_PAGE_SIZE} */
     int pageSize();
 
-    /** 各实现类的紧凑构造器都调它，避免三条分页路径各判一套 */
+    /** 各实现类的紧凑构造器都调它，避免多条分页路径各判一套 */
     static void validatePaging(int pageNum, int pageSize) {
         if (pageNum < 1) {
             throw new IllegalArgumentException("页码必须从 1 起，实际为 " + pageNum);

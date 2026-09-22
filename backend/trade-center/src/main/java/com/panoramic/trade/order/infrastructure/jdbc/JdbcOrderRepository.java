@@ -18,7 +18,6 @@ import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderPageQuery;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
-import com.panoramic.trade.order.domain.port.PlatformOrderQuery;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrder;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrderItem;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrderStatusLog;
@@ -351,41 +350,18 @@ public class JdbcOrderRepository implements OrderRepository {
     }
 
     @Override
-    public Optional<OrderModel> findByOrderNo(String orderNo) {
-        return findOne(Wrappers.<TradeOrder>lambdaQuery().eq(TradeOrder::getOrderNo, orderNo));
-    }
-
-    @Override
-    public Optional<OrderModel> findByCustomerOrderNo(Long customerId, String orderNo) {
+    public Optional<OrderModel> findOrder(OrderQuery query) {
         return findOne(Wrappers.<TradeOrder>lambdaQuery()
-                .eq(TradeOrder::getCustomerId, customerId)
-                .eq(TradeOrder::getOrderNo, orderNo));
+                .eq(TradeOrder::getOrderNo, query.orderNo())
+                // 两个作用域都是可选的：null = 不限定（条件不入 SQL），不是「筛 null 值」
+                .eq(query.customerId() != null, TradeOrder::getCustomerId, query.customerId())
+                .eq(query.storeId() != null, TradeOrder::getStoreId, query.storeId()));
     }
 
     @Override
-    public Optional<OrderModel> findByStoreOrderNo(Long storeId, String orderNo) {
-        return findOne(Wrappers.<TradeOrder>lambdaQuery()
-                .eq(TradeOrder::getStoreId, storeId)
-                .eq(TradeOrder::getOrderNo, orderNo));
-    }
-
-    @Override
-    public OrderPage pageCustomerOrders(Long customerId, OrderQuery query) {
-        return page(Wrappers.<TradeOrder>lambdaQuery().eq(TradeOrder::getCustomerId, customerId), query);
-    }
-
-    @Override
-    public OrderPage pageStoreOrders(Long storeId, OrderQuery query) {
-        return page(Wrappers.<TradeOrder>lambdaQuery().eq(TradeOrder::getStoreId, storeId), query);
-    }
-
-    @Override
-    public OrderPage pagePlatformOrders(PlatformOrderQuery query) {
-        return page(Wrappers.<TradeOrder>lambdaQuery()
-                        // 两个筛选都是可选的：null = 不筛（条件不入 SQL），不是「筛 null 值」
-                        .eq(query.storeId() != null, TradeOrder::getStoreId, query.storeId())
-                        .eq(query.customerId() != null, TradeOrder::getCustomerId, query.customerId()),
-                query);
+    public OrderPage pageOrders(OrderPageQuery query) {
+        // 作用域与筛选条件一并交给 applyCommonFilters（它是「可选条件 → SQL 条件」的唯一翻译点）
+        return page(Wrappers.lambdaQuery(), query);
     }
 
     // ── 内部：查询与组装 ────────────────────────────────────────────────────────
@@ -396,7 +372,7 @@ public class JdbcOrderRepository implements OrderRepository {
     }
 
     /**
-     * 分页查询（锚点与平台侧的两个可选筛选由调用方加在 wrapper 上，公共筛选条件在这里统一追加）
+     * 分页查询（可选条件一律经 {@link #applyCommonFilters} 追加，本方法只负责翻页与组装）
      */
     private OrderPage page(LambdaQueryWrapper<TradeOrder> wrapper,
                            OrderPageQuery query) {
@@ -406,20 +382,26 @@ public class JdbcOrderRepository implements OrderRepository {
     }
 
     /**
-     * 追加三侧共用的筛选与排序（{@code orderNo} / {@code status} 都是**可选**的：null = 不筛）
+     * 追加分页共用的**作用域 + 筛选 + 排序**（四项都是**可选**的：null = 不筛 / 不限定）
      *
      * <p>⚠ <b>状态名必须先取出来再进 {@code eq}</b>：{@code eq(condition, column, value)} 的 {@code value}
      * 是**无条件求值**的实参，写成 {@code eq(query.status() != null, …, query.status().name())} 时，
      * 「不筛状态」这条**默认路径**（{@code status == null}）会在进 {@code eq} 之前就 NPE——
      * 条件为 {@code false} 也拦不住它，因为实参先算。⚠ 同一个坑：任何「先解引用、再当条件值传」的写法
      * 都等价于把该条件删掉，只在 null 时变成 500。<br>
-     * 本方法只被三侧分页（顾客 / 商户 / 平台）经 {@link #page} 走到，故它是这三个接口唯一的
-     * 「可选筛选项 → SQL 条件」翻译点，单测 {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段。</p>
+     * 两个作用域字段传的是 {@code query.customerId()} / {@code query.storeId()} 这类**裸取值**，
+     * 没有解引用，故不需要额外的局部变量。</p>
+     *
+     * <p>⚠ <b>作用域与筛选条件的翻译只此一处</b>（顾客 / 商户 / 管理端调用方全走同一条
+     * {@link #pageOrders}），单测 {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段——
+     * 它守的是「不传即不限定」这条默认路径：省略任一作用域时，SQL 里都不能多出对应条件。</p>
      */
     static void applyCommonFilters(LambdaQueryWrapper<TradeOrder> wrapper, OrderPageQuery query) {
         String statusName = query.status() == null ? null : query.status().name();
         wrapper.eq(query.orderNo() != null, TradeOrder::getOrderNo, query.orderNo())
                 .eq(statusName != null, TradeOrder::getStatus, statusName)
+                .eq(query.customerId() != null, TradeOrder::getCustomerId, query.customerId())
+                .eq(query.storeId() != null, TradeOrder::getStoreId, query.storeId())
                 .orderByDesc(TradeOrder::getId);
     }
 

@@ -21,7 +21,8 @@ import java.util.List;
 
 /**
  * 购物车服务实现（trade-center 域下沉纯域）。
- * <p>所有读写一律以「id + customerId」双条件限定作用域（域内不做鉴权，锚点是唯一防线）；
+ * <p>所有读写一律以「id + customerId」双条件限定作用域（域内不做鉴权，作用域是唯一防线；
+ * 它由调用方携入 — 见 {@code Cross-cutting} 第 22 条）；
  * 不属于该顾客的行一律抛 404「购物车行不存在」，不区分「不存在」与「不归属」以免泄露存在性。</p>
  * <p>审计字段（create_user/update_user/create_time/update_time）由 common 的 {@code MyMetaObjectHandler}
  * 经 {@code UserContext} 自动填充，本类**不显式赋值**（Global Constraint 3）。</p>
@@ -93,7 +94,9 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long addItem(Long customerId, TradeCartItemAddDTO dto) {
+    public Long addItem(TradeCartItemAddDTO dto) {
+        // 作用域取自入参 DTO（cross-cutting 第 22/23 条）：不进路径段，域侧只做「按它筛」
+        Long customerId = dto.getCustomerId();
         Long skuId = dto.getSkuId();
 
         // ── 支路 1：提示集命中 → 直接原子自增（省去一次「先查后插」）
@@ -147,7 +150,9 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateQuantity(Long customerId, Long id, TradeCartItemUpdateDTO dto) {
+    public void updateQuantity(Long id, TradeCartItemUpdateDTO dto) {
+        // 作用域取自入参 DTO（cross-cutting 第 22/23 条）：不进路径段，域侧只做「按它筛」
+        Long customerId = dto.getCustomerId();
         // ⚠ 用 lambdaUpdate().set(...) 而非 updateById(entity)：语义是「整份覆盖数量」，
         //    updateById 会跳过 null 列、且要求先读出整行。
         // ⚠ 已知取舍：ChainUpdate#update() 走的是 update(null)，**不触发审计自动填充**，
@@ -171,7 +176,8 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void setItemSelected(Long customerId, Long id, TradeCartSelectDTO dto) {
+    public void setItemSelected(Long id, TradeCartSelectDTO dto) {
+        Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
         boolean updated = lambdaUpdate()
                 .eq(TradeCartItem::getId, id)
                 .eq(TradeCartItem::getCustomerId, customerId)   // ⚠ 必须带 customerId：只按 id 更新等于开了越权写入口
@@ -185,7 +191,8 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void setAllSelected(Long customerId, TradeCartSelectDTO dto) {
+    public void setAllSelected(TradeCartSelectDTO dto) {
+        Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
         // ⚠ 这是**域侧整表**操作（按 customerId 一把改），作用面含 mall-bff 眼里「已失效」的行——
         //    域不持商品、不知道也不判可见性（见 docs/contracts/trade-center.md 第一节最后一条）。
         //    失效行被一并改写无副作用：调用方不展示它，结算也未接入。
@@ -198,7 +205,8 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void removeItems(Long customerId, TradeCartItemIdsDTO dto) {
+    public void removeItems(TradeCartItemIdsDTO dto) {
+        Long customerId = dto.getCustomerId();   // 作用域取自入参 DTO（cross-cutting 第 22/23 条）
         List<Long> ids = dto.getIds();
         if (ids == null || ids.isEmpty()) {
             // 空列表直接返回：别拼出 `IN ()`（语法错误 → 域兜底 500，而这次「什么都没删」本该是成功的空操作）

@@ -13,13 +13,21 @@ import java.util.List;
  *
  * <p>⚠ <b>入参里没有店铺、没有价格、没有金额</b>：店铺由商品归属推出（一单一店，域内按 {@code storeId} 拆单），
  * 价格必须由服务端从商品域读——「顾客改包就能改价」的字段一律不进 DTO。这里只保留
- * 「从哪来、寄到哪儿、买什么、买几件、以及一个幂等键」；**顾客 id 也不在**，它是路径上的数据权限锚点。</p>
+ * 「谁在买、从哪来、寄到哪儿、买什么、买几件、以及一个幂等键」。
+ * <b>顾客 id 在、且必填</b>：它是数据权限锚点，锚点不进路径段（cross-cutting 第 22 条），
+ * 值只能由端 BFF 从登录态取（{@code LoginUser.getId()}），**禁止**从前端入参透传。</p>
  *
  * <p>⚠ 一次提交按 {@code storeId} <b>拆成多笔</b>（一单一店），故出参是 {@code List<TradeOrderVO>}，
  * 顺序 = {@code storeId} 升序（确定）。</p>
  */
 @Data
 public class TradeOrderCreateDTO {
+
+    /**
+     * 顾客账号 id（= {@code mall_user.id}，数据权限锚点；**必填**，由端 BFF 从登录态取，不透传前端入参）
+     */
+    @NotNull(message = "顾客 id 不能为空")
+    private Long customerId;
 
     /**
      * 订单来源：{@code DIRECT}（详情页直购）/ {@code CART}（购物车结算）。

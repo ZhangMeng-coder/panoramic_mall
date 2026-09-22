@@ -5,7 +5,8 @@ import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
-import com.panoramic.contract.trade.dto.TradeOrderPlatformPageQueryDTO;
+import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
+import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
@@ -18,7 +19,6 @@ import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
-import com.panoramic.trade.order.domain.port.PlatformOrderQuery;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,26 +27,32 @@ import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * 订单用例入口（三侧：顾客 / 商户 / 平台）：下单、分页、详情、支付、发货、收货。
+ * 订单用例入口（按能力六条：下单、分页、详情、支付、发货、收货）：{@code create} / {@code pageOrders} /
+ * {@code getOrder} / {@code payOrder} / {@code shipOrder} / {@code receiveOrder}。
  *
  * <p>控制器（{@code controller/OrderController}）只做参数绑定与校验，其余全在这里；
  * 编排（拆单 / 两级幂等 / 失败回滚）在 {@link OrderCreateCoordinator}，本类**不重复它的逻辑**——
  * 它只把契约入参翻译成域入参，再把域模型翻译成契约出参。</p>
  *
- * <h3>三侧读都经仓库的锚点方法，域内不做身份判断</h3>
- * <p>顾客 / 商户两侧把 {@code customerId} / {@code storeId} 传进仓库的查询，锚点**参与收窄**；
- * 平台侧没有锚点（管理端本就是全量视角），它要筛的店铺 / 顾客走 {@link PlatformOrderQuery} 的字段。
- * ⚠ 「调用方传的锚点是否真是本人 / 本店」由端 BFF 从登录态取，**域侧不校验**——防线在 BFF。
+ * <h3>读侧一条路径，作用域由调用方传进来，域内不做身份判断</h3>
+ * <p>分页与详情各只有一条路径（{@link OrderRepository#pageOrders} / {@link OrderRepository#findOrder}），
+ * 作用域（{@code customerId} / {@code storeId}）是 {@link OrderQuery} 里的**可选字段**：
+ * 传了就按它收窄、没传就是不限定（管理端全量视角）。⚠ 值「是否真是本人 / 本店」由端 BFF 从登录态取，
+ * **域侧不校验、也不判 {@code X-User-Type}**——防线在 BFF。
  * 详情 / 动作查询一律返回同一种 404「订单不存在」：**不区分「不存在」与「不属你」**
  * （区分开就等于告诉调用方「这笔单存在，只是不是你的」）。</p>
  *
- * <h3>为什么三个动作带事务、下单不带、六个读也带</h3>
+ * <p>⚠ <b>写侧的作用域必填</b>（{@code customerId} / {@code storeId} 在各自的入参 DTO 上是 {@code @NotNull}）：
+ * 写没有「合法全量视角」，省掉作用域就是「能改任意一笔单」。那份「必填」由契约层守（cross-cutting 第 22 条），
+ * 本类只负责把它传进查询。</p>
+ *
+ * <h3>为什么三个动作带事务、下单不带、两个读也带</h3>
  * <p>下单的事务边界在编排器方法上（先占键与订单必须同事务，见
  * {@link OrderRepository} 的接口注释），本类再声明一次只是重复。<br>
  * 三个动作则必须自己带：它们是「读订单 → 聚合内迁移状态 → 落库」三步，而落库要写
  * <b>订单行 + 状态轨迹两处</b>（{@link OrderRepository#update}），任何一步失败都得整体回退，
  * 否则会留下「状态列已改、轨迹没跟上」这类自相矛盾的单（列表按状态列、详情按轨迹，同单两个状态）。<br>
- * ⚠ 六个读路径（三侧各「分页 + 详情」）也声明 {@code readOnly} 事务——**不是为了回滚，是为了一个读视图**：
+ * ⚠ 两个读路径（分页 + 详情）也声明 {@code readOnly} 事务——**不是为了回滚，是为了一个读视图**：
  * 仓库组装一笔订单要三次查询（订单行 → 明细 → 轨迹），而重建聚合时的对账正好横跨其中两处
  * （「快递单号 ⟺ 轨迹含已发货」跨第 1 与第 3 次，「总额 ⟺ 明细之和」跨第 1 与第 2 次）。
  * 三次查询若不在同一快照上，恰好插进一次发货，就会读到「单号还是空、轨迹已含已发货」而被判成对账失败：
@@ -70,17 +76,16 @@ public class OrderApplicationService {
     private final OrderRepository orderRepository;
     private final OrderStatusFlow orderStatusFlow;
 
-    // ── 顾客侧 ──────────────────────────────────────────────────────────────────
+    // ── 写侧：作用域必填（在各自 DTO 上以 @NotNull 表达） ────────────────────────
 
     /**
      * 下单（一次提交可能拆成多笔，一单一店；幂等命中时原样返回首次那批）
      *
-     * @param customerId 顾客 id（数据权限锚点，由 mall-bff 从登录态取）
-     * @param dto        下单参数（来源 / 幂等键 / 地址快照 / 商品行）
+     * @param dto 下单参数（**作用域** customerId + 来源 / 幂等键 / 地址快照 / 商品行）
      * @return 本次提交的整批订单（顺序 = {@code storeId} 升序）
      */
-    public List<TradeOrderVO> create(Long customerId, TradeOrderCreateDTO dto) {
-        OrderCreateCommand command = new OrderCreateCommand(customerId,
+    public List<TradeOrderVO> create(TradeOrderCreateDTO dto) {
+        OrderCreateCommand command = new OrderCreateCommand(dto.getCustomerId(),
                 parseSource(dto.getSource()),
                 toAddress(dto.getAddress()),
                 dto.getRequestId(),
@@ -91,122 +96,88 @@ public class OrderApplicationService {
     }
 
     /**
-     * 我的订单分页（只含该顾客的订单；下单倒序）
-     */
-    @Transactional(readOnly = true)
-    public TradeOrderPageVO pageCustomerOrders(Long customerId, TradeOrderPageQueryDTO dto) {
-        return toPageVo(orderRepository.pageCustomerOrders(customerId, toQuery(dto)));
-    }
-
-    /**
-     * 我的订单详情
-     *
-     * @throws ServiceException 订单不存在或不属于该顾客（HTTP 404，两种情况同一个提示）
-     */
-    @Transactional(readOnly = true)
-    public TradeOrderVO getCustomerOrder(Long customerId, String orderNo) {
-        return toVo(requireCustomerOrder(customerId, orderNo));
-    }
-
-    /**
      * 支付（假支付；金额校验在聚合内，不一致即 400）
      *
+     * @param orderNo 业务可读单号
+     * @param dto     支付金额 + **作用域** customerId（必填）
      * @throws ServiceException 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void payOrder(Long customerId, String orderNo, TradeOrderPayDTO dto) {
-        OrderModel order = requireCustomerOrder(customerId, orderNo);
+    public void payOrder(String orderNo, TradeOrderPayDTO dto) {
+        OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         // 校验先于迁移，迁移先于落库：任何一处抛出都不写库（见 OrderModel#markPaid 的说明）
         order.markPaid(orderStatusFlow, dto.getAmount());
         orderRepository.update(order);
     }
 
     /**
-     * 确认收货（终态）
-     *
-     * @throws ServiceException 非法迁移（HTTP 400）、订单不属本人（404）
-     */
-    @Transactional(rollbackFor = Exception.class)
-    public void receiveOrder(Long customerId, String orderNo) {
-        OrderModel order = requireCustomerOrder(customerId, orderNo);
-        order.markReceived(orderStatusFlow);
-        orderRepository.update(order);
-    }
-
-    // ── 商户侧 ──────────────────────────────────────────────────────────────────
-
-    /**
-     * 本店订单分页（**含待支付**：店主的待办起点不是「已支付」，见 {@link OrderRepository#pageStoreOrders}）
-     */
-    @Transactional(readOnly = true)
-    public TradeOrderPageVO pageStoreOrders(Long storeId, TradeOrderPageQueryDTO dto) {
-        return toPageVo(orderRepository.pageStoreOrders(storeId, toQuery(dto)));
-    }
-
-    /**
-     * 本店订单详情
-     *
-     * @throws ServiceException 订单不存在或不属于该店铺（HTTP 404，两种情况同一个提示）
-     */
-    @Transactional(readOnly = true)
-    public TradeOrderVO getStoreOrder(Long storeId, String orderNo) {
-        return toVo(requireStoreOrder(storeId, orderNo));
-    }
-
-    /**
      * 发货（记录快递单号；单号校验与状态迁移都在聚合内）
      *
+     * @param orderNo 业务可读单号
+     * @param dto     快递单号 + **作用域** storeId（必填）
      * @throws ServiceException 单号为空或超长 / 非法迁移（HTTP 400）、订单不属本店（404）
      */
     @Transactional(rollbackFor = Exception.class)
-    public void shipOrder(Long storeId, String orderNo, TradeOrderShipDTO dto) {
-        OrderModel order = requireStoreOrder(storeId, orderNo);
+    public void shipOrder(String orderNo, TradeOrderShipDTO dto) {
+        OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, null, dto.getStoreId()));
         order.markShipped(orderStatusFlow, dto.getTrackingNo());
         orderRepository.update(order);
     }
 
-    // ── 平台侧（无锚点） ────────────────────────────────────────────────────────
-
     /**
-     * 平台侧订单分页（全量视角；按店铺 / 顾客筛是**可选筛选**，不是锚点）
-     */
-    @Transactional(readOnly = true)
-    public TradeOrderPageVO pagePlatformOrders(TradeOrderPlatformPageQueryDTO dto) {
-        PlatformOrderQuery query = new PlatformOrderQuery(dto.getOrderNo(), parseStatus(dto.getStatus()),
-                dto.getStoreId(), dto.getCustomerId(), dto.getPageNum(), dto.getPageSize());
-        return toPageVo(orderRepository.pagePlatformOrders(query));
-    }
-
-    /**
-     * 平台侧订单详情（全量视角）
+     * 确认收货（终态）
      *
-     * @throws ServiceException 订单不存在（HTTP 404）
+     * @param orderNo 业务可读单号
+     * @param dto     **作用域** customerId（必填）
+     * @throws ServiceException 非法迁移（HTTP 400）、订单不属本人（404）
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void receiveOrder(String orderNo, TradeOrderReceiveDTO dto) {
+        OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
+        order.markReceived(orderStatusFlow);
+        orderRepository.update(order);
+    }
+
+    // ── 读侧：作用域可选（不传 = 全量视角） ─────────────────────────────────────
+
+    /**
+     * 订单分页（**同一能力对所有调用方**）：传 {@code customerId} 即「我的订单」、
+     * 传 {@code storeId} 即「本店订单」（**含待支付**：店主的待办起点不是「已支付」）、
+     * 都不传即全量；下单倒序
      */
     @Transactional(readOnly = true)
-    public TradeOrderVO getPlatformOrder(String orderNo) {
-        return toVo(orderRepository.findByOrderNo(orderNo)
-                .orElseThrow(() -> new ServiceException(404, "订单不存在")));
+    public TradeOrderPageVO pageOrders(TradeOrderPageQueryDTO dto) {
+        return toPageVo(orderRepository.pageOrders(toQuery(dto)));
     }
 
-    // ── 内部：按锚点取单（取不到一律 404） ──────────────────────────────────────
-
-    private OrderModel requireCustomerOrder(Long customerId, String orderNo) {
-        return orderRepository.findByCustomerOrderNo(customerId, orderNo)
-                .orElseThrow(() -> new ServiceException(404, "订单不存在"));
+    /**
+     * 订单详情（传了作用域就收窄到那一份；都不传即全量视角）
+     *
+     * @throws ServiceException 订单不存在或不在该作用域内（HTTP 404，两种情况同一个提示）
+     */
+    @Transactional(readOnly = true)
+    public TradeOrderVO getOrder(String orderNo, TradeOrderQueryDTO dto) {
+        return toVo(requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), dto.getStoreId())));
     }
 
-    private OrderModel requireStoreOrder(Long storeId, String orderNo) {
-        return orderRepository.findByStoreOrderNo(storeId, orderNo)
+    // ── 内部：按作用域取单（取不到一律 404） ────────────────────────────────────
+
+    /**
+     * 取一笔订单；不存在或不在作用域内都抛同一个 404「订单不存在」（见类注释：不区分两种情形）
+     */
+    private OrderModel requireOrder(OrderQuery query) {
+        return orderRepository.findOrder(query)
                 .orElseThrow(() -> new ServiceException(404, "订单不存在"));
     }
 
     // ── 内部：契约入参 → 域入参 ─────────────────────────────────────────────────
 
     /**
-     * 分页查询条件（顾客 / 商户侧：**没有锚点字段**，锚点是方法入参）
+     * 分页查询条件（四个可选条件一并交给域侧：作用域与筛选在域内是同一种「传了就筛」）
      */
     private static OrderQuery toQuery(TradeOrderPageQueryDTO dto) {
-        return new OrderQuery(dto.getOrderNo(), parseStatus(dto.getStatus()), dto.getPageNum(), dto.getPageSize());
+        return new OrderQuery(dto.getOrderNo(), parseStatus(dto.getStatus()),
+                dto.getCustomerId(), dto.getStoreId(), dto.getPageNum(), dto.getPageSize());
     }
 
     /**

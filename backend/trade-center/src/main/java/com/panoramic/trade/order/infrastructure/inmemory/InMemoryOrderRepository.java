@@ -6,7 +6,6 @@ import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderPageQuery;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
-import com.panoramic.trade.order.domain.port.PlatformOrderQuery;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -104,7 +103,7 @@ public class InMemoryOrderRepository implements OrderRepository {
         //    否则抛 400（重复动作 / 被别的动作抢先）。本类**表达不了**它——仓库持的是活引用，
         //    状态在聚合上已经改完，「来时状态」根本读不到了。故「丢失更新 / 并发重复动作 → 400」
         //    这一条在内存实现下验不到，只能在真库上验（T15 用顺序重复动作覆盖同一句提示）；
-        //    把本类当成「先占键与三侧读」的参照实现，别当成并发语义的参照实现。
+        //    把本类当成「先占键与读侧作用域」的参照实现，别当成并发语义的参照实现。
     }
 
     // ── 读侧 ────────────────────────────────────────────────────────────────────
@@ -135,38 +134,16 @@ public class InMemoryOrderRepository implements OrderRepository {
     }
 
     @Override
-    public synchronized Optional<OrderModel> findByOrderNo(String orderNo) {
-        return find(order -> orderNo != null && orderNo.equals(order.getOrderNo()));
+    public synchronized Optional<OrderModel> findOrder(OrderQuery query) {
+        // 两个作用域都是可选的：null = 不限定（与落库实现的「条件不入 SQL」同口径）
+        return find(order -> orderNoMatches(query.orderNo(), order)
+                && scopeMatches(query.customerId(), order.getCustomerId())
+                && scopeMatches(query.storeId(), order.getStoreId()));
     }
 
     @Override
-    public synchronized Optional<OrderModel> findByCustomerOrderNo(Long customerId, String orderNo) {
-        return find(order -> Objects.equals(customerId, order.getCustomerId())
-                && orderNo != null && orderNo.equals(order.getOrderNo()));
-    }
-
-    @Override
-    public synchronized Optional<OrderModel> findByStoreOrderNo(Long storeId, String orderNo) {
-        return find(order -> Objects.equals(storeId, order.getStoreId())
-                && orderNo != null && orderNo.equals(order.getOrderNo()));
-    }
-
-    @Override
-    public synchronized OrderPage pageCustomerOrders(Long customerId, OrderQuery query) {
-        return page(order -> Objects.equals(customerId, order.getCustomerId()), query);
-    }
-
-    @Override
-    public synchronized OrderPage pageStoreOrders(Long storeId, OrderQuery query) {
-        return page(order -> Objects.equals(storeId, order.getStoreId()), query);
-    }
-
-    @Override
-    public synchronized OrderPage pagePlatformOrders(PlatformOrderQuery query) {
-        // 平台侧无锚点，但两个筛选都是可选的：null = 不筛（与落库实现的「条件不入 SQL」同口径）
-        return page(order -> (query.storeId() == null || Objects.equals(order.getStoreId(), query.storeId()))
-                        && (query.customerId() == null || Objects.equals(order.getCustomerId(), query.customerId())),
-                query);
+    public synchronized OrderPage pageOrders(OrderPageQuery query) {
+        return page(query);
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────────────
@@ -176,20 +153,21 @@ public class InMemoryOrderRepository implements OrderRepository {
     }
 
     /**
-     * 锚点过滤 + 条件筛选 + **下单倒序**分页
+     * 作用域过滤 + 条件筛选 + **下单倒序**分页
      *
      * <p>倒序与真实实现的 {@code ORDER BY id DESC} 同口径：最新的订单排在最前面，
      * 页面的「我的订单」第一眼看到的就是刚下的那笔。</p>
      *
-     * <p>⚠ 入参是 {@link OrderPageQuery} 而不是某个具体的 record：三侧的两个**共同**字段（订单号 / 状态）
-     * 与分页在这里只处理一遍，平台侧那两个可选筛选由调用方并进 {@code anchor} 谓词
-     * ——它们的「不筛」语义与落库实现的条件拼接同口径。</p>
+     * <p>⚠ 入参是 {@link OrderPageQuery} 而不是某个具体的 record：**作用域与筛选条件的翻译只此一处**
+     * （顾客 / 商户 / 管理端调用方全走同一条 {@link #pageOrders}），四项可选条件（订单号 / 状态 /
+     * 两个作用域）的「不筛」语义与落库实现的条件拼接同口径。</p>
      */
-    private OrderPage page(Predicate<OrderModel> anchor, OrderPageQuery query) {
+    private OrderPage page(OrderPageQuery query) {
         List<OrderModel> matched = new ArrayList<>(orders.size());
         for (int i = orders.size() - 1; i >= 0; i--) {   // 倒序收集，省一次 reverse
             OrderModel order = orders.get(i);
-            if (!anchor.test(order)) {
+            if (!scopeMatches(query.customerId(), order.getCustomerId())
+                    || !scopeMatches(query.storeId(), order.getStoreId())) {
                 continue;
             }
             if (query.orderNo() != null && !query.orderNo().equals(order.getOrderNo())) {
@@ -221,6 +199,23 @@ public class InMemoryOrderRepository implements OrderRepository {
             return null;
         }
         return customerId + "|" + requestId;
+    }
+
+    /**
+     * 作用域命中判定：{@code scope == null} 表示**不限定**（管理端全量视角），不是「筛 null 值」
+     *
+     * <p>⚠ 与落库实现里 {@code eq(cond, col, value)} 的「不传即不入 SQL」是同一口径——
+     * 两个实现必须给出同样的结果，否则同一份调用在两种装配下看到的数据不同。</p>
+     */
+    private static boolean scopeMatches(Long scope, Long value) {
+        return scope == null || Objects.equals(scope, value);
+    }
+
+    /**
+     * 订单号命中判定（{@code null} = 不筛；空白串已由 {@link OrderQuery#normalizeOrderNo} 归 null）
+     */
+    private static boolean orderNoMatches(String orderNo, OrderModel order) {
+        return orderNo == null || orderNo.equals(order.getOrderNo());
     }
 
     // ── 测试入口 ────────────────────────────────────────────────────────────────
