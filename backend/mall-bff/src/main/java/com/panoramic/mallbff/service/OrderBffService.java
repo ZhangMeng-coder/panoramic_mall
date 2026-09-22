@@ -36,6 +36,14 @@ import java.util.List;
  * 因为 C 端只有「我的订单」一个视角；{@code create} / {@code pay} / {@code receive} 上域侧是必填）。
  * 绝不从请求体 / 路径接送——域内不做任何鉴权，这个 id 就是数据权限本身。</p>
  *
+ * <p>⚠ <b>读路径没有本层的「锚点非空」断言，是有意为之、且有一条必须守住的依赖</b>：
+ * 域侧对<b>写</b>路径有 {@code ScopeGuard}（缺锚点 → 400），对<b>读</b>路径没有——读的作用域口径是
+ * 「传了就按它筛，没传就是不限定」（cross-cutting 第 22 条），本层则无条件把本人 id 写进去。
+ * 于是「锚点拿到 null」这件事的**唯一**拦点是登录闸门：`/orders*` 不在 {@code whitelist-paths} 里，
+ * 且 {@code AuthTokenFilter} 重建登录态后才轮得到本层。⚠ 故若有人把 `/orders*` 加进任一侧白名单、
+ * 或让身份过滤失效，后果**不是**报错而是**静默放大成全量视角**（`page` 返回全体顾客的订单、
+ * `detail` 可拉任意单）。改动登录装配时必须一并回看这一条。</p>
+ *
  * <p><b>下单的两步（顺序不能反）</b>：</p>
  * <ol>
  *   <li>取地址（经 {@link BffFeignCall} + 地址降级文案）→ 组装成<b>快照</b>传给域：
@@ -44,7 +52,8 @@ import java.util.List;
  *       同时按 {@code id + customerId} 过滤，取不到回 404「地址不存在」（不区分「不存在」与
  *       「不属于本人」），经 {@code BffFeignCall} <b>原样透传</b>（404 不降级），
  *       故「拿别人的 addressId 下单」自然被挡住、且不透出存在性。</li>
- *   <li>下单<b>成功之后</b>才清车（{@code cartItemIds} 非空时）。⚠ 反过来的话车空了什么也没买到。</li>
+ *   <li>下单<b>成功之后</b>、且<b>确实是购物车结算</b>（{@code source=CART}）时才清车。⚠ 反过来的话车空了什么也没买到；
+ *       而 {@code DIRECT} 直购即便带了 {@code cartItemIds} 也不清——那些行从未被下单。</li>
  * </ol>
  *
  * <p>⚠ <b>清车刻意不走 {@link BffFeignCall}</b>：它<b>没有页面出口</b>——订单已建是不可逆的主结果，
@@ -92,8 +101,18 @@ public class OrderBffService {
 
         List<TradeOrderVO> created = BffFeignCall.call("trade-center", ORDER_DOWN_MSG,
                 () -> tradeCenterClient.createOrder(payload));
-        // ⚠ 顺序不能反：订单已建是主结果，清车是它的补偿；且「下单失败还清车」= 车空了什么也没买到
-        removeCartItemsQuietly(customerId, dto.getCartItemIds());
+        // ⚠ 只有**购物车结算**才清车：`source=DIRECT`（详情页直购）哪怕带着 `cartItemIds` 也不清——
+        // 那些行从未被下单，删掉就是静默丢顾客数据，且**不可逆**（域内是物理删除）。
+        // 依赖客户端自觉是不够的：`MallOrderCreateDTO.cartItemIds` 上不可能挂「仅 CART 非空」这类跨字段校验，
+        // 「仅 CART 结算带」这句话此前只写在注释里、没有任何强制点（2026-09-22 T6 复评抓出的自伤面）。
+        // ⚠ trim 后比对是为了**镜像域侧的解析口径**（域内 `OrderSource.valueOf(source.trim())`）：不 trim 的话
+        //    `" CART "` 在域侧照收、单照建，本层却因精确比较为 false 而不清车——两处口径不齐。
+        //    不加 `toUpperCase`：那会把域侧判 400 的值也放进来（`cart` 在域侧是 400，本层不该当成清车信号）。
+        // ⚠ 顺序也不能反：订单已建是主结果，清车是它的补偿；「下单失败还清车」= 车空了什么也没买到
+        String source = dto.getSource();
+        if (source != null && "CART".equals(source.trim())) {
+            removeCartItemsQuietly(customerId, dto.getCartItemIds());
+        }
         return created == null ? List.of() : created.stream().map(this::toVO).toList();
     }
 
@@ -211,7 +230,7 @@ public class OrderBffService {
      * 域侧 SQL 按 {@code customer_id + id IN (…)} 过滤，故页面伪造的 id 删不到别人的行。</p>
      *
      * @param customerId  顾客账号 id（只能取自登录态）
-     * @param cartItemIds 待清理的购物车行 id；为空（{@code DIRECT} 直购）时什么都不做
+     * @param cartItemIds 待清理的购物车行 id；为空时什么都不做
      */
     private void removeCartItemsQuietly(Long customerId, List<Long> cartItemIds) {
         if (cartItemIds == null || cartItemIds.isEmpty()) {
@@ -222,8 +241,11 @@ public class OrderBffService {
         payload.setIds(cartItemIds);
         try {
             tradeCenterClient.removeCartItems(payload);
-        } catch (RuntimeException e) {
-            // 订单已建、不可逆；清车可重放（顾客手动删 / 再提交一次会命中幂等复用原单），故只记日志
+        } catch (Exception e) {
+            // 订单已建、不可逆；清车可重放（顾客手动删 / 再提交一次会命中幂等复用原单），故只记日志。
+            // ⚠ catch 面刻意宽到 Exception（与本端静默降级先例一致：CatalogBffService / CustomerProfileBffService 同款）：
+            //   本方法在**订单已建之后**执行，漏网的异常会逃出 create 让页面拿到 500「订单暂不可用」，
+            //   而订单与库存都已生效——顾客重试即二次下单 / 二次扣减。宁可不记全，也不能漏。
             log.warn("下单后清车失败（订单已建，属可重放补偿）: customerId={}, cartItemIds={}", customerId, cartItemIds, e);
         }
     }

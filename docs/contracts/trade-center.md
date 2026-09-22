@@ -74,20 +74,20 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| createOrder | POST | /order | `TradeOrderCreateDTO` | `List<TradeOrderVO>` | TradeCenterClient.java:150 | OrderController.java:51 | — |  |
-| pageOrders | POST | /order/page | `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:160 | OrderController.java:60 | — |  |
-| getOrder | GET | /order/{orderNo} | `String`, `TradeOrderQueryDTO` | `TradeOrderVO` | TradeCenterClient.java:171 | OrderController.java:68 | — |  |
-| payOrder | POST | /order/{orderNo}/pay | `String`, `TradeOrderPayDTO` | `void` | TradeCenterClient.java:185 | OrderController.java:77 | — |  |
-| shipOrder | POST | /order/{orderNo}/ship | `String`, `TradeOrderShipDTO` | `void` | TradeCenterClient.java:196 | OrderController.java:86 | — |  |
-| receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `void` | TradeCenterClient.java:207 | OrderController.java:95 | — |  |
+| createOrder | POST | /order | `TradeOrderCreateDTO` | `List<TradeOrderVO>` | TradeCenterClient.java:150 | OrderController.java:51 | `mall-bff/OrderBffService` |  |
+| pageOrders | POST | /order/page | `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:160 | OrderController.java:60 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
+| getOrder | GET | /order/{orderNo} | `String`, `TradeOrderQueryDTO` | `TradeOrderVO` | TradeCenterClient.java:171 | OrderController.java:68 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
+| payOrder | POST | /order/{orderNo}/pay | `String`, `TradeOrderPayDTO` | `void` | TradeCenterClient.java:185 | OrderController.java:77 | `mall-bff/OrderBffService` |  |
+| shipOrder | POST | /order/{orderNo}/ship | `String`, `TradeOrderShipDTO` | `void` | TradeCenterClient.java:196 | OrderController.java:86 | `store-bff/StoreOrderBffService` |  |
+| receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `void` | TradeCenterClient.java:207 | OrderController.java:95 | `mall-bff/OrderBffService` |  |
 
-> ⚠ **订单 6 条暂无调用方**（「调用方」列整列 `—`）：三端 BFF 的订单编排**尚未创建**。
-> 页面级的对应行为 [mall-bff.md](./mall-bff.md)（`/orders` 5 条）、[store-bff.md](./store-bff.md)
+> **订单 6 条的调用方**（三端 BFF 的订单编排均已落地）：页面级的对应行为
+> [mall-bff.md](./mall-bff.md)（`/orders` 5 条）、[store-bff.md](./store-bff.md)
 > （`/orders/page` / `/orders/{orderNo}` / `/orders/{orderNo}/ship`）、[admin.md](./admin.md)
-> （`/orders/page` / `/orders/{orderNo}`），那几行都标 `待实现`。
-> ⚠ 这里**不写预期类名**（早先写过三个当时并不存在的服务类名）：类不存在时写进契约表等于留一个
-> 查不到的引用，而「调用方」列**没有任何核对手段**（`drift-check` 只读「状态」列，不读这一列），
-> 写错了不会有任何东西报错。实现完成时把**真实类名**填上。
+> （`/orders/page` / `/orders/{orderNo}`）。
+> ⚠ 「调用方」列**没有任何核对手段**（`drift-check` 只读「状态」列，不读这一列），写错了不会有任何东西报错：
+> 删改这三端 BFF 的订单编排时，**顺手回看本列**。⚠ 也正因如此，这一列只写**已存在**的类名——
+> 早先这里写过三个当时并不存在的服务类名，等于留一个查不到的引用。
 
 > **作用域在入参 DTO 里**（[cross-cutting.md](./cross-cutting.md) 第 22 / 23 条）：域内不做身份判断
 > （读作用域 ≠ 鉴权），值由**端 BFF 从登录态取**后填进 DTO 字段。分页 / 详情的 `customerId` / `storeId`
