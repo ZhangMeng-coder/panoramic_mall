@@ -1,4 +1,4 @@
-package com.panoramic.trade.order.infrastructure.inmemory;
+package com.panoramic.trade.order.support;
 
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
@@ -10,12 +10,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * {@link GoodsQueryPort} 的内存实现（阶段一的临时下游：真实商品数据源是 store 域，阶段二接）。
+ * {@link GoodsQueryPort} 的**测试假实现**（下单流水线各行为层单测的夹具）。
  *
- * <p>⚠ <b>临时脚手架</b>：本包（`infrastructure/inmemory`）随 T4b 一起删除（todo 残留 9）——
- * 届时商品 / 库存改由 store 域的真实适配器提供，单测改用 `src/test` 下的轻量假实现。
- * 之所以现在还在 `main` 而不是 `test`：阶段一要**起真实服务打接口**，
- * 它得作为「商品 / 库存来自哪」的临时答案参与装配（R20）。</p>
+ * <p>⚠ 商品数据的真实来源已经是 store 域（真适配器见 `infrastructure/feign/GoodsQueryAdapter`，
+ * 经 {@code StoreClient} 的批量快照接口）。本类随 T4b 从 `main` 搬到 `src/test/.../order/support/`：
+ * 它当初放在 `main` 的理由是「阶段一要**起真实服务打接口**，得作为『商品 / 库存来自哪』的临时答案
+ * 参与装配」（R20）——那个理由随真适配器落地就消失了。搬下来之后它只服务行为层单测：
+ * 那批用例要在**不启 Spring、不连下游**的前提下预置商品，而真适配器做不到这件事。</p>
  *
  * <p>⚠ 它同时是**测试夹具的落点**：商品不可购买的四个开关（店铺未审核 / SPU 未上架 / SKU 未上架 / 被平台锁定）
  * 分属四个不同事实，goods-check 的拒绝分支必须在四个开关上各验一条，故这里提供

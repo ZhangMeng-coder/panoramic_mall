@@ -3,7 +3,7 @@
 全景商城**交易域**（Servlet 技术栈，2026-09-21 新建），端口 **8087**。
 
 本域持**购物车 `trade_cart_item`** 与**订单**（`trade_order` 等 5 张表，`com.panoramic.trade.order`，DDD 三层）。
-⚠ 订单**已落库**（2026-09-21 阶段一）；商品 / 库存两个下游仍是内存脚手架，接真实 store 域是阶段二。
+⚠ 订单**已落库**（2026-09-21 阶段一），商品 / 库存两个下游**已接真实 store 域**（2026-09-22，经内部 Feign：`infrastructure/feign` 的两个适配器）。
 结账、评价与 Seata 接入**不在本期**，计划见仓库根 [`todo.md`](../../todo.md)。
 
 > 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)：
@@ -17,7 +17,7 @@
 |---|---|---|
 | 被谁调（购物车） | mall-bff（**C 端顾客自助购物车**），已接 | `trade-center-interface` 的 `TradeCenterClient`，带熔断降级 |
 | 被谁调（订单） | **三端 BFF 都要调**：mall-bff（顾客侧）/ store-bff（商户侧）/ admin（管理端全量）——各端**订单编排尚未创建**，页面级那几行见 `docs/contracts/{mall-bff,store-bff,admin}.md` 的订单 `待实现` 行 | 同上 |
-| 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；下游仍是内存脚手架时见下面「阶段一/阶段二」 |
+| 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；调用点是订单流水线的两个适配器 `GoodsQueryAdapter` / `StockAdapter`（`infrastructure/feign`），⚠ **域间调用不做降级**——store 不可达即整次下单失败 |
 
 ⚠ 订单接口**按能力通用**（不按端分侧）：三端调的是同一批端点，差别只在**传不传作用域**
 （cross-cutting 第 22 条）；写侧的作用域必填，**域内还有一道 400 断言**（`ScopeGuard`，绕过 MVC 时兜住）。
@@ -147,13 +147,13 @@
 
 三个**端口**就是「换适配器不动业务」的接缝：
 
-| 端口 | 当前实现 | 未来 |
+| 端口 | 当前实现 | 说明 |
 |---|---|---|
-| `GoodsQueryPort`（商品快照 + 可见性） | 内存脚手架（读 `resources/mock-store-data.json`：store 域的**只读快照**） | store 域 `StoreClient`（Feign，带熔断降级） |
-| `StockPort`（扣减 + 按单回补） | 内存脚手架（进程内账，不回写 store 域，重启回到快照值） | store 域库存能力（`UPDATE ... WHERE stock >= ?` 的影响行数 + 同事务写流水） |
+| `GoodsQueryPort`（商品快照 + 可见性） | `GoodsQueryAdapter` → store 域 `StoreClient`（`/internal/store/goods/trade/sku/batch` 批量快照，**逐字段手工映射**成四个开关） | 域间调用，**不做降级**（cross-cutting 第 24 条）：store 不可达 / 熔断打开即整次下单失败 |
+| `StockPort`（扣减 + 按单回补） | `StockAdapter` → store 域 `StoreClient`（`deductStock` / `revertStockByOrder`）；原子性在那边的一条 `UPDATE ... WHERE stock >= ?` 影响行数 + 同事务写流水上 | 同上；唯一「不抛」的是 `deduct` 返回 `false`——那是库存不足（HTTP 200），由 stock-check 翻成 400 |
 | `OrderRepository`（订单 + **提交记录**，两级幂等的落点） | `JdbcOrderRepository`（5 张表，MyBatis-Plus 基类，**无自定义 SQL**） | 无需更换 |
 
-⚠ 商品 / 库存两处脚手架、`mock-store-data.json` 与 `infrastructure/inmemory` 整包随 store 域落地一起删除（todo 残留 9）；开关是 `panoramic.trade.order.store-adapter=mock|feign`，**阶段一的默认值是 `mock`**（mock 侧带 `matchIfMissing`，它被删除的同一改动里默认值翻到 `feign` 侧）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
+⚠ 商品 / 库存的**真适配器**在 `infrastructure/feign`（`StoreFeignAdapterConfiguration` 条件装配，两个适配器类本身不是 `@Component`——否则开关就管不住它们）；阶段一的内存商品 / 库存脚手架（`infrastructure/mock`、`mock-store-data.json`）与从 main 移出的两个内存端口**已随 T4b 处理**，故 `infrastructure/inmemory` 如今只剩订单仓库的内存实现 `InMemoryOrderRepository`（供 `repository=memory` 那条**无数据源**的装配层单测）。开关是 `panoramic.trade.order.store-adapter=feign`（**只剩这一个取值**，带 `matchIfMissing`——键缺失也落到它上面；写错一个值则一个 bean 都不装配、启动即报「找不到 GoodsQueryPort / StockPort 的 bean」）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
 
 - **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
 - **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
@@ -168,7 +168,7 @@
   - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`，闭区间），命中则复用该笔。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
   - ⚠ 代价（`requestId` 的定义使然，不是缺陷）：同一 `requestId` 被**换内容**复用（客户端 bug）时，返回的是首次那批，新内容不会被下单
   - ⚠ **重放返回的是订单「当前」状态**：落库实现按关联回读（天然是最新真相），内存实现存的是**活引用**（只拷列表不拷元素）——代价是调用方改了返回值就等于改了凭证，**调用方不得修改返回的订单**
-- **失败回滚**：任一笔失败即整次提交回滚（库内写入随事务消失，**失败不留残单**），只剩「回补库存」要还——库存在当前实现里是**外部资源**（内存脚手架 / 将来 store 域），不随本地事务回滚，必须显式归还。⚠ **只回补本次新建的笔**：复用笔的库存在上一次就扣过了
+- **失败回滚**：任一笔失败即整次提交回滚（库内写入随事务消失，**失败不留残单**），只剩「回补库存」要还——库存是**外部资源**（store 域，经 Feign 写入），不随本地事务回滚，必须显式归还。⚠ **只回补本次新建的笔**：复用笔的库存在上一次就扣过了
 - ⚠ **回补按单、幂等由净额算出来**（`StockPort#revertByOrder(orderNo)`）：实现按流水算出「这一单每个 SKU 还欠多少」，还完净额归 0，重复调用即无欠可还。**不得**改成按 `orderNo + skuId` 记「已回补」标记的去重——失败提交从不落库，同一秒的两次失败提交可能拿到同一个单号，那个标记会**静默吞掉第二次回补**（库存净亏、流水却显示 0）。⚠ 同样**不得**改成逐行回补：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多且不报错
 - **读取时对账**：库里读到的数据也要自证——枚举名可解析、明细小计 = 单价×数量、轨迹 `seq` 连续且是合法的「下标 +1」路径、落库的总件数 / 总金额与按行重算的一致。任一条不符即 `IllegalStateException`（**数据被写坏**，不是 400——报成 400 等于把「库里的数据坏了」说成「你的操作不对」）
 - **Seata 落点**：`OrderCreateCoordinator#create` 的方法入口（将来在那里加 `@GlobalTransactional`），真实库存写入方在 store 域。本期**不引依赖、不加注解**——没有跨服务调用时它没有事务可管

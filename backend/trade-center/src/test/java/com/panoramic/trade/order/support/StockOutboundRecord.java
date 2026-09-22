@@ -1,16 +1,14 @@
-package com.panoramic.trade.order.infrastructure.inmemory;
+package com.panoramic.trade.order.support;
 
 import java.time.LocalDateTime;
 
 /**
  * SKU 粒度的库存出库 / 回补记录（todo 原话：「根据 SKU 的粒度创建出库记录」）。
  *
- * <p>⚠ <b>落在 inmemory 包，不在 {@code domain.port}</b>（2026-09-21 落库期迁移）：{@code StockPort}
- * 已经不再暴露 {@code outboundRecords()}（回补改成按单净额、由实现自己记账），于是这个类型不再是
- * 端口契约的一部分，而是**内存脚手架自己的账本条目**——真实实现（store 域的库存流水表）不需要它，
- * 它就不该占着 domain 的一个位置。</p>
- *
- * <p>⚠ 它随 {@link InMemoryStockPort} 一起在 store 域落地后删除（todo 残留 9）。</p>
+ * <p>⚠ <b>不属于 {@code domain.port}</b>（2026-09-21 落库期迁移）：{@code StockPort} 已经不再暴露
+ * {@code outboundRecords()}（回补改成按单净额、由实现自己记账），于是这个类型不再是端口契约的一部分，
+ * 而是 {@link InMemoryStockPort} 这个**测试假实现自己的账本条目**——真实实现（store 域的库存流水表）
+ * 不需要它，它就不该占着 domain 的一个位置；随 T4b 一并落在 {@code src/test/.../order/support/}。</p>
  *
  * <p>⚠ <b>一条记录同时承担出库与回补</b>，靠符号区分：{@code quantity} 为正 = 出库（订单占用），
  * 为负 = 回补（下单失败回滚）。这样「净出库量」就是简单的求和，不必再看操作类型字段，

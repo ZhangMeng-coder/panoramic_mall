@@ -1,4 +1,4 @@
-package com.panoramic.trade.order.infrastructure.inmemory;
+package com.panoramic.trade.order.support;
 
 import com.panoramic.trade.order.domain.port.StockPort;
 
@@ -12,10 +12,12 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * {@link StockPort} 的内存实现。
+ * {@link StockPort} 的**测试假实现**（行为层单测的夹具）。
  *
- * <p>⚠ <b>临时脚手架</b>：真实库存归 store 域（阶段二接它的内部接口），本类只服务单测与「无下游」场景。
- * 商品端口同样是内存脚手架，store 域落地后随 T4b 一起删除（todo 残留 9）。</p>
+ * <p>⚠ 库存的真实归属是 store 域（真适配器见 `infrastructure/feign/StockAdapter`，扣减是那边的一条
+ * 原子条件更新 + 同事务写流水）。本类随 T4b 从 `main` 搬到 `src/test/.../order/support/`，
+ * 只服务「不连下游也要验库存语义」的那批用例——它的价值在于**语义对齐**（原子性、按单净额回补），
+ * 不在性能；并发与真的超卖防护由 store 域的数据库承担。</p>
  *
  * <p>⚠ <b>为什么所有写操作都在同步块里</b>：接口要求「判断够不够 → 扣 → 记账」是**一次**原子操作
  * （拆开就有超卖窗口）。内存实现里这个原子的边界就是一把锁；将来换真实实现时，

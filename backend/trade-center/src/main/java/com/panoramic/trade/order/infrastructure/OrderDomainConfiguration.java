@@ -45,9 +45,11 @@ import java.util.List;
  * 生产用系统时钟，语义与原来的 {@code now()} 完全一致。</p>
  *
  * <h3>两个下游端口（商品 / 库存）不在本类</h3>
- * <p>它们由 store 域提供，本期（阶段一）是 {@code infrastructure/mock} 里的内存脚手架
- * ——单独放一个配置类，是为了让「接真实 store 域时该删什么」是一次整文件删除（todo 残留 9），
- * 而不是回到本类里挑 bean 方法。步骤链与编排器只按端口类型注入，换实现不影响它们。</p>
+ * <p>它们由 store 域提供（{@code infrastructure/feign} 的 {@code StoreFeignAdapterConfiguration}
+ * 经 {@code StoreClient} 调真实 store 域）——单独放一个配置类，是因为它有自己的开关
+ * （{@code panoramic.trade.order.store-adapter}）与条件装配语义，与本类的「步骤链 + 仓库」是两件事；
+ * 换实现在那边是一次整文件替换，不必回到本类里挑 bean 方法。步骤链与编排器只按端口类型注入，
+ * 换实现不影响它们。</p>
  *
  * <h3>订单仓库：两种实现由配置二选一</h3>
  * <p>{@code panoramic.trade.order.repository} = {@code jdbc}（真实落库）或 {@code memory}
