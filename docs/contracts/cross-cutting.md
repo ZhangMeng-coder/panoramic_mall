@@ -292,7 +292,7 @@ layer: cross-cutting
 | 契约 | 域接口按**能力**定义、不按**端**：同一能力对所有调用方只有**一条路径**，路径段与 Feign 方法名里不出现端别子段（`customer` / `store` / `platform`），也没有「顾客侧方法 / 商户侧方法」。**数据权限锚点不进路径段**，只作为**入参 DTO 的字段**（收参形状见第 23 条）。域内**不判身份、不看 `X-User-Type`、不做端别分流**，只做「传了就按它筛，没传就是不限定」 |
 | ⚠ 作用域何时可省 | 作用域字段**只在该能力存在「合法全量视角」时才允许省略**（订单分页 / 详情：admin 要看全部 → 可选），其余一律**必填**（订单四个写、购物车 8 条、店主自有的店与商品）。「写接口一律必填」是这条的特例，不是判据本身 |
 | 定义位置 | 域侧：`backend/trade-center/.../controller/OrderController.java` + `order/application/OrderApplicationService.java` + `order/infrastructure/jdbc/JdbcOrderRepository.java`；`backend/store/.../controller/{ShopController,GoodsController}.java` + `service/impl/{StoreShopServiceImpl,StoreGoodsSpuServiceImpl}.java`。**调用方纪律的取值处**：`backend/store-bff/.../bff/StoreShopBffService.java#currentStoreId`、`backend/mall-bff/.../service/CartBffService.java` |
-| 消费位置 | 三端 BFF 各自的域调用。⚠ 作用域的值**只能取自登录态**（`LoginUser.getId()`），**禁止**从前端入参透传——前端传来的 id 一旦被当作作用域，等于把数据权限交给页面 |
+| 消费位置 | 三端 BFF 各自的域调用。⚠ 作用域的值**只能取自登录态**（`LoginUser.getId()`），**禁止**从前端入参透传——前端传来的 id 一旦被当作作用域，等于把数据权限交给页面。⚠ **页面契约里不出现作用域字段**：新写的端一律给页面入口配**本端自己的**页面 DTO（不持作用域），调用前把登录态 id 组装进域 DTO。若某端页面 DTO 与域 DTO 同型（历史行复用域类型，如 store-bff 的商品 / 店铺写入），本层**必须无条件覆盖**作用域字段（页面传了也不采用）、**不得**依赖页面提供它——「页面看起来能指定作用域」就是给下一次「忘记覆盖」铺路（写侧漏覆盖 = 静默越权写，读侧漏覆盖 = 静默看全量） |
 | 破坏后果 | ① 端 BFF 漏传作用域 → **静默越权**：读=看到全量（列表照常渲染）、写=操作到别人的数据；编译不报错、日志无异常；② 反向：域内为省事自己按 `X-User-Type` 分流 → 域内长出应用层鉴权，第 15 条「防线在网络层」的前提被绕过 |
 | 核对方式 | **人工核对**（「必须带自己的 id」无法静态表达）。**形状信号**：契约表里同一能力出现多行端别变体（`/x/customer/{id}/…` 与 `/x/store/{id}/…` 并存）= 本条违规 |
 
