@@ -268,8 +268,12 @@ public interface StoreClient {
      * 由交易域的校验步骤翻成 400「库存不足」（R18）。</p>
      * <p>不判平台锁定、不判上下架、不校验店铺归属（R19）：可见性由交易侧的商品校验判，
      * 本接口只管库存数够不够；库存行不存在同样按「不足」处理。</p>
-     * <p>⚠ 同一个 {@code orderNo + skuId} 重复扣减会撞流水唯一键
-     * （{@code uk_order_sku_kind}）——幂等由交易侧保证，本域不做「已扣过就跳过」的隐式兜底。</p>
+     * <p>⚠ 同一个 {@code orderNo + skuId} 重复扣减会撞流水唯一键（{@code uk_order_sku_kind}）：
+     * 事务整体回滚并回 500。本域<b>不做</b>「已扣过就跳过」的隐式兜底，⚠ <b>故调用方不得给本方法配重试</b>
+     * ——重试不是幂等的，第二次就是 500（Feign/R4J 重试、`TimeLimiter` 的 `cancel-running-future`
+     * 只取消本地等待、停不下服务端已提交的扣减）。⚠ 触发因子也**不止**「调用方重发」：订单号在同一秒内
+     * 可能被复用（失败的提交随事务回滚、单号放回池子），届时「新的一单」拿同一单号扣同一 SKU 同样撞键
+     * （跨服务隐式契约见 cross-cutting 第 24 条）。</p>
      */
     @PostMapping("/goods/trade/stock/deduct")
     boolean deductStock(@RequestBody StoreStockDeductDTO dto);

@@ -119,7 +119,10 @@ public class StoreGoodsSkuStockServiceImpl extends ServiceImpl<StoreGoodsSkuStoc
     @Transactional(rollbackFor = Exception.class)
     public boolean deduct(Long skuId, int quantity, String orderNo) {
         if (skuId == null || quantity <= 0 || !StringUtils.hasText(orderNo)) {
-            // 入参不合法：直接未扣减（不写流水、不抛异常）——调用方拿到 false 自行判处置
+            // 入参不合法：直接未扣减（不写流水、不抛异常）——调用方拿到 false 自行判处置。
+            // ⚠ 这里与 StockPort 的「false ⇔ 库存不足」有一处**刻意分叉**：非法入参也压成 false（线上经入口的
+            //    Bean Validation 拦下，不可达）；trade 域的测试替身 InMemoryStockPort 对 quantity<=0 是抛
+            //    IllegalArgumentException。两者只在「非法入参」这一维上分叉，正常路径同语义。
             return false;
         }
         // 原子条件更新：影响行数是唯一判据（0 行 = 库存不足，也可能是该 SKU 没有库存行，两者等价）
@@ -135,7 +138,10 @@ public class StoreGoodsSkuStockServiceImpl extends ServiceImpl<StoreGoodsSkuStoc
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void revertByOrder(String orderNo) {
-        // R19：补偿路径宁可不做也不能炸——入参空 / 该单没扣过 一律 no-op，绝不抛异常
+        // R19：补偿路径宁可不做也不能炸——入参空 / 该单没扣过 / 库存行已不存在，一律静默成功。
+        // ⚠ 措辞收窄（T3 复评）：能保证的是「这两种情形不抛」，不是「本方法绝不抛」——**并发**对同一单号回补时，
+        //    后到者仍可能撞流水唯一键而抛（fail-closed：其事务整体回滚，不会多补库存；调用方
+        //    OrderCreateCoordinator#revertCreated 用 addSuppressed 兜住，不覆盖主异常）。
         if (!StringUtils.hasText(orderNo)) {
             return;
         }
@@ -146,7 +152,10 @@ public class StoreGoodsSkuStockServiceImpl extends ServiceImpl<StoreGoodsSkuStoc
             return;
         }
         for (StoreGoodsSkuStockLog out : outs) {
-            // 已有 REVERT 的跳过（幂等）：重复调用本方法不会重复补库存
+            // 已有 REVERT 的跳过（幂等）：重复调用本方法不会重复补库存。
+            // ⚠ 这不是 StockPort javadoc 写的「按净额归还」，只在 `uk_order_sku_kind` 保证
+            //    「同 (orderNo, skuId) 至多一条 OUT」时才与净额口径等价——**该键一旦被放松或流水行被清理，
+            //    必须改成净额算法**（OUT 合计 − REVERT 合计，只补正数部分），否则会**静默少补**。
             if (stockLogService.exists(orderNo, out.getSkuId(), StoreGoodsSkuStockLog.KIND_REVERT)) {
                 continue;
             }
