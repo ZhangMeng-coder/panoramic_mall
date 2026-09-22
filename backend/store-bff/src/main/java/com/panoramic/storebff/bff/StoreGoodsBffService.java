@@ -16,17 +16,17 @@ import com.panoramic.contract.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuDetailQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopVO;
-import com.panoramic.contract.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.util.UserContext;
 import com.panoramic.storebff.vo.StoreGoodsSpuDetailBffVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.util.Collections;
@@ -39,7 +39,8 @@ import java.util.stream.Collectors;
 /**
  * 店铺端 BFF · 店铺在售商品编排。
  * <p>只做页面编排与聚合，不持有/复制 store 域与 goods-center 的任何实体与表：
- * 商品数据经 {@link StoreClient} owner 接口调 store 域（storeId 取登录态，归属收敛在本层），
+ * 商品数据经 {@link StoreClient} 调 store 域（作用域 storeId 由本层从登录态取、无条件写进域入参 DTO，
+ * 收敛在本层，见 cross-cutting 第 22 条），
  * 分类/品牌下拉与「按 SKU 编码反查中台模板」经 {@link GoodsCenterClient} 调 goods-center。</p>
  * <p><b>审核门禁（R9）</b>：{@code /goods/**} 全部接口（含读接口）先经
  * {@link #assertShopApprovedAndGetStoreId()} 校验「我的店铺」{@code status == 2}，
@@ -77,50 +78,57 @@ public class StoreGoodsBffService {
     // ---- 商品（数据在 store 域，经 owner 接口）----
 
     /**
-     * 我的商品分页（仅当前店主名下）：域分页 + 分类全路径读时解析（降级不阻断）
+     * 我的商品分页（仅当前店主名下）：域分页 + 分类全路径读时解析（降级不阻断）。
+     * <p>作用域由本层从登录态写进域入参 DTO 并<b>无条件覆盖</b>（页面入参复用同一份 DTO，
+     * 页面不提供该字段；cross-cutting 第 22 条）。</p>
      */
     public PageResult<StoreGoodsSpuPageItemVO> page(StoreGoodsSpuPageQueryDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
-        PageResult<StoreGoodsSpuPageItemVO> result = callStore(() -> storeClient.pageStoreGoods(storeId, dto));
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
+        PageResult<StoreGoodsSpuPageItemVO> result = callStore(() -> storeClient.pageStoreGoods(dto));
         fillCategoryPaths(result.getRecords());
         return result;
     }
 
     /**
-     * 我的商品详情：域详情 + 中台关联版本比对（R10）+ 分类全路径（降级不阻断）
+     * 我的商品详情：域详情 + 中台关联版本比对（R10）+ 分类全路径（降级不阻断）。
+     * <p>作用域写进 {@link StoreGoodsSpuDetailQueryDTO}（域侧是「传了就按本店筛」）；
+     * 出参<b>逐字段手工映射</b>为商户端页面模型，不整份转发域出参（管理端超集，
+     * 含 {@code lockUser} 等商户端不下发的字段），见 {@link #toBffVO}。</p>
      */
     public StoreGoodsSpuDetailBffVO detail(Long id) {
         Long storeId = assertShopApprovedAndGetStoreId();
-        StoreGoodsSpuDetailVO domain = callStore(() -> storeClient.storeGoodsDetail(id, storeId));
+        StoreGoodsSpuDetailQueryDTO query = new StoreGoodsSpuDetailQueryDTO();
+        query.setStoreId(storeId);
+        StoreGoodsSpuPlatformDetailVO domain = callStore(() -> storeClient.storeGoodsDetail(id, query));
 
-        StoreGoodsSpuDetailBffVO vo = new StoreGoodsSpuDetailBffVO();
-        BeanUtils.copyProperties(domain, vo);
+        StoreGoodsSpuDetailBffVO vo = toBffVO(domain);
         vo.setCategoryPath(resolveCategoryPath(domain.getCategoryId()));
         fillCenterLink(vo, domain);
         return vo;
     }
 
     /**
-     * 新增商品（可一并落 SKU；SPU 与 SKU 均以下架态起步）
+     * 新增商品（可一并落 SKU；SPU 与 SKU 均以下架态起步）；作用域由本层无条件覆盖
      */
     public Long save(StoreGoodsSpuSaveDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
-        return callStore(() -> storeClient.saveStoreGoods(storeId, dto));
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
+        return callStore(() -> storeClient.saveStoreGoods(dto));
     }
 
     /**
-     * 修改商品（基础信息 + 规格配置；存在上架 SKU 时规格配置只读由域校验）
+     * 修改商品（基础信息 + 规格配置；存在上架 SKU 时规格配置只读由域校验）；作用域由本层无条件覆盖
      */
     public void update(Long id, StoreGoodsSpuUpdateDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
         callStore(() -> {
-            storeClient.updateStoreGoods(id, storeId, dto);
+            storeClient.updateStoreGoods(id, dto);
             return null;
         });
     }
 
     /**
-     * 删除商品（存在上架 SKU 时拒绝；否则级联软删 SKU）
+     * 删除商品（存在上架 SKU 时拒绝；否则级联软删 SKU）。
+     * <p>作用域是本层从登录态取的值（域侧按 {@code id + store_id} 双条件删除）。</p>
      */
     public void delete(Long id) {
         Long storeId = assertShopApprovedAndGetStoreId();
@@ -131,54 +139,55 @@ public class StoreGoodsBffService {
     }
 
     /**
-     * SKU 整单替换（未上架可增/改/删；已上架须原样保留）
+     * SKU 整单替换（未上架可增/改/删；已上架须原样保留）；作用域由本层无条件覆盖
      */
     public void replaceSkus(Long id, StoreGoodsSkuReplaceDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
         callStore(() -> {
-            storeClient.replaceStoreGoodsSkus(id, storeId, dto);
+            storeClient.replaceStoreGoodsSkus(id, dto);
             return null;
         });
     }
 
     /**
-     * SKU 上下架（反向联动 SPU 上下架由域实现）
+     * SKU 上下架（反向联动 SPU 上下架由域实现）；作用域由本层无条件覆盖
      */
     public void updateSkuShelf(Long spuId, Long skuId, StoreGoodsSkuShelfDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
         callStore(() -> {
-            storeClient.updateStoreGoodsSkuShelf(spuId, skuId, storeId, dto);
+            storeClient.updateStoreGoodsSkuShelf(spuId, skuId, dto);
             return null;
         });
     }
 
     /**
      * 库存管理分页（仅当前店主名下 SKU）：域分页直出，本层不做聚合。
-     * <p>库存三列（总库存 / 占用 / 预警）由域侧读库存表回填；本层不含任何库存口径计算。</p>
+     * <p>库存三列（总库存 / 占用 / 预警）由域侧读库存表回填；本层不含任何库存口径计算。
+     * 作用域由本层无条件覆盖。</p>
      */
     public PageResult<StoreGoodsStockPageItemVO> pageStock(StoreGoodsStockPageQueryDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
-        return callStore(() -> storeClient.pageSkuStock(storeId, dto));
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
+        return callStore(() -> storeClient.pageSkuStock(dto));
     }
 
     /**
-     * 改单行 SKU 库存（{@code warnStock} 传 null = 清除预警）；平台锁定期由域内拒绝
+     * 改单行 SKU 库存（{@code warnStock} 传 null = 清除预警）；平台锁定期由域内拒绝；作用域由本层无条件覆盖
      */
     public void updateSkuStock(Long skuId, StoreGoodsStockUpdateDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
         callStore(() -> {
-            storeClient.updateSkuStock(skuId, storeId, dto);
+            storeClient.updateSkuStock(skuId, dto);
             return null;
         });
     }
 
     /**
-     * 批量设置整批 SKU 的总库存（统一设为同一值，不动预警阈值）
+     * 批量设置整批 SKU 的总库存（统一设为同一值，不动预警阈值）；作用域由本层无条件覆盖
      */
     public void batchUpdateSkuStock(StoreGoodsStockBatchUpdateDTO dto) {
-        Long storeId = assertShopApprovedAndGetStoreId();
+        dto.setStoreId(assertShopApprovedAndGetStoreId());
         callStore(() -> {
-            storeClient.batchUpdateSkuStock(storeId, dto);
+            storeClient.batchUpdateSkuStock(dto);
             return null;
         });
     }
@@ -275,17 +284,55 @@ public class StoreGoodsBffService {
 
     /**
      * 审核门禁（R9）：校验当前店主的店铺已审核通过（{@code status == 2}），返回 store_id。
-     * <p>门禁覆盖 {@code /goods/**} 的读与写；未开店、审核中、已驳回、已通过前一律拒绝。</p>
+     * <p>门禁覆盖 {@code /goods/**} 的读与写；未开店、审核中、已驳回、已通过前一律拒绝。
+     * 域侧详情接口「查不到返空、不抛」，故这里判的是 {@code null}（未开店）而非下游 4xx。</p>
      *
      * @return 当前店主账号 id（== store_id，账号店同 ID）
      */
     private Long assertShopApprovedAndGetStoreId() {
         Long storeId = currentStoreId();
-        ShopVO shop = callStore(() -> storeClient.mineShop(storeId));
+        ShopVO shop = callStore(() -> storeClient.getShop(storeId));
         if (shop == null || !Objects.equals(shop.getStatus(), SHOP_STATUS_APPROVED)) {
             throw new ServiceException(403, "店铺未通过审核，暂不可管理商品");
         }
         return storeId;
+    }
+
+    /**
+     * 域详情 → 商户端页面模型：<b>逐字段手工映射</b>（不用 {@code BeanUtils.copyProperties}）。
+     * <p>域出参是管理端超集，整份转发会把不该下发的字段带给商户端页面：
+     * <ul>
+     *   <li>{@code lockUser}（锁定人）<b>不映射</b>——商户端只展示锁定原因与时间（既有口径）；</li>
+     *   <li>{@code storeName} / {@code categoryPath} 也不从域取：前者是跨店视角的字段、后者由本层读时解析。</li>
+     * </ul>
+     * 新增域字段时的默认动作是<b>不映射</b>——要下发得先在这一行显式写出来。</p>
+     *
+     * @param src 域详情（非空）
+     * @return 商户端页面模型
+     */
+    private static StoreGoodsSpuDetailBffVO toBffVO(StoreGoodsSpuPlatformDetailVO src) {
+        StoreGoodsSpuDetailBffVO vo = new StoreGoodsSpuDetailBffVO();
+        vo.setId(src.getId());
+        vo.setStoreId(src.getStoreId());
+        vo.setName(src.getName());
+        vo.setCategoryId(src.getCategoryId());
+        vo.setCategoryName(src.getCategoryName());
+        vo.setBrandId(src.getBrandId());
+        vo.setBrandName(src.getBrandName());
+        vo.setMainImage(src.getMainImage());
+        vo.setImageList(src.getImageList());
+        vo.setDescription(src.getDescription());
+        vo.setSpecConfig(src.getSpecConfig());
+        vo.setShelfStatus(src.getShelfStatus());
+        vo.setLockStatus(src.getLockStatus());
+        vo.setLockReason(src.getLockReason());
+        vo.setLockTime(src.getLockTime());
+        vo.setGoodsSpuId(src.getGoodsSpuId());
+        vo.setCenterVersion(src.getCenterVersion());
+        vo.setSkus(src.getSkus());
+        vo.setCreateTime(src.getCreateTime());
+        vo.setUpdateTime(src.getUpdateTime());
+        return vo;
     }
 
     /**
@@ -296,7 +343,7 @@ public class StoreGoodsBffService {
      * @param vo     页面态详情（写入 centerOutdated/centerMissing/centerSpu）
      * @param domain 域返回的详情
      */
-    private void fillCenterLink(StoreGoodsSpuDetailBffVO vo, StoreGoodsSpuDetailVO domain) {
+    private void fillCenterLink(StoreGoodsSpuDetailBffVO vo, StoreGoodsSpuPlatformDetailVO domain) {
         if (domain.getGoodsSpuId() == null) {
             // 未关联中台：无需比对，前端不展示同步入口
             vo.setCenterOutdated(false);

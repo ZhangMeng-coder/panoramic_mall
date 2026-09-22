@@ -16,10 +16,11 @@ import java.util.function.Supplier;
 /**
  * 店铺端 BFF · 店主店铺编排。
  * <p>只做页面编排，不持有/复制 store 域任何实体与表（store_shop 归 store 域）；
- * 全部经内部 Feign 调 store 域 owner 接口，并按 Feign 规约熔断。
+ * 全部经内部 Feign 调 store 域内部接口，并按 Feign 规约熔断。
  * 「账号店同 ID」：店主账号 id 即其店铺 id（store_shop.id），本模块以
- * {@code UserContext} 当前登录店主账号 id 作为 store_id 传给域（owner 归属收敛在 BFF）。
- * mine 未开店时 store 域返回 200+null，本层原样透出 null（契约，勿改抛异常）。
+ * {@code UserContext} 当前登录店主账号 id 作为作用域写入域入参 DTO（作用域收敛在 BFF，
+ * 页面不提供、传了也不采用）。
+ * 未开店时 store 域返回 200+null，本层原样透出 null（契约，勿改抛异常）。
  * 下游业务异常（400 参数/业务，如“审核中锁定/提交前请补全”）原样透传由统一异常处理还原
  * RespData 给页面；连接失败 / 熔断开启等降级为友好提示，避免拖垮调用方。</p>
  */
@@ -38,27 +39,29 @@ public class StoreShopBffService {
      */
     public ShopVO mine() {
         Long storeId = currentStoreId();
-        return call(() -> storeClient.mineShop(storeId));
+        return call(() -> storeClient.getShop(storeId));
     }
 
     /**
      * 保存草稿（无店则建 id=store_id 的店；已驳回回草稿并清审核留痕）
+     * <p>作用域<b>无条件覆盖</b>为登录态里的店主账号 id（cross-cutting 第 22 条）：
+     * 页面入参与此处复用同一份 {@link ShopSaveDTO}，页面不提供该字段，即便传了也不用。</p>
      */
     public void saveDraft(ShopSaveDTO dto) {
-        Long storeId = currentStoreId();
+        dto.setStoreId(currentStoreId());
         call(() -> {
-            storeClient.saveShop(storeId, dto);
+            storeClient.saveShop(dto);
             return null;
         });
     }
 
     /**
-     * 提交审核（store 域做完整资质校验→待审核）
+     * 提交审核（store 域做完整资质校验→待审核）；作用域同 {@link #saveDraft}，由本层无条件覆盖
      */
     public void submit(ShopSaveDTO dto) {
-        Long storeId = currentStoreId();
+        dto.setStoreId(currentStoreId());
         call(() -> {
-            storeClient.submitShop(storeId, dto);
+            storeClient.submitShop(dto);
             return null;
         });
     }

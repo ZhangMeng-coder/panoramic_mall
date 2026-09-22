@@ -15,6 +15,14 @@ import java.util.List;
 public class StoreGoodsStockBatchUpdateDTO {
 
     /**
+     * 作用域：所属店铺 id（= 店主账号 id），逐个 SKU 校验归属用。
+     * <p>⚠ 值由端 BFF 自登录态取（{@code LoginUser.getId()}）并**无条件覆盖**，页面不得提供；
+     * 只在域入口必填（{@link StoreScopeGroup}），见 cross-cutting 第 22 条。</p>
+     */
+    @NotNull(message = "店铺ID不能为空", groups = StoreScopeGroup.class)
+    private Long storeId;
+
+    /**
      * 待设置的 SKU id 集合（必填，至少一个）
      */
     @NotEmpty(message = "请至少选择一个 SKU")

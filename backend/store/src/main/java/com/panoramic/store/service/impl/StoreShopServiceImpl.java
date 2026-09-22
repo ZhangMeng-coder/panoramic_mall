@@ -32,10 +32,10 @@ import java.util.stream.Collectors;
 
 /**
  * 店铺服务实现（store 域下沉纯域）。
- * <p>「账号店同 ID」（一人一店）：店铺主键 id == 店主账号 id，owner 方法以 store_id(=账号 id) 直查/直写
- * 「id==store_id 的店」；platform 方法全量。<b>域内不做权限判断</b>：owner/platform 的分流由端 BFF
- * 选择调用哪一侧接口决定（store-bff 走 owner 侧并从登录态取 store_id，admin 走 platform 侧），
- * 域内只按「作用对象表是否带 store_id 列 + 方法语义」执行，scope 由方法本身的 store_id 参数天然限定。</p>
+ * <p>「账号店同 ID」（一人一店）：店铺主键 id == 店主账号 id，故店铺详情就是对某一行的直查
+ * （{@link #getShop}）——店主侧查自己账号 id 那份、管理端跨店查同一行，<b>不按端分侧</b>。
+ * <b>域内不做权限判断</b>：写方法的 storeId 取自入参 DTO 并由端 BFF 从登录态覆盖，
+ * 域内只按方法语义执行。查不到一律返空、不抛（「未开店」是正常态）。</p>
  * <p>身份头只用于两处：MyBatis-Plus 审计字段自动填充（{@code UserType:UserId}）与
  * {@code audit_by} 直取 X-User-Id 留痕（D6，不与平台账号联查）。缺头则留空，不回 401。</p>
  */
@@ -44,12 +44,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop> implements StoreShopService {
 
-    // ---- owner（store-bff 调用，仅作用于 id==store_id 的店）----
-
     @Override
-    public ShopVO mine(Long storeId) {
-        // 账号店同 ID：id==store_id；未开店 getById 返回 null（契约：HTTP 200 空 body → Feign null）
-        return toVO(getById(storeId));
+    public ShopVO getShop(Long id) {
+        // 查不到 = null（HTTP 200 空 body → Feign null）：未开店 / 店铺不可见由调用方各自重判
+        return toVO(getById(id));
     }
 
     @Override
@@ -116,8 +114,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         }
     }
 
-    // ---- platform（admin，X-User-Type=admin，全量）----
-
     @Override
     public PageResult<ShopVO> adminPage(ShopPageQueryDTO dto) {
         Page<StoreShop> shopPage = dto.toPage(StoreShop.class);
@@ -132,11 +128,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
                         .orderByDesc(StoreShop::getSubmitTime)
                         .orderByDesc(StoreShop::getId));
         return new PageResult<>(result.getTotal(), toVOList(result.getRecords()));
-    }
-
-    @Override
-    public ShopVO adminDetail(Long id) {
-        return toVO(getByIdOrThrow(id));
     }
 
     @Override
@@ -250,17 +241,6 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         if (!StringUtils.hasText(value)) {
             missing.add(label);
         }
-    }
-
-    /**
-     * 根据 ID 查询店铺（不存在抛出业务异常）
-     */
-    private StoreShop getByIdOrThrow(Long id) {
-        StoreShop shop = getById(id);
-        if (shop == null) {
-            throw new ServiceException("店铺不存在");
-        }
-        return shop;
     }
 
     private List<ShopVO> toVOList(List<StoreShop> shops) {

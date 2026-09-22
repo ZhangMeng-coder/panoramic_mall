@@ -1,5 +1,6 @@
 package com.panoramic.admin.bff;
 
+import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.ShopAuditDTO;
@@ -14,8 +15,9 @@ import java.util.function.Supplier;
 
 /**
  * admin 端 BFF · 店铺管理编排。
- * <p>只做页面编排与聚合，不持有/复制 store 域任何实体与表；全部经内部 Feign 调 store 域
- * platform 接口（不传 store_id → 全量），共享 DTO/VO 同源在 store-interface（com.panoramic.contract.store），
+ * <p>只做页面编排与聚合，不持有/复制 store 域任何实体与表；全部经内部 Feign 调 store 域内部接口
+ * （店铺能力本就无作用域维度：不传 store_id → 全量），共享 DTO/VO 同源在 store-interface
+ * （com.panoramic.contract.store），
  * 并按 Feign 规约熔断：下游业务异常（400 参数/业务）原样透传由统一异常处理还原 RespData 给页面；
  * 连接失败 / 熔断开启等降级为友好提示。不读店主账号（D6：admin 只管理店铺数据，不显示店主登录账号）。</p>
  */
@@ -37,10 +39,16 @@ public class StoreShopBffService {
     }
 
     /**
-     * 店铺详情（无店主账号信息）
+     * 店铺详情（无店主账号信息）。
+     * <p>域侧「查不到返空、不抛」（同一条能力服务所有调用方），故 404 的话术由本层定：
+     * 这里转成<b>本层自己的</b>「店铺不存在」，不透传域侧话术。</p>
      */
     public ShopVO shopDetail(Long id) {
-        return call(() -> storeClient.shopDetail(id));
+        ShopVO shop = call(() -> storeClient.getShop(id));
+        if (shop == null) {
+            throw new ServiceException("店铺不存在");
+        }
+        return shop;
     }
 
     /**

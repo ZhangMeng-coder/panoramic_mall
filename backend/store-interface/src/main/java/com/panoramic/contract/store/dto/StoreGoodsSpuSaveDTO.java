@@ -19,6 +19,14 @@ import java.util.List;
 public class StoreGoodsSpuSaveDTO {
 
     /**
+     * 作用域：所属店铺 id（= 店主账号 id），落库为 {@code store_goods_spu.store_id}。
+     * <p>⚠ 值由端 BFF 自登录态取（{@code LoginUser.getId()}）并**无条件覆盖**，页面不得提供；
+     * 只在域入口必填（{@link StoreScopeGroup}），见 cross-cutting 第 22 条。</p>
+     */
+    @NotNull(message = "店铺ID不能为空", groups = StoreScopeGroup.class)
+    private Long storeId;
+
+    /**
      * 商品名称
      */
     @NotBlank(message = "商品名称不能为空")

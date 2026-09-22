@@ -7,6 +7,7 @@ import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuBatchQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuDetailQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
@@ -19,7 +20,6 @@ import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
-import com.panoramic.contract.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
@@ -41,54 +41,52 @@ import java.util.List;
  * <p>本切片起 store 域只持 {@code store_shop}（账号店同 ID：店铺主键 == 店主账号 id），不再向页面暴露公网路由，
  * 由各端 BFF 经本接口内部调用。规约（见 CLAUDE.md）：
  * <ul>
- *   <li>入参/出参 DTO 与接口同源维护在 store-interface（store 域服务端、store-bff/admin 客户端引用同一份类型）；</li>
+ *   <li>入参/出参 DTO 与接口同源维护在 store-interface（store 域服务端、store-bff/admin/mall-bff 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
  *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
  *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
- * 数据权限口径（D5）：owner 方法（store-bff 触发）强制携带 store_id，store 域只作用于「id==store_id 的店」；
- * platform 方法（admin 触发）不传 store_id，全量操作。owner / platform 的分流由「端 BFF 调哪一侧方法」
- * 决定，域内不做身份判断（不读 X-User-Type 判权；该头只用于审计留痕）。
+ * <b>接口按能力通用、不按端分侧</b>（cross-cutting 第 22/23 条）：同一能力只有一条路径，路径段与方法名里
+ * 不出现端别子段；数据作用域（{@code storeId}）**不进路径段**，只是入参 DTO 的一个字段——
+ * <b>传了就按它筛，没传就是不限定</b>。域内不判身份、不读 {@code X-User-Type} 判权（该头只用于审计留痕），
+ * 「谁该传什么」全在端 BFF：值取自登录态（{@code LoginUser.getId()}），<b>禁止</b>从前端入参透传。
+ * 各能力的作用域必填性见 {@code docs/contracts/store.md} 第三节。
  * 服务端路径与映射需与 store 域内部控制器一一对应（前缀 /internal/store）。</p>
  */
 @FeignClient(name = "store", contextId = "storeClient",
         path = "/internal/store", configuration = StoreFeignConfiguration.class)
 public interface StoreClient {
 
-    // ---- owner（store-bff 调用，必带 store_id；X-User-Type=store）----
+    // ---- 店铺 ----
 
     /**
-     * 我的店铺（store_id == 店主账号 id）。无店返回 HTTP 200 空 body → Feign 解出 null；
-     * 调用方以 null 判定「未开店」。
+     * 店铺详情（无店主账号信息）。
+     * <p><b>一条路径服务所有调用方</b>：店主侧传自己的 {@code storeId}（= 账号 id）、管理端与 C 端
+     * 跨店传 {@code id} 不传作用域——差别只在调用方传什么，域内不分侧。
+     * <p>⚠ 查不到一律<b>返空</b>（HTTP 200 空 body → Feign 解出 {@code null}），域内不抛；
+     * 「未开店」是正常态，不是故障。调用方各自重判：store-bff 判「未开店」、admin 转本层
+     * 「店铺不存在」、mall-bff 判「店铺不可见」（见 store.md 第三节）。
      */
-    @GetMapping("/shops/mine")
-    ShopVO mineShop(@RequestParam("storeId") Long storeId);
+    @GetMapping("/shops/{id}")
+    ShopVO getShop(@PathVariable("id") Long id);
 
     /**
-     * 保存草稿（无店则建 id=storeId 的店；待审核/已通过状态机守卫）
+     * 保存草稿（{@code dto.storeId} 必填：无店则建 id=storeId 的店；待审核/已通过状态机守卫）
      */
-    @PostMapping("/shops/{storeId}/save")
-    void saveShop(@PathVariable("storeId") Long storeId, @RequestBody ShopSaveDTO dto);
+    @PostMapping("/shops/save")
+    void saveShop(@RequestBody ShopSaveDTO dto);
 
     /**
-     * 提交审核（完整资质校验 → 待审核）
+     * 提交审核（{@code dto.storeId} 必填：完整资质校验 → 待审核）
      */
-    @PostMapping("/shops/{storeId}/submit")
-    void submitShop(@PathVariable("storeId") Long storeId, @RequestBody ShopSaveDTO dto);
-
-    // ---- platform（admin 调用，不传 store_id，全量；X-User-Type=admin）----
+    @PostMapping("/shops/submit")
+    void submitShop(@RequestBody ShopSaveDTO dto);
 
     /**
-     * 店铺分页（状态/关键字筛选，全量）
+     * 店铺分页（状态/关键字筛选，全量——本能力存在合法全量视角，故无作用域字段）
      */
     @GetMapping("/shops/page")
     PageResult<ShopVO> pageShops(@SpringQueryMap ShopPageQueryDTO dto);
-
-    /**
-     * 店铺详情（无店主账号信息）
-     */
-    @GetMapping("/shops/{id}")
-    ShopVO shopDetail(@PathVariable("id") Long id);
 
     /**
      * 审核通过/驳回（仅对待审核条件更新）
@@ -96,89 +94,97 @@ public interface StoreClient {
     @PostMapping("/shops/{id}/audit")
     void auditShop(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto);
 
-    // ---- owner：店铺在售商品（store-bff 调用，必带 store_id；X-User-Type=store）----
-    // 说明：owner 侧只作用于 store_id 名下的商品，由 store-bff 从登录态取 store_id 传入；
-    // platform 侧对应物见本文件尾部同名 platform 方法（不传 store_id、全量，admin BFF 调用），
-    // 两侧分流由「端 BFF 调哪一侧」决定，域内不做身份判断（D5）。
-    // 出参 StoreGoodsSpuDetailVO 不含中台版本比对结果，由 store-bff 编排时补充。
+    /**
+     * 店铺下拉选项（店铺商品列表「按店铺筛选」用）。
+     * <p>不按审核状态过滤：未审核通过的店铺本就没有商品。</p>
+     */
+    @GetMapping("/shops/options")
+    List<ShopOptionVO> listShopOptions();
+
+    // ---- 店铺在售商品（店主侧写读：作用域 storeId 必填，无全量视角）----
+    // 作用域在 DTO 字段里（不进路径段）；值由端 BFF 从登录态取并无条件覆盖（cross-cutting 第 22 条）。
+    // 管理端的跨店视角走本文件尾部的跨店通用分页（pageStoreGoodsCrossShop），不在这几条上开口子。
 
     /**
-     * 我的商品分页（仅 store_id 名下的商品）
+     * 我的商品分页（仅 {@code dto.storeId} 名下的商品）
      */
     @GetMapping("/goods/spu/page")
-    PageResult<StoreGoodsSpuPageItemVO> pageStoreGoods(@RequestParam("storeId") Long storeId,
-                                                       @SpringQueryMap StoreGoodsSpuPageQueryDTO dto);
+    PageResult<StoreGoodsSpuPageItemVO> pageStoreGoods(@SpringQueryMap StoreGoodsSpuPageQueryDTO dto);
 
     /**
-     * 我的商品详情（含 SKU 列表）
+     * 店铺商品详情（含 SKU 列表与锁定信息）。
+     * <p>作用域 {@code query.storeId} <b>可空</b>（该能力存在合法全量视角）：传了就按它筛
+     * （店主侧传自己的店，不属本店与不存在同样报 400、不泄露存在性），没传就是不限定（管理端 / C 端跨店详情）。
+     * <p>出参统一为管理端超集 {@link StoreGoodsSpuPlatformDetailVO}（含 {@code lockUser} / {@code storeName}）——
+     * <b>域返回的字段不等于可以对外暴露</b>：C 端与商户端输出前必须由各自端 BFF <b>逐字段手工映射裁剪</b>
+     * （见 store.md 第三节、cross-cutting 第 17/19/20 条）。域内不做可见性判断。
      */
     @GetMapping("/goods/spu/{id}")
-    StoreGoodsSpuDetailVO storeGoodsDetail(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId);
+    StoreGoodsSpuPlatformDetailVO storeGoodsDetail(@PathVariable("id") Long id,
+                                                   @SpringQueryMap StoreGoodsSpuDetailQueryDTO query);
 
     /**
-     * 新增商品（返回新商品 id；SKU 一律以下架态落库）
+     * 新增商品（返回新商品 id；SKU 一律以下架态落库）。{@code dto.storeId} 必填
      */
     @PostMapping("/goods/spu")
-    Long saveStoreGoods(@RequestParam("storeId") Long storeId, @RequestBody StoreGoodsSpuSaveDTO dto);
+    Long saveStoreGoods(@RequestBody StoreGoodsSpuSaveDTO dto);
 
     /**
-     * 修改商品（存在上架 SKU 时规格配置只读；centerVersion 非空则刷新关联版本戳）
+     * 修改商品（{@code dto.storeId} 必填；存在上架 SKU 时规格配置只读；centerVersion 非空则刷新关联版本戳）
      */
     @PutMapping("/goods/spu/{id}")
-    void updateStoreGoods(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId,
-                          @RequestBody StoreGoodsSpuUpdateDTO dto);
+    void updateStoreGoods(@PathVariable("id") Long id, @RequestBody StoreGoodsSpuUpdateDTO dto);
 
     /**
-     * 删除商品（存在上架 SKU 时拒绝；否则软删并级联软删其下全部 SKU）
+     * 删除商品（存在上架 SKU 时拒绝；否则软删并级联软删其下全部 SKU）。
+     * <p>⚠ 本方法刻意<b>不并 DTO</b>（cross-cutting 第 23 条的唯一例外）：路径变量之外只有 {@code storeId}
+     * 一个参数，为它单独造一份一次性 DTO 纯属形式开销（与 trade-center 购物车三条同款先例）。
+     * 代价是要守住「域内按 {@code id + store_id} 双条件删除」这条不变量——传参写反时命中 0 行、
+     * 而不是删掉别人的商品（实现见 {@code StoreGoodsSpuServiceImpl#getOwnedOrThrow}）。
      */
     @DeleteMapping("/goods/spu/{id}")
     void deleteStoreGoods(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId);
 
     /**
-     * SKU 整单替换（未上架可增/改/删；已上架必须原样保留且不得缺失）
+     * SKU 整单替换（{@code dto.storeId} 必填；未上架可增/改/删；已上架必须原样保留且不得缺失）
      */
     @PutMapping("/goods/spu/{id}/skus")
-    void replaceStoreGoodsSkus(@PathVariable("id") Long id, @RequestParam("storeId") Long storeId,
-                               @RequestBody StoreGoodsSkuReplaceDTO dto);
+    void replaceStoreGoodsSkus(@PathVariable("id") Long id, @RequestBody StoreGoodsSkuReplaceDTO dto);
 
     /**
-     * SKU 上下架（驱动所属 SPU 状态联动）
+     * SKU 上下架（{@code dto.storeId} 必填；驱动所属 SPU 状态联动）
      */
     @PutMapping("/goods/spu/{spuId}/skus/{skuId}/shelf")
     void updateStoreGoodsSkuShelf(@PathVariable("spuId") Long spuId, @PathVariable("skuId") Long skuId,
-                                  @RequestParam("storeId") Long storeId,
                                   @RequestBody StoreGoodsSkuShelfDTO dto);
 
     /**
-     * SKU 库存分页（owner 侧，仅 store_id 名下；按 SKU 平铺一行一条，
+     * SKU 库存分页（仅 {@code dto.storeId} 名下；按 SKU 平铺一行一条，
      * 支持商品名 / SKU 编码关键字、上下架筛选、仅看低库存）。
      * <p>出参的 {@code stock} 是库存表里的总库存；可用库存 = {@code stock}
      * （{@code lockedStock} 已于 2026-09-21 废弃，不参与口径、不再写入）。</p>
      */
     @GetMapping("/goods/stock/page")
-    PageResult<StoreGoodsStockPageItemVO> pageSkuStock(@RequestParam("storeId") Long storeId,
-                                                       @SpringQueryMap StoreGoodsStockPageQueryDTO dto);
+    PageResult<StoreGoodsStockPageItemVO> pageSkuStock(@SpringQueryMap StoreGoodsStockPageQueryDTO dto);
 
     /**
-     * 改单行 SKU 库存（owner 侧，仅 store_id 名下）；{@code warnStock} 传 null = 清除预警。
+     * 改单行 SKU 库存（仅 {@code dto.storeId} 名下）；{@code warnStock} 传 null = 清除预警。
      * <p>平台锁定期 owner 侧只读（域内强制拒绝），库存行不存在时按 0 行处理。</p>
      */
     @PutMapping("/goods/stock/{skuId}")
-    void updateSkuStock(@PathVariable("skuId") Long skuId, @RequestParam("storeId") Long storeId,
-                        @RequestBody StoreGoodsStockUpdateDTO dto);
+    void updateSkuStock(@PathVariable("skuId") Long skuId, @RequestBody StoreGoodsStockUpdateDTO dto);
 
     /**
-     * 批量设置整批 SKU 的总库存（owner 侧，单条 IN 更新、不逐行）；平台锁定期只读。
+     * 批量设置整批 SKU 的总库存（{@code dto.storeId} 必填，单条 IN 更新、不逐行）；平台锁定期只读。
      * <p>不属于本店的 SKU 直接拒绝（不静默跳过）。</p>
      */
     @PutMapping("/goods/stock/batch")
-    void batchUpdateSkuStock(@RequestParam("storeId") Long storeId,
-                             @RequestBody StoreGoodsStockBatchUpdateDTO dto);
+    void batchUpdateSkuStock(@RequestBody StoreGoodsStockBatchUpdateDTO dto);
 
-    // ---- platform：店铺在售商品（跨店通用 + 管理端专有的详情/锁定；admin BFF 与 mall-bff 调用）----
-    // 分页（/goods/cross-shop/spu/page）**跨店通用**：不传 store_id 锚点，调用方自设限定条件
+    // ---- 跨店通用（无作用域锚点，限定条件全由调用方自设）----
+    // 分页（/goods/cross-shop/spu/page）与聚合（/goods/facets）**跨店通用**：不传 store_id 锚点，
     //   —— admin BFF「店铺商品管理」走全量，mall-bff C 端浏览固定传 shopStatus/shelfStatus/lockStatus。
-    // 详情与锁定解锁（/goods/platform/spu/**）仍只服务管理端。
+    // 商品详情（/goods/spu/{id} 不传作用域）与批量详情（/goods/spu/batch）同样跨店只读。
     // 锁定语义：锁定 → 名下 SKU 全部级联下架、SPU 随之推导为下架；锁定期 owner 侧整行只读；
     // 仅平台可解锁，解锁不自动恢复上架（由店主手动重新上架）。
 
@@ -201,42 +207,29 @@ public interface StoreClient {
     StoreGoodsSpuFacetVO crossShopFacets(@RequestBody StoreGoodsSpuFacetQueryDTO dto);
 
     /**
-     * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）
-     */
-    @GetMapping("/goods/platform/spu/{id}")
-    StoreGoodsSpuPlatformDetailVO platformStoreGoodsDetail(@PathVariable("id") Long id);
-
-    /**
      * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息，只读）。
      * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次取回多个 SPU 的详情，避免逐行调
-     * {@link #platformStoreGoodsDetail} 造成 N+1。通用于管理端与 C 端，差别只在调用方传入的 id 集合。</p>
+     * {@link #storeGoodsDetail} 造成 N+1。通用于管理端与 C 端，差别只在调用方传入的 id 集合。</p>
      * <p>⚠ 查不到的 id（SPU 已删除）<b>跳过、不出现在出参里</b>，不抛异常——与单条版
-     * {@link #platformStoreGoodsDetail} 取不到即 404 的语义不同：批量场景逐行 404 会让整个列表
+     * {@link #storeGoodsDetail} 取不到即 400 的语义不同：批量场景逐行报错会让整个列表
      * 取不回来，故由调用方按「拿不到 = 商品不存在」处理。</p>
      * <p>⚠ 出参是<b>管理端超集</b>（含 {@code lockUser} / {@code goodsSpuId} 等），C 端输出前必须由
      * mall-bff 裁剪——见 docs/contracts/store.md 第三节与 cross-cutting 第 17/19/20 条。域内不做可见性判断。</p>
      * <p>⚠ 用 {@code POST + @RequestBody} 而非 query 参数：{@code spuIds} 是集合，走 body 规避
      * {@code @SpringQueryMap} 的集合序列化口径问题（与 {@link #pageStoreGoodsCrossShop} / {@link #crossShopFacets} 同口径）。</p>
      */
-    @PostMapping("/goods/platform/spu/batch")
-    List<StoreGoodsSpuPlatformDetailVO> platformSpuBatch(@RequestBody StoreGoodsSpuBatchQueryDTO dto);
+    @PostMapping("/goods/spu/batch")
+    List<StoreGoodsSpuPlatformDetailVO> batchSpuDetail(@RequestBody StoreGoodsSpuBatchQueryDTO dto);
 
     /**
      * 锁定商品（原因必填）：写锁定字段 + 名下 SKU 级联下架 → SPU 推导为下架
      */
-    @PostMapping("/goods/platform/spu/{id}/lock")
+    @PostMapping("/goods/spu/{id}/lock")
     void lockStoreGoods(@PathVariable("id") Long id, @RequestBody StoreGoodsLockDTO dto);
 
     /**
      * 解锁商品：清空锁定字段；<b>不恢复上架</b>（SKU 保持下架，需店主手动上架）
      */
-    @PostMapping("/goods/platform/spu/{id}/unlock")
+    @PostMapping("/goods/spu/{id}/unlock")
     void unlockStoreGoods(@PathVariable("id") Long id);
-
-    /**
-     * 店铺下拉选项（店铺商品列表「按店铺筛选」用）。
-     * <p>不按审核状态过滤：未审核通过的店铺本就没有商品。</p>
-     */
-    @GetMapping("/shops/options")
-    List<ShopOptionVO> listShopOptions();
 }

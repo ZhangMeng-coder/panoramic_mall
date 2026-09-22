@@ -52,6 +52,15 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 状态文案取其中的 `storeAdminLabel`（C 端取的是 `mallLabel`，同一个枚举两个字段）。
 > ⚠ 路径标识用 **`orderNo`**，不是自增 id。
 
+> ⚠ **与上一条相对的另一半：本层**多数**页面入参**直接复用域 DTO**（`ShopSaveDTO` / `StoreGoodsSpuSaveDTO` /
+> `StoreGoodsSpuUpdateDTO` / `StoreGoodsSkuReplaceDTO` / `StoreGoodsSkuShelfDTO` / `StoreGoodsStockUpdateDTO` /
+> `StoreGoodsStockBatchUpdateDTO` / `StoreGoodsSpuPageQueryDTO` / `StoreGoodsStockPageQueryDTO`）——
+> 这些 DTO 带作用域字段 `storeId`，但**页面不提供、也不采用页面传的值**：
+> `StoreShopBffService` / `StoreGoodsBffService` 从登录态取（`type=store` 的 `loginUser.getId()`）后
+> **无条件覆盖**（不是 `if (dto.getStoreId() != null)` 才填），再原样透传给域。
+> 域侧该字段是 `@NotNull(groups = StoreScopeGroup.class)`（缺了即 HTTP 400），
+> 页面入口只跑默认组校验、故页面请求不因缺 `storeId` 被拒 —— 见 [cross-cutting.md](./cross-cutting.md) 第 22 条。
+
 > 「路径」列不带网关前缀 `/store`。例：`/goods/spu/page` 对外完整路径是 `/store/goods/spu/page`。
 
 ## 二、形状规则
@@ -72,18 +81,21 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 来源 | 类型 |
 |---|---|
-| 两个接口模块（`store-interface` 的 `com.panoramic.contract.store.vo`；`goods-center-interface` 的 `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsStockPageItemVO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
+| 两个接口模块（`store-interface` 的 `com.panoramic.contract.store.*`；`goods-center-interface` 的 `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsStockPageItemVO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuPlatformDetailVO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
 | `trade-center-interface`（`com.panoramic.contract.trade`） | 订单（**待实现**）：出参 TradeOrderVO；**域侧入参**（由本层组装后传给域，不是页面入参）TradeOrderPageQueryDTO, TradeOrderShipDTO |
 | **store-bff 私有**（不在任何接口模块，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO`；订单页面入参（**待实现**）：`storebff/dto/StoreOrderPageQueryDTO`, `storebff/dto/StoreOrderShipDTO` |
 
-⚠ `StoreGoodsSpuDetailBffVO` 是 **BFF 独有**的详情出参（在 owner 侧 `StoreGoodsSpuDetailVO` 基础上扩展），
-与 platform 侧的 `StoreGoodsSpuPlatformDetailVO` 是同款「子类扩字段」做法，**两者不可互换**。
+⚠ `StoreGoodsSpuDetailBffVO` 是 **BFF 独有**的详情出参（**不继承任何域类型**）：域详情出参
+`StoreGoodsSpuPlatformDetailVO` 是**管理端超集**（含 `lockUser` / `storeName` / …），
+本层**逐字段手工映射**到自己的 VO（**不用 `BeanUtils.copyProperties`**），
+`lockUser`（锁定人，仅管理端展示）与 `storeName` **刻意不在商户端出参里**——
+换域出参类型时，**不因下游多了字段而扩大下发面**（见 [cross-cutting.md](./cross-cutting.md) 第 17 条）。
 
 ## 五、下游依赖（本层调谁）
 
 | 目标 | 通道 | 内容 |
 |---|---|---|
-| store 域(8083) | Feign `StoreClient`（owner 侧方法） | 店铺 mine/save/submit；在售商品 CRUD 与 SKU 上下架 |
+| store 域(8083) | Feign `StoreClient`（店主的店铺 / 商品能力，作用域写入入参 DTO） | 店铺详情（`getShop`）、店铺保存 / 提交；在售商品 CRUD、SKU 替换与上下架、库存；商品分页 |
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类树、分类全路径、品牌列表、SPU 详情、按 SKU 编码反查 SPU |
 | trade-center(8087) | Feign `TradeCenterClient`（**待实现**） | 商户侧订单分页 / 详情 / 发货（`storeId` 锚点由本层从登录态取） |
 

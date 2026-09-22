@@ -14,7 +14,6 @@ import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
-import com.panoramic.contract.store.vo.StoreGoodsSpuDetailVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
@@ -26,11 +25,16 @@ import java.util.List;
  * 店铺在售商品（SPU）服务（store 域下沉纯域）。
  * <p>own-entity CRUD 直接用 MyBatis-Plus 基类（IService）内置方法；本接口承载店铺商品的
  * 上下架联动、SKU 锁定规则与平台锁定能力（见下）。</p>
- * <p><b>owner 侧</b>（store-bff 调用）：方法必带 {@code storeId}，只作用于 {@code store_id == storeId}
- * 的行（R11）；SKU 侧操作先校验其 SPU 归属。<b>platform 侧</b>（admin BFF 调用）：方法不带 storeId、
- * 跨店全量（{@link #crossShopPage} / {@link #facets} / {@link #platformDetail} / {@link #lock} / {@link #unlock}）；
- * 其中 {@link #crossShopPage} / {@link #facets} 已通用化为跨店通用（调用方自设限定条件），mall-bff 亦调用。
- * 两侧的分流由端 BFF 选择调哪一侧方法决定，域内不做身份判断。</p>
+ * <p><b>按能力分组，不按端分侧</b>（cross-cutting 第 22/23 条）：
+ * <ul>
+ *   <li><b>有作用域维度</b>（{@code storeId} 必填，无全量视角）：{@link #page} / {@link #detail}
+ *       （作用域可空，见其注释）/ {@link #save} / {@link #update} / {@link #delete} /
+ *       {@link #replaceSkus} / {@link #updateSkuShelf} / 库存三条——只作用于 {@code store_id == storeId}
+ *       的行（R11），SKU 侧操作先校验其 SPU 归属；</li>
+ *   <li><b>跨店通用</b>（无锚点，调用方自设限定条件）：{@link #crossShopPage} / {@link #facets} /
+ *       {@link #details} / {@link #lock} / {@link #unlock}。</li>
+ * </ul>
+ * 「谁传什么作用域」全由端 BFF 决定，域内不做身份判断、不按端分流。</p>
  * <p>规则口径：
  * <ul>
  *   <li>R1 新增：SPU 与全部 SKU 一律以下架态落库；每个 SKU 价格必填且 ≥0.01；</li>
@@ -40,7 +44,7 @@ import java.util.List;
  *   <li>R6：存在上架 SKU 时 {@code spec_config} 不可改；</li>
  *   <li>R8：存在上架 SKU 时拒绝删 SPU；否则软删并级联软删其下全部 SKU；</li>
  *   <li>R12 平台锁定：锁定把名下 SKU 全部级联下架、SPU 随之推导为下架（推导规则不变）；
- *       锁定期 owner 侧的改/删/改 SKU/上下架 一律拒绝（整行只读）；仅平台可解锁，
+ *       锁定期作用域内的改/删/改 SKU/上下架/改库存 一律拒绝（整行只读）；解锁是独立能力，
  *       解锁不自动恢复上架（由店主手动重新上架）。</li>
  * </ul>
  * <b>域内不做审核门禁</b>：店铺 {@code status == 2} 的判断由端 BFF 编排时前置（R9）。</p>
@@ -57,14 +61,18 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     PageResult<StoreGoodsSpuPageItemVO> page(Long storeId, StoreGoodsSpuPageQueryDTO dto);
 
     /**
-     * 我的商品详情（含 SKU 列表）。
-     * <p>仅返回店铺侧字段；中台版本比对结果由 store-bff 编排时补充（纯域不调中台）。</p>
+     * 商品详情（含 SKU 列表与锁定信息），回填所属店铺名。
+     * <p><b>一条能力一个方法</b>（cross-cutting 第 22 条）：作用域 {@code storeId} <b>可空</b>——
+     * 传了就按「id + store_id」双条件取行（店主侧只看本店，不属本店与不存在同样报「商品不存在」、
+     * 不泄露存在性），没传就是不限定（管理端 / C 端跨店详情，取不到即报「商品不存在」）。</p>
+     * <p>⚠ 出参是<b>管理端超集</b>（含 {@code lockUser} / {@code storeName} 等）：
+     * 「域返回了」不等于「可以对外下发」，各端 BFF 输出前自行裁剪。</p>
      *
-     * @param storeId 店主账号 id
      * @param id      店铺商品 id
-     * @return 商品详情
+     * @param storeId 作用域（店主账号 id / 店铺 id）；null = 不限定店铺
+     * @return 商品详情（{@code categoryPath} 由端 BFF 读时解析，域不持分类表）
      */
-    StoreGoodsSpuDetailVO detail(Long storeId, Long id);
+    StoreGoodsSpuPlatformDetailVO detail(Long id, Long storeId);
 
     /**
      * 新增商品（可一并落 SKU；SPU 与 SKU 均以下架态起步，price 必填）
@@ -115,10 +123,10 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      */
     void updateSkuShelf(Long storeId, Long spuId, Long skuId, Integer shelfStatus);
 
-    // ---- owner 侧：SKU 库存（库存读写落在 store_goods_sku_stock，本类的职责是归属校验与编排）----
+    // ---- 有作用域维度：SKU 库存（库存读写落在 store_goods_sku_stock，本类的职责是归属校验与编排）----
 
     /**
-     * SKU 库存分页（owner 侧，按 SKU 平铺一行一条；仅 storeId 名下）。
+     * SKU 库存分页（按 SKU 平铺一行一条；仅 storeId 名下）。
      * <p>筛选：{@code keyword}（商品名 / SKU 编码）、{@code shelfStatus}、{@code lowStockOnly}
      * （{@code stock <= warn_stock}）。库存列取自库存表，缺失行按 0 计。</p>
      * <p>读路径无 N+1：店铺过滤走 {@code inSql} 子查询，商品名与库存各一次批量查（R14 第 4 条）。</p>
@@ -130,8 +138,8 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     PageResult<StoreGoodsStockPageItemVO> pageStock(Long storeId, StoreGoodsStockPageQueryDTO dto);
 
     /**
-     * 改单行 SKU 库存（owner 侧）。{@code warnStock} 传 null = 清除预警。
-     * <p>平台锁定期只读（{@link #pageStock} 之外的 owner 侧写操作同样受 R12 约束）。</p>
+     * 改单行 SKU 库存。{@code warnStock} 传 null = 清除预警。
+     * <p>平台锁定期只读（{@link #pageStock} 之外的写操作同样受 R12 约束）。</p>
      *
      * @param storeId 店主账号 id
      * @param skuId   SKU id（经 {@code skuId → sku.spuId → spu.store_id} 链校验归属）
@@ -140,7 +148,7 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     void updateSkuStock(Long storeId, Long skuId, StoreGoodsStockUpdateDTO dto);
 
     /**
-     * 批量设置整批 SKU 的总库存（owner 侧，单条 {@code IN} 更新，不循环逐行）。
+     * 批量设置整批 SKU 的总库存（单条 {@code IN} 更新，不循环逐行）。
      * <p>逐个校验归属：不属于本店的 SKU 直接拒绝，不静默跳过；平台锁定期只读。</p>
      *
      * @param storeId 店主账号 id
@@ -148,7 +156,7 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      */
     void batchUpdateSkuStock(Long storeId, StoreGoodsStockBatchUpdateDTO dto);
 
-    // ---- platform 侧（不带 storeId，跨店通用：分页为 admin BFF 与 mall-bff 共用，详情/锁定为 admin 专有）----
+    // ---- 跨店通用（不带 storeId 锚点：分页/聚合/批量详情为 admin BFF 与 mall-bff 共用，锁定解锁为 admin 专有）----
 
     /**
      * 店铺商品分页（<b>跨店通用</b>：不传 storeId 锚点，调用方自设限定条件）。
@@ -174,22 +182,13 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     StoreGoodsSpuFacetVO facets(StoreGoodsSpuFacetQueryDTO dto);
 
     /**
-     * 店铺商品详情（跨店，不校验归属；含 SKU 列表与锁定信息），额外回填所属店铺名。
-     * <p>{@code categoryPath} 同样由端 BFF 读时解析。</p>
-     *
-     * @param id 店铺商品 id
-     * @return 商品详情（平台侧）
-     */
-    StoreGoodsSpuPlatformDetailVO platformDetail(Long id);
-
-    /**
      * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息），逐条回填所属店铺名。
-     * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次调用取回多个 SPU，替代逐行 {@link #platformDetail}。
+     * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次调用取回多个 SPU，替代逐行调单条 {@link #detail}。
      * <b>SQL 条数与 {@code spuIds} 个数无关</b>（SPU / SKU / 可用库存 / 店铺名 各一次批量查询），
      * SKU 取回后按 {@code spu_id} 内存分组。</p>
      * <p>⚠ 查不到的 id（SPU 已删除）<b>跳过、不出现在出参里，不抛异常</b>。与单条版
-     * {@link #platformDetail}「取不到即报错（404）」的语义<b>刻意不同</b>：购物车行可能引用已被删除的
-     * 商品，逐行 404 会让整个列表取不回来，故由调用方按「拿不到 = 商品不存在」自行处理。</p>
+     * {@link #detail}「取不到即报错（400）」的语义<b>刻意不同</b>：购物车行可能引用已被删除的
+     * 商品，逐行报错会让整个列表取不回来，故由调用方按「拿不到 = 商品不存在」自行处理。</p>
      * <p>出参与管理端详情同形（<b>管理端超集</b>，含 {@code lockUser} / {@code goodsSpuId} 等），
      * <b>不做任何 C 端可见性裁剪</b>——那由 mall-bff 输出前完成（见 docs/contracts/store.md 第三节、
      * cross-cutting 第 17/19/20 条）。{@code categoryPath} 同样由端 BFF 读时解析。</p>
@@ -197,12 +196,12 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @param spuIds 店铺商品 id 集合（null / 空集合直接返回空列表）
      * @return 商品详情列表（按查询返回顺序，不含查不到的 id；调用方按 id 索引，不依赖顺序）
      */
-    List<StoreGoodsSpuPlatformDetailVO> platformDetails(List<Long> spuIds);
+    List<StoreGoodsSpuPlatformDetailVO> details(List<Long> spuIds);
 
     /**
-     * 锁定商品（平台）：写锁定状态/原因/锁定人/锁定时间，并把名下 SKU 全部级联下架，
+     * 锁定商品：写锁定状态/原因/锁定人/锁定时间，并把名下 SKU 全部级联下架，
      * 再由 {@code refreshDerived} 推导 SPU 为下架。已锁定则拒绝重复操作。
-     * <p>锁定期 owner 侧整行只读，仅本方法可解。</p>
+     * <p>锁定期整行只读（作用域内的写操作全数拒绝），仅本方法可解。</p>
      *
      * @param id  店铺商品 id
      * @param dto 锁定请求（原因必填）
@@ -210,7 +209,7 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     void lock(Long id, StoreGoodsLockDTO dto);
 
     /**
-     * 解锁商品（平台）：清空锁定字段。<b>不恢复上架</b>——SKU 保持下架，需店主手动重新上架。
+     * 解锁商品：清空锁定字段。<b>不恢复上架</b>——SKU 保持下架，需店主手动重新上架。
      * 未锁定则拒绝。
      *
      * @param id 店铺商品 id

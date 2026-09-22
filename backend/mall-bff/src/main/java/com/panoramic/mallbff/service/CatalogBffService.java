@@ -13,6 +13,7 @@ import com.panoramic.contract.store.vo.StoreGoodsFacetItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSkuVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuDetailQueryDTO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.common.util.HtmlSanitizer;
 import com.panoramic.mallbff.dto.MallFacetQueryDTO;
@@ -170,8 +171,8 @@ public class CatalogBffService {
      * 三者缺一即 404。⚠ 口径必须与 {@link #goods} 同进同退，否则会出现「列表里搜不到、
      * 却能靠直链打开」的商品（或反之），也会把未过审店铺 / 平台锁定商品漏到前台。</p>
      * <p>判定本身不在这里：走 {@link #visibleDetailOrNull}（可见性的<b>唯一入口</b>，购物车也用同一个），
-     * 本方法只负责「不可见 → 404」这一步。只调用<b>已有</b>的域接口（{@code platformStoreGoodsDetail}
-     * + {@code shopDetail}），不为 C 端新增域方法：域返回的是管理端超集，裁剪在 {@link #toMallDetail} 里做。</p>
+     * 本方法只负责「不可见 → 404」这一步。只调用<b>已有</b>的域接口（跨店商品详情
+     * + 店铺详情），不为 C 端新增域方法：域返回的是管理端超集，裁剪在 {@link #toMallDetail} 里做。</p>
      *
      * @param id 店铺商品 id
      * @return C 端详情（见 {@link MallGoodsDetailVO}）
@@ -202,7 +203,7 @@ public class CatalogBffService {
         if (id == null) {
             return null;
         }
-        StoreGoodsSpuPlatformDetailVO raw = platformDetailOrNull(id);
+        StoreGoodsSpuPlatformDetailVO raw = crossShopDetailOrNull(id);
         return raw != null && isVisible(raw, new HashMap<>()) ? raw : null;
     }
 
@@ -281,9 +282,11 @@ public class CatalogBffService {
      * @param id 店铺商品 id
      * @return 域详情；不存在等业务 4xx 时为 null
      */
-    private StoreGoodsSpuPlatformDetailVO platformDetailOrNull(Long id) {
+    private StoreGoodsSpuPlatformDetailVO crossShopDetailOrNull(Long id) {
         try {
-            return BffFeignCall.call("store", DOWN_MSG, () -> storeClient.platformStoreGoodsDetail(id));
+            // 作用域字段传空 = 不限定店铺（C 端是跨店视角），见 cross-cutting 第 22 条
+            return BffFeignCall.call("store", DOWN_MSG,
+                    () -> storeClient.storeGoodsDetail(id, new StoreGoodsSpuDetailQueryDTO()));
         } catch (ServiceException e) {
             if (!isBusiness4xx(e)) {
                 throw e;
@@ -295,8 +298,10 @@ public class CatalogBffService {
 
     /**
      * 店铺是否「已审核通过」（C 端固定口径的一环）；结果按 storeId 记进备忘录，同一批判定里只查一次。
-     * <p>店铺查询的业务 4xx（店铺不存在）同样按<b>不可见</b>处理——商品挂在一个查不到的店上，
-     * 对顾客而言与已下架无异；下游故障仍原样抛出（<b>不记进备忘录</b>，免得一次故障被当成永久结论）。</p>
+     * <p>店铺详情域接口<b>查不到返空、不抛</b>（同一条能力服务所有调用方），故这里判的是
+     * {@code null}（= 店铺不存在 → 不可见），<b>不再靠捕 4xx</b>：商品挂在一个查不到的店上，
+     * 对顾客而言与已下架无异；下游故障仍走 {@link BffFeignCall} 降级并原样抛出（<b>不记进备忘录</b>，
+     * 免得一次故障被当成永久结论）。</p>
      *
      * @param storeId 店铺 id（可空）
      * @param memo    店铺状态备忘录（调用方持有；查到即写回，null 值表示「查不到 = 未过审」）
@@ -309,17 +314,8 @@ public class CatalogBffService {
         if (memo.containsKey(storeId)) {
             return SHOP_STATUS_APPROVED.equals(memo.get(storeId));
         }
-        Integer status;
-        try {
-            ShopVO shop = BffFeignCall.call("store", DOWN_MSG, () -> storeClient.shopDetail(storeId));
-            status = shop == null ? null : shop.getStatus();
-        } catch (ServiceException e) {
-            if (!isBusiness4xx(e)) {
-                throw e;
-            }
-            log.warn("店铺查询未命中（业务 4xx），按不可见处理: storeId={}, msg={}", storeId, e.getMessage());
-            status = null;
-        }
+        ShopVO shop = BffFeignCall.call("store", DOWN_MSG, () -> storeClient.getShop(storeId));
+        Integer status = shop == null ? null : shop.getStatus();
         memo.put(storeId, status);
         return SHOP_STATUS_APPROVED.equals(status);
     }

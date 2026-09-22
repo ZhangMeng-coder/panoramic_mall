@@ -42,7 +42,7 @@ import java.util.Set;
  * 属 <b>store 域</b>，域不持购物车，本层也不复制任何域的表。</p>
  *
  * <p><b>读路径不产生 N+1</b>：一次 {@code listCartItems} 取回全部行，再一次
- * {@code platformSpuBatch} 取回这些 SPU 的详情（保底 4 条 SQL、与行数无关），
+ * {@code batchSpuDetail} 取回这些 SPU 的详情（保底 4 条 SQL、与行数无关），
  * 然后<b>在内存里</b>按行补信息。⚠ 逐行调详情是 N+1，禁止。</p>
  *
  * <p><b>可见性不变量在本层重判</b>（docs/contracts/cross-cutting.md 第 20 条）：域返回的是
@@ -294,7 +294,7 @@ public class CartBffService {
 
     /**
      * 批量取跨店商品详情（<b>一次调用</b>，与行数无关）。
-     * <p>⚠ 域侧<b>不做 C 端可见性过滤</b>（platform 侧出的是管理端超集），下架 / 锁定 / 未过审的
+     * <p>⚠ 域侧<b>不做 C 端可见性过滤</b>（域出参是管理端超集），下架 / 锁定 / 未过审的
      * SPU 一样会返回；已<b>物理删除</b>的 SPU 则不在出参里——本层据「map 里有没有」区分
      * 「商品还在但不可买」与「商品已删」，页面文案不同。</p>
      *
@@ -314,7 +314,7 @@ public class CartBffService {
         StoreGoodsSpuBatchQueryDTO query = new StoreGoodsSpuBatchQueryDTO();
         query.setSpuIds(spuIds);
         List<StoreGoodsSpuPlatformDetailVO> details = BffFeignCall.call("store", STORE_DOWN_MSG,
-                () -> storeClient.platformSpuBatch(query));
+                () -> storeClient.batchSpuDetail(query));
         Map<Long, StoreGoodsSpuPlatformDetailVO> result = new HashMap<>();
         if (details != null) {
             for (StoreGoodsSpuPlatformDetailVO detail : details) {

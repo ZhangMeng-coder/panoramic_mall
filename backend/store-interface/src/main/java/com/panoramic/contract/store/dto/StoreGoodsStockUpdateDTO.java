@@ -13,6 +13,14 @@ import lombok.Data;
 public class StoreGoodsStockUpdateDTO {
 
     /**
+     * 作用域：所属店铺 id（= 店主账号 id）。
+     * <p>⚠ 值由端 BFF 自登录态取（{@code LoginUser.getId()}）并**无条件覆盖**，页面不得提供；
+     * 只在域入口必填（{@link StoreScopeGroup}），见 cross-cutting 第 22 条。</p>
+     */
+    @NotNull(message = "店铺ID不能为空", groups = StoreScopeGroup.class)
+    private Long storeId;
+
+    /**
      * 总库存（必填，≥0）
      */
     @NotNull(message = "库存不能为空")

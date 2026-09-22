@@ -7,12 +7,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 店铺在售商品详情（store 域出参）。
- * <p>仅含店铺侧字段。中台版本比对结果（centerOutdated / centerSpu / centerMissing）由 store-bff
- * 编排时补充——纯域不调用中台，故不下沉到本类型。</p>
- * <p>含平台锁定字段（lockStatus / lockReason / lockUser / lockTime）：owner 侧只读展示锁定原因与时间
- * （不展示锁定人）；platform 侧经子类 {@code StoreGoodsSpuPlatformDetailVO} 继承并追加店铺名与分类全路径。</p>
- * <p>不含分类全路径（categoryPath）——域不持分类表，路径由端 BFF 读时解析后补在 BFF 自己的 VO 子类上。</p>
+ * 店铺在售商品详情 · 字段基础形状（store 域的详情出参字段集定义在此）。
+ * <p>域内商品详情只有<b>一条</b>能力与<b>一个</b>出参类型（{@link StoreGoodsSpuPlatformDetailVO}，本类的超集），
+ * 不再按端分两种详情：作用域由入参 {@code StoreGoodsSpuDetailQueryDTO.storeId} 决定</p>
+ * <p>本类不含分类全路径（categoryPath）——域不持分类表，路径由端 BFF 读时解析后补在自己的出参上。</p>
+ * <p>含平台锁定字段（lockStatus / lockReason / lockUser / lockTime）：域侧原样返回，
+ * <b>「域返回了」不等于「可以对外下发」</b>——各端 BFF 输出前各自裁剪：
+ * 商户端只展示锁定原因与时间（<b>不展示锁定人</b>，故其页面出参是逐字段手工映射、不继承本类），
+ * C 端整体不暴露锁定信息。</p>
  */
 @Data
 public class StoreGoodsSpuDetailVO {
@@ -89,7 +91,7 @@ public class StoreGoodsSpuDetailVO {
 
     /**
      * 锁定人（UserType:UserId 原串，如 admin:1）。
-     * <p>⚠ 店铺端不展示锁定人；平台侧由子类 {@code StoreGoodsSpuPlatformDetailVO} 继承后展示。</p>
+     * <p>⚠ <b>商户端不展示锁定人</b>（仅管理端展示）；域侧照常返回，裁剪由各端 BFF 出口负责。</p>
      */
     private String lockUser;
 

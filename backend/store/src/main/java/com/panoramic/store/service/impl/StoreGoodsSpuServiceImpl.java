@@ -63,16 +63,16 @@ import java.util.stream.Collectors;
 
 /**
  * 店铺在售商品（SPU）服务实现（store 域下沉纯域）。
- * <p><b>owner 侧（数据权限 R11）</b>：owner 方法入口一律 {@link #getOwnedOrThrow}
+ * <p><b>有作用域维度的方法（数据权限 R11）</b>：入口一律 {@link #getOwnedOrThrow}
  * 以「id + store_id」双条件取行——他人商品与不存在的商品同样报「商品不存在」，
  * 不泄露存在性；SKU 侧操作先经 {@link #getOwnedSkuOrThrow} 校验 SPU 归属。
- * <b>owner 侧锁定只读守卫（R12）</b>：改 / 删 / 改 SKU / 上下架 在取行后立即
- * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。</p>
- * <p><b>platform 侧（跨店通用，调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #facets} / {@link #platformDetail}
+ * <b>锁定只读守卫（R12）</b>：改 / 删 / 改 SKU / 上下架 / 改库存 在取行后立即
+ * {@link #assertNotLocked} 拦截——锁定期整行只读由域内强制，不只靠前端禁用按钮。
+ * ⚠ 删除是唯一保留裸参的方法，故它的删除语句本身也带双条件（见 {@link #delete}）。</p>
+ * <p><b>跨店通用的方法（调用方自设限定条件）</b>：{@link #crossShopPage} / {@link #facets} / {@link #details}
  * 不带 store_id 过滤——{@link #crossShopPage} 供 admin BFF「店铺商品管理」与 mall-bff C 端浏览共用（差别只在传入条件），
- * {@link #facets} 供 mall-bff C 端筛选面板，{@link #platformDetail} / {@link #platformDetails} 供 admin BFF
- * 与 mall-bff（后者是 mall-bff 购物车列表的批量详情，一次取回多个 SPU）；
- * {@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
+ * {@link #facets} 供 mall-bff C 端筛选面板，{@link #details} 供 mall-bff 购物车列表的批量详情（一次取回多个 SPU）；
+ * {@link #detail} 的作用域可空（传了就只查本店）；{@link #lock} / {@link #unlock} 是锁定的唯一写入口。</p>
  * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
@@ -120,9 +120,14 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     @Override
-    public StoreGoodsSpuDetailVO detail(Long storeId, Long id) {
-        StoreGoodsSpuDetailVO vo = new StoreGoodsSpuDetailVO();
-        buildDetail(getOwnedOrThrow(storeId, id), vo);
+    public StoreGoodsSpuPlatformDetailVO detail(Long id, Long storeId) {
+        // 作用域传了就按「id + store_id」双条件取行（不属本店与不存在同样报「商品不存在」，不泄露存在性），
+        // 没传就是不限定（跨店详情：取不到即报「商品不存在」）
+        StoreGoodsSpu spu = storeId == null ? getByIdOrThrow(id) : getOwnedOrThrow(storeId, id);
+        StoreGoodsSpuPlatformDetailVO vo = new StoreGoodsSpuPlatformDetailVO();
+        buildDetail(spu, vo);
+        vo.setStoreName(spu.getStoreId() == null
+                ? "" : shopService.nameMap(List.of(spu.getStoreId())).getOrDefault(spu.getStoreId(), ""));
         return vo;
     }
 
@@ -186,7 +191,15 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         List<Long> skuIds = skuService.listBySpuId(id).stream()
                 .map(StoreGoodsSku::getId)
                 .collect(Collectors.toList());
-        removeById(id);
+        // ⚠ 删除语句本身也带「id + store_id」双条件（而非确权后 removeById(id)）：
+        // 这是本方法保留裸参（(Long, Long) 位置约定不进类型、编译器守不住）时必须自己写死的不变量——
+        // 传参写反时命中 0 行、报「商品不存在」，而不是删掉别人的商品。
+        boolean removed = remove(Wrappers.<StoreGoodsSpu>lambdaQuery()
+                .eq(StoreGoodsSpu::getId, id)
+                .eq(StoreGoodsSpu::getStoreId, storeId));
+        if (!removed) {
+            throw new ServiceException("商品不存在");
+        }
         // 级联逻辑删除其下全部 SKU（走 SKU service）
         skuService.removeBySpuId(id);
         skuStockService.removeBySkuIds(skuIds);
@@ -270,7 +283,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         refreshDerived(spu);
     }
 
-    // ---- owner 侧：SKU 库存（读走批量、写落库存表；本类只管归属校验与编排）----
+    // ---- 有作用域维度：SKU 库存（读走批量、写落库存表；本类只管归属校验与编排）----
 
     @Override
     public PageResult<StoreGoodsStockPageItemVO> pageStock(Long storeId, StoreGoodsStockPageQueryDTO dto) {
@@ -351,7 +364,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         skuStockService.batchUpdateStock(skuIds, dto.getStock());
     }
 
-    // ---- platform 侧（跨店通用：调用方自设限定条件；详情/锁定仍只服务 admin BFF）----
+    // ---- 跨店通用（调用方自设限定条件；批量详情供 mall-bff 购物车，锁定解锁供 admin）----
 
     @Override
     public PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(StoreGoodsSpuCrossShopPageQueryDTO dto) {
@@ -471,17 +484,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     @Override
-    public StoreGoodsSpuPlatformDetailVO platformDetail(Long id) {
-        StoreGoodsSpu spu = getByIdOrThrow(id);
-        StoreGoodsSpuPlatformDetailVO vo = new StoreGoodsSpuPlatformDetailVO();
-        buildDetail(spu, vo);
-        vo.setStoreName(spu.getStoreId() == null
-                ? "" : shopService.nameMap(List.of(spu.getStoreId())).getOrDefault(spu.getStoreId(), ""));
-        return vo;
-    }
-
-    @Override
-    public List<StoreGoodsSpuPlatformDetailVO> platformDetails(List<Long> spuIds) {
+    public List<StoreGoodsSpuPlatformDetailVO> details(List<Long> spuIds) {
         if (spuIds == null || spuIds.isEmpty()) {
             return Collections.emptyList();
         }
@@ -559,10 +562,10 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     // ---- 联动与规则辅助 ----
 
     /**
-     * 组装详情出参（owner / platform 两侧共用，避免复制 JSON 转换与 SKU 组装代码）。
+     * 组装详情出参（单条路径取数；字段映射见下方四参重载）。
      *
-     * @param spu 店铺商品实体（已确权）
-     * @param vo  目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
+     * @param spu 店铺商品实体（已确权或已按 id 取出）
+     * @param vo  目标 VO（域详情统一为 {@link StoreGoodsSpuPlatformDetailVO}）
      */
     private void buildDetail(StoreGoodsSpu spu, StoreGoodsSpuDetailVO vo) {
         // 单条路径保持自己的 SQL 形状（SKU 一条 + 可用库存一条，共 2 条），不借用批量路径的取数方式
@@ -575,8 +578,8 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     /**
      * 组装详情出参（字段映射的唯一实现，单条路径与批量路径共用，避免复制一份映射代码）。
      *
-     * @param spu          店铺商品实体（已确权）
-     * @param vo           目标 VO（owner 为 {@link StoreGoodsSpuDetailVO}，platform 为其子类）
+     * @param spu          店铺商品实体（已确权或已按 id 取出）
+     * @param vo           目标 VO（域详情统一为 {@link StoreGoodsSpuPlatformDetailVO}）
      * @param skuRows      该 SPU 名下的 SKU 列表（单条路径按 SPU 查得；批量路径由全量结果内存分组得到）
      * @param availableMap skuId -> 可用库存（{@code stock}）；缺行按 0 计
      */
@@ -592,7 +595,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     /**
-     * owner 侧锁定只读守卫（R12）：商品被平台锁定期，店主侧改/删/改 SKU/上下架 一律拒绝。
+     * 锁定只读守卫（R12）：商品被平台锁定期，作用域内的改/删/改 SKU/上下架/改库存 一律拒绝。
      *
      * @param spu    店铺商品实体（已确权）
      * @param action 操作名（拼进提示，如「编辑」「删除」「修改 SKU」「上下架」）
@@ -624,7 +627,7 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     /**
-     * 按 id 取商品（platform 侧：跨店，不校验归属），不存在即报错
+     * 按 id 取商品（<b>不限定店铺</b>：作用域未传的跨店详情走这里），不存在即报错
      *
      * @param id 店铺商品 id
      * @return 店铺商品实体

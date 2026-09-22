@@ -172,7 +172,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 目标 | 通道 | 内容 |
 |---|---|---|
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD；分类树与分类全路径 |
-| store(8083) | Feign `StoreClient`（**platform 侧**方法） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉 |
+| store(8083) | Feign `StoreClient`（跨店通用能力：**不传作用域 = 全量**） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉。⚠ 店铺详情走 `getShop`（域侧**查不到返空**，404 文案由本层定）；商品详情走 `storeGoodsDetail`，跨店视角**不传** `storeId` |
 | trade-center(8087) | Feign `TradeCenterClient`（**待实现**） | 平台侧订单分页 / 详情（**只读**，无写动作） |
 
 全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。

@@ -9,6 +9,7 @@ import com.panoramic.contract.goods.vo.CategoryTreeVO;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSpuDetailQueryDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
@@ -31,7 +32,7 @@ import java.util.stream.Collectors;
 /**
  * admin 端 BFF · 店铺商品管理编排（2026-09-12 新增）。
  * <p>只做页面编排与聚合，不持有/复制 store 域与 goods-center 的任何实体与表：
- * 商品数据经 {@link StoreClient} 调 store 域 <b>platform 侧</b>（不带 store_id、跨店全量，
+ * 商品数据经 {@link StoreClient} 调 store 域的<b>跨店通用</b>能力（不带作用域、跨店全量，
  * 权限由本端 {@code @PreAuthorize store:goods:*} 把关）；分类树 / 品牌列表经
  * {@link GoodsCenterClient} 调 goods-center；店铺下拉经 {@link StoreClient} 调 store 域。</p>
  * <p><b>分类子树匹配（A1）</b>：前端级联选择器只回一个 {@code categoryId}，但用户期望
@@ -93,7 +94,9 @@ public class ShopGoodsBffService {
      * @return 详情（含 SKU 列表、锁定信息、storeName）
      */
     public StoreGoodsSpuPlatformDetailVO detailGoods(Long id) {
-        StoreGoodsSpuPlatformDetailVO vo = callStore(() -> storeClient.platformStoreGoodsDetail(id));
+        // 详情的作用域字段可空：管理端是跨店视角，传空 DTO = 不限定店铺（cross-cutting 第 22 条）
+        StoreGoodsSpuPlatformDetailVO vo = callStore(
+                () -> storeClient.storeGoodsDetail(id, new StoreGoodsSpuDetailQueryDTO()));
         vo.setCategoryPath(resolveCategoryPath(vo.getCategoryId()));
         vo.setDescription(HtmlSanitizer.sanitizeRichText(vo.getDescription()));
         return vo;

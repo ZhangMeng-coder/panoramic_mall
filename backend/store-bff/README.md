@@ -12,7 +12,7 @@
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调 | 店主端前端，经网关 `/store/**`（`StripPrefix=1`） | HTTP，返回 `RespData` |
-| 本层调谁 | store 域(8083) | Feign `StoreClient`（**owner 侧**方法），带熔断降级 |
+| 本层调谁 | store 域(8083) | Feign `StoreClient`（店主视角：**作用域取自本层登录态并写进入参 DTO**），带熔断降级 |
 | 本层调谁 | goods-center(8081) | Feign `GoodsCenterClient`，带熔断降级 |
 | 与谁**互不调用** | admin（平台端） | 两端身份空间隔离（D2） |
 
@@ -23,13 +23,13 @@
 | 内容 | 归属 |
 |---|---|
 | 店主账号 `store_user`（注册/登录/登出/me，JWT+Redis，`type=store`，**无 RBAC**） | **store-bff（本模块）** |
-| 店铺 `store_shop` + 审核状态机（owner：mine/save/submit） | store 域（内部 Feign） |
-| 店铺在售商品 `store_goods_spu`/`store_goods_sku`（owner：CRUD + SKU 替换 + 上下架） | store 域（内部 Feign） |
+| 店铺 `store_shop` + 审核状态机（详情 / 保存 / 提交） | store 域（内部 Feign） |
+| 店铺在售商品 `store_goods_spu`/`store_goods_sku`（CRUD + SKU 替换 + 上下架 + 库存） | store 域（内部 Feign） |
 | 分类树 / 品牌列表 / 按 SKU 编码反查中台模板 | goods-center（内部 Feign） |
 | 中台版本比对与「同步」提示（`centerOutdated`/`centerMissing`/`centerSpu`） | **store-bff（本模块编排）**，纯域不调中台 |
 | 分类**全路径**（`categoryPath`）的读时解析 | **store-bff（本模块编排）**，域不持分类表 |
 | 「店铺已审核通过」门禁 | **store-bff（本模块编排）**，域不查店铺状态 |
-| 平台店铺管理（platform：page/detail/audit）与「店铺商品管理」（platform：page/detail/lock/unlock） | admin BFF → store 域（**与本模块无关**） |
+| 平台店铺管理（page/detail/audit）与「店铺商品管理」（page/detail/lock/unlock） | admin BFF → store 域（**与本模块无关**，同一条域接口、不传作用域） |
 
 > 📋 对外接口清单见 [`docs/contracts/store-bff.md`](../../docs/contracts/store-bff.md)（条数与落地状态以该表为准，本 README 不另记）。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
@@ -46,7 +46,8 @@
 
 实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。
 
-> ⚠ **「账号店同 ID」**：当前店主**账号 id 即 store_id**，mine/save/submit 与商品接口均以账号 id 作 store_id 调 store 域 owner 接口（无需按 owner 反查我的店）。
+> ⚠ **「账号店同 ID」**：当前店主**账号 id 即 store_id**，店铺与商品接口均以账号 id 作作用域（`loginUser.getId()`）
+> **无条件覆盖**写进域入参 DTO（页面传了也不采用，见 `docs/contracts/store-bff.md`），无需按账号反查我的店。
 
 ## 三、职责与边界
 
@@ -61,7 +62,7 @@
 
 四条门禁的规则本体全在本层，域侧都不做：
 
-- **店铺已审核通过**：`/goods/**`（**含读接口**）先经 `StoreClient.mineShop(storeId)` 判 `status == 2`，未过审回 `code=403`。**域不查店铺状态**
+- **店铺已审核通过**：`/goods/**`（**含读接口**）先经 `StoreClient.getShop(storeId)` 判 `status == 2`（**返 null 即未开店**，不是故障、不得降级成「暂不可用」），未过审回 `code=403`。**域不查店铺状态**
 - **中台版本同步**：详情调 `GoodsCenterClient.spuDetail()` 比对中台 `version` 与落库 `center_version`，不等则给 `centerOutdated` + `centerSpu`（**覆盖与否由店主决定，不阻断保存**），中台已删/不可达 → `centerMissing`（**不报错**）。**域不调中台、不判版本**
 - **分类全路径**：`categoryPath` 读时调 `GoodsCenterClient.categoryPaths(ids)` 批量补全（页内去重、非 N+1）；**失败只告警、路径留空**，前端回退快照名——展示增强不得拖垮主流程。**域不持分类表**
 - **锁定商品只读**：锁定商品在店主端整行只读，且**不展示锁定人**（仅平台端展示）。域内强制，本层透出
@@ -77,7 +78,7 @@
 ### 4. 边界（本层不做什么）
 
 - **不持域实体、不落域表**：本层只有 `store_user` 一张表，店铺与商品数据全在 store 域
-- **不做数据归属判断**：owner 侧过滤由 store 域按 `store_id` 列做，本层只负责从登录态取出 store_id 传下去
+- **不做数据归属判断**：按作用域过滤由 store 域按 `store_id` 列做，本层只负责从登录态取出 store_id 无条件写进域入参
 - **不直接改上下架推导量**：`shelf_status` 是域内 `refreshShelfStatus` 的推导结果，本层只提交 SKU 上下架意图
 
 ## 四、配置说明
