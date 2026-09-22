@@ -351,6 +351,12 @@ public class JdbcOrderRepository implements OrderRepository {
 
     @Override
     public Optional<OrderModel> findOrder(OrderQuery query) {
+        // ⚠ **单号必填的守卫放在这里**（而不是只放在 OrderQuery#forDetail）：本方法是详情**必经**的那一处，
+        //    任何人都能 new 一个 OrderQuery，只有这里拦得住。没有它，「按单号取」这一项条件会因
+        //    orderNo == null 而被 applyCommonFilters 跳过 → 取到作用域内的**任意一笔**（旧实现是
+        //    order_no = NULL 恒 false → 404，复用同一份条件构造后不再成立）；多行时 getOne 还会直接抛
+        //    TooManyResultsException → 500（5xx 计入端 BFF 的熔断失败率）。
+        query.requireOrderNo();
         // ⚠ 与分页走**同一份**条件构造（filterWrapper → applyCommonFilters）：详情没有「第二套」翻译口径。
         //    写成两处时，改好分页那处、漏了这里不会有任何东西报错——正是「漏传作用域 = 静默取任意一笔」那个洞。
         return findOne(filterWrapper(query));
@@ -382,7 +388,9 @@ public class JdbcOrderRepository implements OrderRepository {
      *
      * <p>⚠ 详情必须也走这里：它是一个写路径的前置读（改状态前先取单），而「作用域没进查询」在详情上的后果
      * 比在分页上更重——分页会多返回几行，详情会**取到别人的那一笔并改它**。两者共用一份翻译，
-     * 「改了一处漏了另一处」这个改法才不成立。单测 {@code JdbcOrderRepositoryFiltersTest} 钉的就是它。</p>
+     * 「改了一处漏了另一处」这个改法才不成立。单测 {@code JdbcOrderRepositoryFiltersTest} 的详情两向
+     * **经 {@code findOrder} 捕获真正下发的 {@link LambdaQueryWrapper}** 来钉（不是直接调本方法：
+     * 直接调 helper 时，把 {@code findOrder} 改回自己那套条件块，用例照样绿）。</p>
      */
     static LambdaQueryWrapper<TradeOrder> filterWrapper(OrderPageQuery query) {
         LambdaQueryWrapper<TradeOrder> wrapper = Wrappers.lambdaQuery();
@@ -403,7 +411,8 @@ public class JdbcOrderRepository implements OrderRepository {
      *
      * <p>⚠ <b>作用域与筛选条件的翻译只此一处</b>：分页（{@link #pageOrders}）与详情（{@link #findOrder}）
      * 都经 {@link #filterWrapper} 调用本方法，没有任何第二条翻译路径。单测
-     * {@code JdbcOrderRepositoryFiltersTest} 直接钉这一段——它守的是「不传即不限定」这条默认路径：
+     * {@code JdbcOrderRepositoryFiltersTest} 两端各钉一次：分页侧直接调本方法、详情侧**经
+     * {@code findOrder}**（捕获它真正下发的 Wrapper）——它守的是「不传即不限定」这条默认路径：
      * 省略任一作用域时，SQL 里都不能多出对应条件。</p>
      */
     static void applyCommonFilters(LambdaQueryWrapper<TradeOrder> wrapper, OrderPageQuery query) {

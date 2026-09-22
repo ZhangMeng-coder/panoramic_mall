@@ -233,6 +233,10 @@ public class TradeCartItemServiceImpl extends ServiceImpl<TradeCartItemMapper, T
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void clearCart(Long customerId) {
+        // ⚠ 失败形态虽然温和（customer_id = NULL 删 0 行，不会误删别人的行），但**写路径一律过护栏**：
+        //    留一条不过护栏的写，等于把「写侧必经 ScopeGuard」写成一句不成立的话，
+        //    下一个人照它推断「没护栏的一定是读」，就会漏掉真正的洞。
+        ScopeGuard.require(customerId, "顾客 id");
         baseMapper.physicalDeleteByCustomer(customerId);
         // 幂等：本来就是空车时删 0 行，同样清一遍缓存（无副作用）
         cartRedisCache.forgetAllSkus(customerId);

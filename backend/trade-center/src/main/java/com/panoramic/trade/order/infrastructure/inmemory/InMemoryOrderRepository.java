@@ -1,6 +1,7 @@
 package com.panoramic.trade.order.infrastructure.inmemory;
 
 import com.panoramic.trade.order.domain.OrderModel;
+import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.port.OccupyResult;
 import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderPageQuery;
@@ -135,8 +136,15 @@ public class InMemoryOrderRepository implements OrderRepository {
 
     @Override
     public synchronized Optional<OrderModel> findOrder(OrderQuery query) {
+        // ⚠ 单号必填这道不变量与落库实现同处：详情只有两条实现，findOrder 是任何调用方都必经的地方
+        //    （OrderQuery 是 public，绕过 forDetail 才拿得到「没有单号条件」的查询）
+        query.requireOrderNo();
         // 两个作用域都是可选的：null = 不限定（与落库实现的「条件不入 SQL」同口径）
+        // ⚠ status 也参与筛选，**以落库实现为准**（那边 status != null 即进 WHERE，见
+        //    JdbcOrderRepository#applyCommonFilters）：本类只是替身，替身少一个条件就会有
+        //    「只在内存实现上绿」的用例，把「详情也能按状态取」这条口径钉歪。
         return find(order -> orderNoMatches(query.orderNo(), order)
+                && statusMatches(query.status(), order)
                 && scopeMatches(query.customerId(), order.getCustomerId())
                 && scopeMatches(query.storeId(), order.getStoreId()));
     }
@@ -216,6 +224,16 @@ public class InMemoryOrderRepository implements OrderRepository {
      */
     private static boolean orderNoMatches(String orderNo, OrderModel order) {
         return orderNo == null || orderNo.equals(order.getOrderNo());
+    }
+
+    /**
+     * 状态命中判定：{@code status == null} 表示**不筛状态**（不是「筛 null 状态」）
+     *
+     * <p>⚠ 与落库实现 {@code eq(condition, col, value)} 的「不传即不入 SQL」同一口径——
+     * 详情与分页都走这一条判定，替身的条件集合必须与落库实现逐项对齐。</p>
+     */
+    private static boolean statusMatches(OrderStatus status, OrderModel order) {
+        return status == null || status == order.getStatus();
     }
 
     // ── 测试入口 ────────────────────────────────────────────────────────────────

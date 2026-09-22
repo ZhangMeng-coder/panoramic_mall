@@ -1,17 +1,20 @@
 package com.panoramic.trade.exception;
 
-import com.panoramic.common.vo.RespData;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.MethodParameter;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MissingServletRequestParameterException;
-import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.lang.reflect.Method;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 「调用方入参错误」的两类 MVC 异常 → **400**，而不是兜底的 500。
@@ -20,54 +23,79 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code MethodArgumentTypeMismatchException} 都**不是** {@code IllegalArgumentException} 的子类，
  * 不显式接住就落到域兜底 {@code Exception} → 500。同一件事于是有两种失败模式
  * （DTO 字段漏传 → 400，裸 {@code @RequestParam} 漏传 → 500），
- * 且 5xx 会被端 BFF 按 cross-cutting 第 13 条**计入熔断失败率**——调用方漏一个参数就能打开熔断。
- * 故这里钉住状态码：4xx（页面透传、不计熔断），不是 5xx（真故障才该有的形状）。</p>
+ * 且 5xx 会被端 BFF 按 cross-cutting 第 13 条**计入熔断失败率**——调用方漏一个参数就能打开熔断。</p>
  *
- * <p>⚠ 本类不起 Spring：直接调处理器方法，断的是「这两类各自映射成什么状态码、文案里带不带参数名」；
- * 「Spring 在什么情况下抛这两类」是框架语义，不在这里重验。</p>
+ * <p>⚠ <b>为什么走真实路由（standalone MockMvc）而不是直接调 handler 方法</b>：这两类的修复内容
+ * 就是「谁被路由到哪个处理器 + 回什么状态码」。直接调方法只能钉住「该方法返回 400」——
+ * 把 {@code @ExceptionHandler(MissingServletRequestParameterException.class)} 注解摘掉、让请求落回兜底 500，
+ * 用例照样绿。故这里用 {@code standaloneSetup} 装配真控制器 + 真 advice，
+ * 让 Spring 自己按注解选处理器（不起 Spring 上下文、不连库，代价只是几次内存内的派发）。</p>
  */
 class TradeDomainExceptionHandlerTest {
 
-    private final TradeDomainExceptionHandler handler = new TradeDomainExceptionHandler();
+    private MockMvc mockMvc;
 
-    @Test
-    @DisplayName("缺必填的 @RequestParam → 400，文案带参数名")
-    void missingRequestParamIsBadRequest() {
-        ResponseEntity<RespData<Void>> resp = handler.handleMissingParameter(
-                new MissingServletRequestParameterException("customerId", "Long"));
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(resp.getBody()).isNotNull();
-        assertThat(resp.getBody().getMsg()).contains("customerId");
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(new SampleController())
+                .setControllerAdvice(new TradeDomainExceptionHandler())
+                .build();
     }
 
     @Test
-    @DisplayName("参数取值类型不符（如 customerId=abc）→ 400，文案带参数名")
-    void typeMismatchIsBadRequest() throws Exception {
-        Method handle = Sample.class.getDeclaredMethod("handle", Long.class);
-        MethodArgumentTypeMismatchException e = new MethodArgumentTypeMismatchException(
-                "abc", Long.class, "customerId", new MethodParameter(handle, 0),
-                new IllegalArgumentException("NumberFormatException"));
+    @DisplayName("缺必填的 @RequestParam → 400，文案带参数名")
+    void missingRequestParamIsBadRequest() throws Exception {
+        mockMvc.perform(get("/sample"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").value(containsString("customerId")));
+    }
 
-        ResponseEntity<RespData<Void>> resp = handler.handleTypeMismatch(e);
+    @Test
+    @DisplayName("查询参数取值类型不符（customerId=abc）→ 400，文案带参数名")
+    void typeMismatchOnQueryParamIsBadRequest() throws Exception {
+        mockMvc.perform(get("/sample").param("customerId", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").value(containsString("customerId")));
+    }
 
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(resp.getBody()).isNotNull();
-        assertThat(resp.getBody().getMsg()).contains("customerId");
+    @Test
+    @DisplayName("路径变量取值类型不符（/sample/abc）→ 400，文案带参数名")
+    void typeMismatchOnPathVariableIsBadRequest() throws Exception {
+        mockMvc.perform(get("/sample/abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.msg").value(containsString("id")));
     }
 
     @Test
     @DisplayName("兜底仍是 500：别把真故障一并改成 4xx（那会让熔断永远打不开）")
-    void fallbackStaysInternalServerError() {
-        ResponseEntity<RespData<Void>> resp = handler.handleException(new IllegalStateException("boom"));
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+    void fallbackStaysInternalServerError() throws Exception {
+        mockMvc.perform(get("/sample/boom"))
+                .andExpect(status().isInternalServerError());
     }
 
-    /** 仅为构造 {@link MethodParameter} 而存在的宿主方法 */
-    @SuppressWarnings("unused")
-    private static class Sample {
-        void handle(Long customerId) {
+    /**
+     * 只为把异常抛到 advice 上而存在的控制器：三个入口各对应上面一条用例
+     *
+     * <p>⚠ {@code /sample/boom} 是**字面路径**，优先级高于 {@code /sample/{id}} 模板——
+     * 故它不会被类型转换拦下，而是真的走到方法里抛 {@code IllegalStateException}（兜底那一支）。</p>
+     */
+    @RestController
+    @RequestMapping("/sample")
+    static class SampleController {
+
+        @GetMapping
+        String sample(@RequestParam("customerId") Long customerId) {
+            return "ok";
+        }
+
+        @GetMapping("/{id}")
+        String byPathVariable(@PathVariable("id") Long id) {
+            return "ok";
+        }
+
+        @GetMapping("/boom")
+        String boom() {
+            throw new IllegalStateException("模拟域内未预期的系统异常");
         }
     }
 }

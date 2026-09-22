@@ -26,7 +26,10 @@ spring:
         server-addr: @nacos.server-addr@
 
 # trade-center 为下沉纯域（交易域）：不向页面暴露公网路由，只被端 BFF 经内部 Feign（/internal/trade/**）调用
-# —— 购物车 ← mall-bff；订单分三侧：顾客侧 ← mall-bff、商户侧 ← store-bff、平台侧 ← admin。
+# —— 购物车 ← mall-bff；订单 ← 三端 BFF（mall-bff 顾客侧 / store-bff 商户侧 / admin 管理端），
+#    各端订单编排尚未创建（页面契约见 docs/contracts/{mall-bff,store-bff,admin}.md）。
+#    订单 6 条接口**按能力通用、不分侧**（cross-cutting 第 22 条）：三端调的是同一个端点，
+#    差别只在传不传作用域（读侧可选、写侧必填）。
 # 服务端不启用 Feign 客户端扫描。鉴权与权限判定全部收敛在端 BFF（各 BFF 从登录态取锚点 customerId / storeId），本服务只做两件事：
 #   1) 执行领域逻辑（购物车 trade_cart_item、订单 trade_order 等 5 张表，全按传入锚点过滤）；
 #   2) TradeUserIdentityFilter 把网关注入的信任头 X-User-Id / X-User-Type 直取填 UserContext
