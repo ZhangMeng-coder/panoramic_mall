@@ -50,7 +50,7 @@ function handleUnauthorized(): void {
  * （mall 另会先弹一句「请先登录」，本端不弹、直接跳）。
  * 本端是管理后台，每个页面都要登录，因此**没有** mall 的 `silent401` 静默开关——那一个仅供路由守卫
  * 刷新重建登录态的 `authApi.me()`（mall 首页对游客开放，本端没有这种页面）。
- * **别去掉 mall 的 `silent401`、也别扩大这个静默面**（口径见 CLAUDE.md「mall 前台（用户端）」与 cross-cutting 第 11 条）。
+ * **别去掉 mall 的 `silent401`、也别扩大这个静默面**（口径见 cross-cutting 第 11 条）。
  *
  * ⚠ 本文件与 `frontend/store/src/api/request.ts` 的**代码部分逐字相同**（历史上就是两份复制，
  * 只有头部注释里各自指认「本端是哪一端」的两行不同）。本次拉平**只加类型、不做去重**

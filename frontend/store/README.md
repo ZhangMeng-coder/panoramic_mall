@@ -6,7 +6,7 @@
 
 ## 业务边界
 
-- **本端没有 `@PreAuthorize`，也不应有**：店主登录后对自己店全权限——权限维度只存在于 admin 端，别把「controller 里没有 `@PreAuthorize`」当缺陷去补（见 [CLAUDE.md](../../CLAUDE.md)「端 BFF 未必都接 RBAC」）。
+- **本端没有 `@PreAuthorize`，也不应有**：店主登录后对自己店全权限——权限维度只存在于 admin 端，别把「controller 里没有 `@PreAuthorize`」当缺陷去补（见 [docs/contracts/store-bff.md](../../docs/contracts/store-bff.md) 第二节：全 23 个接口都没有 `@PreAuthorize`）。
 - 「店铺信息」按 `store_shop.status`（0 草稿 / 1 待审核 / 2 已通过 / 3 已驳回）驱动表单只读 / 可编辑与可用的操作按钮；商品、订单、库存这些开店后业务入口**仅审核通过（status=2）可见可进**——路由守卫在进入前先拉一次「我的店铺」，未通过一律回店铺信息页。
 
 ## 商品管理的两条弹窗分工

@@ -15,7 +15,7 @@ import java.util.function.Supplier;
  * 等再抛出，不剥壳就会把 400「已上架 SKU 不可修改」这类业务校验误判成连接故障，
  * 降级成 500「服务暂不可用」。</p>
  *
- * <p><b>4xx 透传 / 5xx 降级的分野</b>（与 {@link InternalApiErrorDecoder} 及 CLAUDE.md 2026-09-10 修正一致）：
+ * <p><b>4xx 透传 / 5xx 降级的分野</b>（与 {@link InternalApiErrorDecoder} 及 cross-cutting 第 13 条 2026-09-10 修正一致）：
  * <ul>
  *   <li>下游返回的业务异常（400 参数/业务、403 权限、404 不存在）：<b>原样抛出</b>，由统一异常处理还原给页面。
  *       这类错误是「调用方语义/参数问题」，不是下游健康度信号；端 BFF 的熔断器已配

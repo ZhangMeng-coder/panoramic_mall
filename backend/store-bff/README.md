@@ -44,7 +44,7 @@
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。⚠ 建库只有一个入口：审计列 `create_user/update_user` 改 `VARCHAR(32)` 等历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
-实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。
 
 > ⚠ **「账号店同 ID」**：当前店主**账号 id 即 store_id**，店铺与商品接口均以账号 id 作作用域（`loginUser.getId()`）
 > **无条件覆盖**写进域入参 DTO（页面传了也不采用，见 `docs/contracts/store-bff.md`），无需按账号反查我的店。

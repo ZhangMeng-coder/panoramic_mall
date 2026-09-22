@@ -23,7 +23,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 页面级接口一律返回 `RespData{code,msg,data}`；成功 `code=200`、业务失败 `code=400`（带中文提示）、系统异常 `code=500` |
-| 定义位置 | `common/src/main/java/com/panoramic/common/vo/RespData.java`；形状规则写在 `backend/README.md` |
+| 定义位置 | `common/src/main/java/com/panoramic/common/vo/RespData.java`；形状规则见本目录 `README.md` 的「三层的形状规则不同」 |
 | 消费位置 | admin 9 个 Controller、store-bff 3 个 Controller、mall-bff 1 个 Controller；前端 axios 拦截器按此解包 |
 | 破坏后果 | 前端统一解包与统一异常提示全部失效 |
 | 核对方式 | 检查器第 6 项：页面级 Controller **必须**出现 `RespData` |
@@ -33,7 +33,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 内部 Feign 方法直接返回业务结果类型（`Xxx` / `List<Xxx>` / `boolean`…），错误走异常传播；域接口错误返回真实 HTTP 状态 + `{code,msg}` |
-| 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 不包 RespData」 |
+| 定义位置 | 由各域 Controller 的返回类型承担（即下条消费位置）；形状规则见本目录 `README.md` 的「三层的形状规则不同」 |
 | 消费位置 | goods-center 3 个 Controller、store 2 个 Controller |
 | 破坏后果 | 域侧包上 `RespData` → Feign 出参类型对不上，反序列化失败或字段全空 |
 | 核对方式 | 检查器第 6 项反向哨兵：域 Controller **必须不**出现 `RespData` |
@@ -95,7 +95,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | 域内身份过滤器在缺 `X-User-Id` 时**直接放行**（审计留空），**不得回 401** —— 那等于在域内做鉴权 |
-| 定义位置 | `CLAUDE.md`「信任与防线 · 缺头即不填充、不拦截」 |
+| 定义位置 | 各域身份过滤器的实现（`StoreUserIdentityFilter` / `GoodsUserIdentityFilter` / `CustomerUserIdentityFilter` / `TradeUserIdentityFilter`，即下条消费位置） |
 | 消费位置 | `StoreUserIdentityFilter`、`GoodsUserIdentityFilter`、`CustomerUserIdentityFilter`、`TradeUserIdentityFilter`（缺 `X-User-Id` 时直接放行、审计留空） |
 | 破坏后果 | 域内回 401 → 直连调用（无网关头）全部失败，破坏"域不做鉴权"的分层 |
 | 核对方式 | 人工核对（静态哨兵无法表达"缺头时不拦截"这一语义） |
@@ -199,7 +199,7 @@ layer: cross-cutting
 | | |
 |---|---|
 | 契约 | Feign interface 的入参/出参 DTO 在**该域的接口模块**（`goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，包根 `com.panoramic.contract.<域>`）维护，调用方与被调用方引用**同一份类型**，禁止各自复制。⚠ 2026-09-19 起这些类型**不再放 `common`**（`common` 已收敛为纯基座，不含任何域的契约类型） |
-| 定义位置 | `CLAUDE.md`「Feign 内部接口规约 · 公共类型」 |
+| 定义位置 | 四个 `<域>-interface` 模块的包根 `com.panoramic.contract.<域>`（结构强制，见下「结构保障」行）与 `pom.xml` 依赖 |
 | 消费位置 | `goods-center-interface/.../contract/goods/api/GoodsCenterClient.java`、`store-interface/.../contract/store/api/StoreClient.java`、`customer-center-interface/.../contract/customer/api/CustomerCenterClient.java`、`trade-center-interface/.../contract/trade/api/TradeCenterClient.java` 与其域侧实现；类型清单见各服务契约页的「类型所在包」 |
 | ⚠ 唯一登记的跨域依赖边 | `trade-center` → `store-interface`（下单要 store 域的商品快照 / 扣库存，见第 24 条）。⚠ 这条边使「各域只依赖自己的 `<域>-interface`」的**编译期守卫对本域失效**——守卫本就靠「引用别域类型会编译失败」生效，多一条依赖边就多一个守卫失效的点，故**只能靠登记 + 人工核对**。新增任何「域依赖别域 interface」的边都必须在此登记并说明用途；不登记 = 悄悄绕过守卫 |
 | 破坏后果 | 各端复制一份 → 字段漂移，反序列化**静默丢字段** |
@@ -339,7 +339,7 @@ layer: cross-cutting
 | 内部令牌 `X-Internal-Token` | 2026-09-10 | 域内应用层鉴权已整体移除；防线收敛到网络层。重新引入 = 在域内做鉴权，破坏 BFF 分层 |
 | `InternalTrustFilter` | 2026-09-10 | 同上 |
 
-⚠ 注意：这两个字面量**出现在文档里是正常的**（本页、`CLAUDE.md`、各 README 都有"已删除"的说明）。
+⚠ 注意：这两个字面量**出现在文档里是正常的**（本页与各 README 都有"已删除"的说明）。
 哨兵检查**只扫源码**（`.java` / `.yml`），不扫 `.md`。
 
 ---

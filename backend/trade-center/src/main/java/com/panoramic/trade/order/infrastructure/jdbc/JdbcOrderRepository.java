@@ -64,7 +64,7 @@ import java.util.stream.Collectors;
  *
  * <h3>写入：审计字段与时间列的边界</h3>
  * <p>{@code create_user/update_user/update_time} 全部交给 {@code MyMetaObjectHandler} 自动填充，本类不赋值
- * （CLAUDE.md 的硬规则）。<b>唯一显式赋值的是时间列</b>：{@code trade_order.create_time} 必须等于编排层
+ * （仓库硬规则，见 cross-cutting 第 8 条）。<b>唯一显式赋值的是时间列</b>：{@code trade_order.create_time} 必须等于编排层
  * 算出的下单时刻（L2 幂等窗口以它为基准），{@code trade_order_status_log.create_time} 必须等于
  * 状态变更时刻（它就是「发生时刻」，见 DDL 注释）。自动填充只在字段为 null 时生效，故显式赋值即胜出。</p>
  *

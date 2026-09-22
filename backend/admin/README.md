@@ -49,7 +49,7 @@
 
 ⚠ **角色授权不由本文件播种**：`schema.sql` 只种 `sys_permission` 权限项（目录 / 页面 / 按钮），`sys_role_permission` 的授权一律在「角色管理 → 分配权限」UI 里勾选。即**换一台新库建好表后，还需手工授权才能登录使用**——这是一处已知缺口，暂不在 `schema.sql` 里补种子。
 
-实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。⚠ 两张关联表按仓库约定**除外**（纯关联、无审计列、物理删除）。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。⚠ 两张关联表按仓库约定**除外**（纯关联、无审计列、物理删除）。
 
 ### 权限种子的 id 约定
 

@@ -116,5 +116,5 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 ## 三、前端契约的**视觉与结构**基准
 
 mall 前台的**页面契约**（长什么样、分哪几块、哪些不做、登录门禁落在哪个文件）由 `frontend/mall` 工程
-与根 `CLAUDE.md` 的「mall 前台（用户端）视觉与结构约定」固定，**不是本文档**；本文件只登记服务端接口与形状。
+固定（风格源头是该工程自身，见 [frontend/mall/README.md](../../frontend/mall/README.md) 与其 `src/styles/tokens.css`），**不是本文档**；本文件只登记服务端接口与形状。
 

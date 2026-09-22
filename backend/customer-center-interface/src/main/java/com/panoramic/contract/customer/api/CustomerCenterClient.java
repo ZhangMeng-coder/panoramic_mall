@@ -17,7 +17,7 @@ import java.util.List;
 /**
  * customer-center（顾客域，下沉纯域）内部 Feign 客户端。
  * <p>顾客域持「顾客资料 {@code customer_profile} + 收货地址 {@code customer_address}」，不向页面暴露公网路由，
- * 只被 mall-bff 经本接口内部调用。规约（见 CLAUDE.md 与 docs/contracts/customer-center.md）：
+ * 只被 mall-bff 经本接口内部调用。规约（见 docs/contracts/customer-center.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 customer-center-interface（域服务端、mall-bff 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>

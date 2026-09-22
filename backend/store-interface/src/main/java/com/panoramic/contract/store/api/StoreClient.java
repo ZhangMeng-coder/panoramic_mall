@@ -42,7 +42,7 @@ import java.util.List;
 /**
  * store（店铺业务域，下沉纯域）内部 Feign 客户端。
  * <p>本切片起 store 域只持 {@code store_shop}（账号店同 ID：店铺主键 == 店主账号 id），不再向页面暴露公网路由，
- * 由各端 BFF 经本接口内部调用。规约（见 CLAUDE.md）：
+ * 由各端 BFF 经本接口内部调用。规约（见 docs/contracts/store.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 store-interface（store 域服务端、store-bff/admin/mall-bff 客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>

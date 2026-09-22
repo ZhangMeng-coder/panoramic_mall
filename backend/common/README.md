@@ -10,7 +10,7 @@
 |---|---|---|
 | `vo` | `RespData<T>` | 统一接口返回结构 `{code, msg, data}`，成功 `code=200`；提供 `success/error` 静态工厂 |
 | `vo` | `BasePageVO` | 分页查询参数基类：`pageNum/pageSize` 自带 `@NotNull/@Min/@Max` 校验 |
-| `vo` | `BaseEntity` | 实体基类：`createUser/createTime/updateUser/updateTime/isDelete`；`isDelete` 标注 `@TableLogic` 逻辑删除。审计列的形状与取值格式见 `CLAUDE.md`「代码生成与分层约定」（操作人为 `String`，对应列 `VARCHAR(32)`） |
+| `vo` | `BaseEntity` | 实体基类：`createUser/createTime/updateUser/updateTime/isDelete`；`isDelete` 标注 `@TableLogic` 逻辑删除。审计列的形状与取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条（操作人为 `String`，对应列 `VARCHAR(32)`） |
 | `exception` | `ServiceException` | 业务异常，支持枚举或自定义 `(code, message)` 构造；业务校验失败统一 `code=400` |
 | `exception` | `GlobalExceptionHandler` | `@RestControllerAdvice` 全局异常兜底：业务异常、参数校验、404/403、JSON 解析错误、未知异常 → 统一 `RespData` |
 | `valid` | `ValidationGroups` | 校验分组常量 `Create/Update/Delete`，用于 @RequestBody 按场景分组校验 |

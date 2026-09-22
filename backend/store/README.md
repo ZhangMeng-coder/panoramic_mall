@@ -37,7 +37,7 @@
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
-实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。⚠ 例外：`audit_by` 是**审核人留痕列**（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。⚠ 例外：`audit_by` 是**审核人留痕列**（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
 
 ## 三、职责与边界
 

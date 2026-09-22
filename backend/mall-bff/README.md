@@ -55,7 +55,7 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行）。⚠ 建库只有一个入口，不保留中间迁移脚本。
 
-实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 `CLAUDE.md`「代码生成与分层约定」）。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。
 
 > ⚠ **`password` 是占位列**：C 端走短信验证码登录，本期不读写该列；留着是为了与 `store_user` 形状一致，将来加密码登录/改密时不需迁移表。
 
@@ -63,7 +63,7 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 
 ### 1. 登录与登录态
 
-- 免鉴权白名单**只有 4 条且逐条登记在两处**（网关 + 服务侧）：`/auth/sms-code`、`/auth/register`、`/auth/login` 与首页宫格分类树 `/catalog/categories`。⚠ 分类树那条是**精确路径不是前缀**——`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` **一律要顾客登录态**（鉴权分级见 [CLAUDE.md](../../CLAUDE.md)）
+- 免鉴权白名单**只有 4 条且逐条登记在两处**（网关 + 服务侧）：`/auth/sms-code`、`/auth/register`、`/auth/login` 与首页宫格分类树 `/catalog/categories`。⚠ 分类树那条是**精确路径不是前缀**——`/catalog/goods`、`/catalog/facets`、`/catalog/goods/{id}` **一律要顾客登录态**（鉴权分级见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 11 条）
 - 签发 `type=user` 的 JWT 并写 Redis 顾客登录上下文（键格式与跨端隔离见 [common-auth/README.md](../common-auth/README.md)）；本地认证链由网关注入的 `X-User-Id` + `X-User-Type` → Redis 重建登录顾客
 - **顾客端不接 RBAC**：登录后对自己的数据全权限，因此本层**没有一个 `@PreAuthorize`**（这是预期状态，不是漏登记）
 

@@ -100,13 +100,3 @@ mall  前台(5175) ──/mall───────────────┤
                                         │
                                         └── Nacos(8848) 服务注册与发现 ──▶ MySQL(库 panoramic_mall)
 ```
-
-## 约定
-
-- **响应形状**：页面 / 端 BFF 对外接口一律返回 `RespData{code,msg,data}`（成功 `200` / 业务失败 `400` 带中文提示 / 系统异常 `500`）；**下沉域的内部接口不包 `RespData`**，直接返回业务类型，错误转真实 HTTP 状态 + `{code,msg}`。
-- 数据表实体继承 `common` 的 `BaseEntity`（逻辑删除 + 审计字段自动填充），分页入参继承 `BasePageVO`；服务内跨实体只走对方 owner service（规约见 [common/README.md](common/README.md)）。
-- 页面只经网关路由到**端 BFF**（`/admin` → admin、`/store` → store-bff、`/mall` → mall-bff）；**业务域服务不暴露公网路由**，只被 BFF 经注册中心内部 Feign 调用（DTO 同源于各域的 `<域>-interface` 模块）。
-- **鉴权只到端 BFF**：域服务不装配认证链、不做任何权限判断。⚠ 域端口只在内网可达是前提。⚠ **唯一例外是 `trade-center`**，两处：① 它加载了 Redis（购物车加购去重与计数缓存）——但只用 Redis 当缓存/提示：**Redis 里没有登录态**、MySQL 才是唯一事实源，域内**照旧不鉴权**（它仍不加载 `auth.yml`）；② 它依赖 `store-interface` 并经 Feign 调 store 域（下单要商品快照 / 扣库存）——**全仓唯一的跨域调用边**。见 [cross-cutting.md](../docs/contracts/cross-cutting.md) 第 12 条加载矩阵与第 24 条（域间协作）的登记例外
-- **授权点是端 BFF 的 `@PreAuthorize`**（只有 admin 有 RBAC；店主端与 C 端登录后对自己数据全权限，**没有也不应有** `@PreAuthorize`）。平台店铺 / 店铺商品权限串与种子见 [admin/README.md](admin/README.md) 与 `admin/db/schema.sql`。
-- **以上这些跨服务约定（`RespData` 形状、身份头、Redis 键、熔断 4xx/5xx 分野、Nacos 加载矩阵、权限串一致性等）的完整登记与逐条核对方式见 [docs/contracts/cross-cutting.md](../docs/contracts/cross-cutting.md)** —— 共 24 条，每条标注定义位置、消费位置、破坏后果与静态核对方式。本节只讲原则，条目不在此重复（身份头见第 6、7 条，审计值格式见第 8 条，权限串见第 16 条）。
-- 详情见各模块 README：店铺域见 [store/README.md](store/README.md)、店铺端 BFF 见 [store-bff/README.md](store-bff/README.md)、商城前台 BFF 见 [mall-bff/README.md](mall-bff/README.md)、顾客域见 [customer-center/README.md](customer-center/README.md)、交易域见 [trade-center/README.md](trade-center/README.md)。

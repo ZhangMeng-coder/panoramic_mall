@@ -34,7 +34,7 @@
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行，纯新增）。
 
-实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，代码不得显式赋值；取值格式见 `CLAUDE.md`「代码生成与分层约定」）。
+实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，代码不得显式赋值；取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。
 
 ## 三、职责与边界
 

@@ -32,7 +32,7 @@ import java.util.Map;
 /**
  * goods-center（标准商品平台 / 标准商品模板库）内部 Feign 客户端。
  * <p>下沉纯域 goods-center 不再向页面暴露公网路由，由各端 BFF 经本接口内部调用。
- * 规约（见 CLAUDE.md）：
+ * 规约（见 docs/contracts/goods-center.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 goods-center-interface（goods-center 服务端、本客户端引用同一份类型）；</li>
  *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
