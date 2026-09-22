@@ -1,7 +1,7 @@
 -- ============================================================
 -- 全景商城 trade-center 交易域（下沉纯域）建表脚本（MySQL 8）
 -- 说明：trade-center 持**购物车** trade_cart_item 与**订单**（trade_order 等 5 张，2026-09-21 阶段一新增）；
---       结账 / 评价不在本期，见仓库根 todo.md。顾客账号表 mall_user 在 mall-bff、
+--       结账 / 评价不在本期。顾客账号表 mall_user 在 mall-bff、
 --       店铺商品 store_goods_spu/sku 在 store 域，本表只记 id 引用（无外键）。
 --       末段另建 Seata AT 模式的回滚日志 undo_log（2026-09-22 T12）：业务代码不碰它、
 --       全域共用同一个库故全仓只需这一份，trade-center 与 store 都是它的读写方。
@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS trade_order_status_log (
 -- ============ Seata AT 模式回滚日志表（T12） ============
 -- ⚠ 全域服务**共用同一个库**（panoramic_mall），故全仓只需一份：本表由 Seata 的 RM 自动读写，
 --    业务代码**不碰**它。trade-center 与 store 两域都是 RM（store 的库存扣减 / 回补是分支事务）。
--- ⚠ 纯新增，可重复执行；应用见 todo.md T13（控制器执行，不在本席）。
+-- ⚠ 纯新增，可重复执行。
 CREATE TABLE IF NOT EXISTS undo_log (
   branch_id     BIGINT       NOT NULL COMMENT '分支事务 ID',
   xid           VARCHAR(128) NOT NULL COMMENT '全局事务 ID',

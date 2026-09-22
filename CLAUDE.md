@@ -14,7 +14,7 @@
 
 ## 分层与内部服务调用（BFF 化，进行中）
 
-目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**；store 域、goods-center、customer-center、trade-center 均已下沉纯域、不开放公网路由（trade-center 域内**订单已落库、下单接口已就绪**——三侧 10 条，仅经内部 Feign 被端 BFF 调用；**结算（真支付 / 结账）与三端 BFF 编排、前端仍属后续期**，见 todo.md 阶段二）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。见 cross-cutting 第 10 条。
+目标分层：**前端页面只经网关访问"端 BFF"**（admin / store-bff / mall-bff）；**业务域服务不向页面暴露公网路由，只由 BFF 经 Feign 内部调用**。生成/修改代码时按此归属：页面聚合/编排 → BFF；数据归属与领域能力 → 域服务；不得把实体/表复制进 BFF。⚠ 网关公网入口已收敛为**端 BFF 白名单**（`gateway` 配置 `panoramic.gateway.bff-services`，由 `BffRouteGuardFilter` 强制校验，名单外服务经网关一律 403）：当前为 **`admin` / `store-bff` / `mall-bff`**；store 域、goods-center、customer-center、trade-center 均已下沉纯域、不开放公网路由（trade-center 域内**订单已落库、下单接口已就绪**——**按能力通用、不分端**（订单 6 条 / 购物车 8 条，作用域由各端 BFF 自设，见 cross-cutting 第 22 条），仅经内部 Feign 被端 BFF 调用；**结算（真支付 / 结账）与评价仍属后续期**）。新代码一律按目标分层写，不延续直连、不给域服务开公网路由。见 cross-cutting 第 10 条。
 
 **模块归属（鉴权装配层与域契约层已各自独立成模块）**：`common`=纯基座（`RespData`/`BaseEntity`/异常/分页/`LoginUser`/`UserContext`/`MyMetaObjectHandler`/`InternalApiErrorDecoder`/`BffFeignCall`/`HtmlSanitizer`——富文本消毒，各端 BFF **出口**共用同一份白名单，见 cross-cutting 第 21 条）；`common-auth`=鉴权装配层（`SecurityConfig`/`AuthTokenFilter`/`JwtService`/`LoginUserCacheService`，带 Redis 与 JJWT）；`<域>-interface`=**域内部契约包**（当前 `goods-center-interface` / `store-interface` / `customer-center-interface` / `trade-center-interface`，包根 `com.panoramic.contract.<域>`：该域的 Feign 客户端 + 同源 DTO/VO，**被「域本体 + 调用它的端 BFF」共用同一份**）。**只有端 BFF 依赖 `common-auth`**；业务域（goods-center / store / customer-center）只依赖 `common` 与**自己的** `<域>-interface`（**唯一例外**：`trade-center` 还依赖 `store-interface`，见下），结构上拿不到认证链，因此不装配鉴权、不需要 `auth.yml`。⚠ **`trade-center` 是本条的唯一例外**，两处：① 它额外加载 `datasource-redis.yml`（购物车加购去重与计数缓存），但**只用 Redis 当缓存/提示**——MySQL 始终是唯一事实源、两个方向的错判都由写路径自愈，且 Redis 里**没有登录态**，域内**照旧不鉴权**（它仍不加载 `auth.yml`）；② 它额外依赖 **`store-interface`** 并经 Feign 调 store 域（下单要商品快照 / 扣库存），并据此加载 `feign-circuitbreaker.yml`——这是全仓**唯一的跨域调用边**，登记在 cross-cutting 第 24 条。⚠ 两处都不是「域可以依赖 Redis / 域可以随便调别域」的口子：「域间只允许这一条边，新增必须登记」（第 24 条），且**域间调用不得学端 BFF 做降级**——store 不可达时下单必须整体失败，吞异常继续建单会产出「没扣库存的订单」。⚠ 该边一旦存在，「各域只依赖自己的 `<域>-interface`」的**编译期守卫对本域失效**（守卫靠「引用别域类型即编译失败」生效），只能靠登记 + 人工核对。新增需要鉴权/Redis 的公共类放 `common-auth`；只被业务代码共用的基座放 `common`；**某个域的契约类型一律放该域的 `<域>-interface`**，`common` 里不放任何域契约类型。**新建业务域时同步建一个 `<域>-interface` 模块**（照 `goods-center-interface` 的 pom 抄，`spring-boot-maven-plugin` 置 `<skip>true</skip>`），不要图省事把契约塞回 `common`。**customer-center**（顾客域）承担顾客资料与收货地址；**账号凭据（`mall_user` 的手机号与状态）不下沉到域**，仍由 **mall-bff** 直连本端库。
 
@@ -115,7 +115,7 @@
 - 数据库/数据类操作（例如用个人 skill `mysql-connect` 连远程库、同步/查询数据）属于数据处理，不属于“验证生成代码”，用户要求时照常执行；但**不得**把它当作验证本仓库刚生成代码的手段。
 - 本规则针对代码产物的验证；其他与验证无关的必要操作（装依赖、编译缓存清理等）照常。
 
-## 执行 todo.md 大改动前的数据保护（2026-09-18 降级）
+## 执行大改动前的数据保护（2026-09-18 降级）
 
 **代码与 DDL 的回溯交给 git**：开工时记下 base commit 即可，不为“可回滚”另做全量备份——库里数据不在 git 里，全量 dump 的成本与它的实际用途不成比例。
 

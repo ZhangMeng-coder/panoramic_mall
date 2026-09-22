@@ -28,7 +28,7 @@ import java.util.List;
 /**
  * trade-center（交易域，下沉纯域）内部 Feign 客户端。
  * <p>交易域持「购物车 {@code trade_cart_item}」与「订单」（{@code trade_order} 等 5 张表）；
- * 结算 / 评价不在本期（见仓库根 {@code todo.md}）。不向页面暴露公网路由，
+ * 结算 / 评价不在本期。不向页面暴露公网路由，
  * 只被端 BFF 经本接口内部调用。规约（见 CLAUDE.md 与 docs/contracts/trade-center.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 trade-center-interface（域服务端、各端 BFF 客户端引用同一份类型）；</li>

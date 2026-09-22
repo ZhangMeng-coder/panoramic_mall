@@ -110,7 +110,7 @@
             <optional>true</optional>
         </dependency>
         <!--
-          测试依赖（JUnit 5 + AssertJ）。本期唯一目的：让订单领域模型能用单测验证（依据仓库根 todo.md 执行计划 D10）。
+          测试依赖（JUnit 5 + AssertJ）。本期唯一目的：让订单领域模型能用单测验证。
           版本由 spring-boot-starter-parent 管理；Spring Boot 4 的 parent 已带 surefire/failsafe 的 pluginManagement，
           故**不额外配 surefire**——配了反而会覆盖掉 parent 的版本与参数。
           ⚠ 测试一律纯 JUnit（不启 Spring）：trade-center 的 spring.config.import 不带 optional:，
