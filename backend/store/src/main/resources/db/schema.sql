@@ -168,3 +168,28 @@ INSERT INTO store_goods_sku_stock (sku_id, stock, locked_stock, warn_stock, is_d
 SELECT s.id, 0, 0, NULL, 0 FROM store_goods_sku s
 WHERE s.is_delete = 0
   AND NOT EXISTS (SELECT 1 FROM store_goods_sku_stock t WHERE t.sku_id = s.id);
+
+-- 5. SKU 库存变动流水表（只增不改：出库 OUT / 回补 REVERT）
+--   交易协作（cross-cutting 第 24 条）的库存扣减在库存表上做原子条件更新（影响行数是唯一判据），
+--   本表只负责**留痕与对账**：每成功扣减一条 OUT、每回补一条 REVERT。
+--   ⚠ 只增不改：不提供任何 update / delete 业务入口（历史事实不修正，错了用反向流水抵消）。
+--   ⚠ 唯一键 (order_no, sku_id, kind) 是**回补幂等**的落库兜底：同一单同一 SKU 同一方向只应有一条；
+--     回补前先查 REVERT 是否已存在（应用层判据），键是并发下的最后一道闸。
+--   change_quantity 恒正，方向由 kind 表达（不存负数），故「扣了多少」与「补了多少」读法一致。
+--   occurred_at 是**业务发生时间**（由写方带入），与审计列 create_time（落库时间）刻意分开。
+CREATE TABLE IF NOT EXISTS store_goods_sku_stock_log (
+  id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  sku_id          BIGINT UNSIGNED NOT NULL COMMENT 'store_goods_sku.id',
+  order_no        VARCHAR(32)     NOT NULL COMMENT '订单号',
+  kind            VARCHAR(16)     NOT NULL COMMENT 'OUT=扣减 / REVERT=回补',
+  change_quantity INT             NOT NULL COMMENT '变动数量（恒正，方向由 kind 表达）',
+  occurred_at     DATETIME        NOT NULL COMMENT '变动发生时间',
+  create_user     VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
+  create_time     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  update_user     VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
+  update_time     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  is_delete       TINYINT         NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 正常，1 已删除',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_order_sku_kind (order_no, sku_id, kind),
+  KEY idx_sku_id (sku_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SKU 库存变动流水（出库 / 回补）';

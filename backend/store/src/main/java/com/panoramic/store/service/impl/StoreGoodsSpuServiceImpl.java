@@ -25,6 +25,7 @@ import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.StoreGoodsFacetItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsSkuSnapshotVO;
 import com.panoramic.contract.store.vo.StoreGoodsSkuVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
@@ -51,6 +52,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -77,6 +79,8 @@ import java.util.stream.Collectors;
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
  * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。</p>
+ * <p><b>域间协作的方法</b>：{@link #platformSkuSnapshotBySkuIds} 供 <b>trade-center</b> 的订单流水线取
+ * SKU 快照（cross-cutting 第 24 条）——按资源 id 操作、无作用域锚点，同样不判身份；查不到的 id 跳过不抛。</p>
  * <p><b>域内不做鉴权/审核判断</b>：店铺 {@code status == 2} 的门禁由端 BFF 前置（R9），
  * 审计字段由 MyMetaObjectHandler 经 UserContext 自动填充，本类一律不手写。</p>
  */
@@ -512,6 +516,72 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
             vo.setStoreName(shopNames.getOrDefault(spu.getStoreId(), ""));
             return vo;
         }).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<StoreGoodsSkuSnapshotVO> platformSkuSnapshotBySkuIds(Collection<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // ⚠ 四段查询，条数与 skuIds 个数无关（无 N+1）：SKU → SPU → 店铺（名 + 状态）→ 可用库存，随后内存组装。
+        // 反查方向与 details(List<Long>) 相反（那边从 SPU 出发），故不能复用其分组逻辑，只沿用同一套取数姿势。
+        List<StoreGoodsSku> skus = skuService.listByIds(skuIds);
+        if (skus == null || skus.isEmpty()) {
+            // 查不到的 id 直接跳过（SKU 已删除），由调用方按「拿不到 = 不存在」处理，不抛异常
+            return Collections.emptyList();
+        }
+        List<Long> spuIds = skus.stream()
+                .map(StoreGoodsSku::getSpuId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        if (spuIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, StoreGoodsSpu> spuMap = listByIds(spuIds).stream()
+                .collect(Collectors.toMap(StoreGoodsSpu::getId, Function.identity(), (a, b) -> a));
+        // 店铺名与店铺状态各一次批量查（跨实体只走 owner service，不 join 店铺表）
+        List<Long> storeIds = spuMap.values().stream()
+                .map(StoreGoodsSpu::getStoreId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, String> shopNames = shopService.nameMap(storeIds);
+        Map<Long, Integer> shopStatusMap = shopService.statusMap(storeIds);
+        Map<Long, Integer> availableMap = skuStockService.availableStockMapBySkuIds(
+                skus.stream().map(StoreGoodsSku::getId).collect(Collectors.toList()));
+
+        List<StoreGoodsSkuSnapshotVO> items = new ArrayList<>(skus.size());
+        for (StoreGoodsSku sku : skus) {
+            StoreGoodsSpu spu = spuMap.get(sku.getSpuId());
+            if (spu == null) {
+                // SPU 行取不到（SKU 有外键语义，理论上不该发生）→ 整条跳过，不造半个快照让调用方去猜缺的字段
+                log.warn("SKU 快照：SPU 行缺失，已跳过。skuId={}, spuId={}", sku.getId(), sku.getSpuId());
+                continue;
+            }
+            StoreGoodsSkuSnapshotVO vo = new StoreGoodsSkuSnapshotVO();
+            vo.setSkuId(sku.getId());
+            vo.setSpuId(spu.getId());
+            vo.setStoreId(spu.getStoreId());
+            vo.setStoreName(shopNames.getOrDefault(spu.getStoreId(), ""));
+            vo.setSpuName(spu.getName());
+            // 主图取 SKU 的，为空回退 SPU 的（店主常常不给每个规格单独传图）
+            vo.setMainImage(StringUtils.hasText(sku.getMainImage()) ? sku.getMainImage() : spu.getMainImage());
+            // 规格组合出参是**已解析**的 List：存储格式（JSON 串）是 store 的实现细节，不跨域透出
+            vo.setSpecAttrs(readJsonList(sku.getSpecAttrs(), new TypeReference<List<SpecAttr>>() {}));
+            vo.setPrice(sku.getPrice());
+            vo.setSkuShelfStatus(sku.getShelfStatus());
+            vo.setSpuShelfStatus(spu.getShelfStatus());
+            vo.setLockStatus(spu.getLockStatus());
+            // 店铺行取不到 → null（**不是 0**）：0 是「草稿」，与「没有这一行」是两回事，
+            // 交易侧据此判「店铺不可购买」，用 0 冒充会让缺失态被读成正常态
+            vo.setShopStatus(shopStatusMap.get(spu.getStoreId()));
+            // 可用库存 = stock；库存行缺失按 0 计（与 toSkuVO / details 同口径：没库存行 = 可售 0 件）
+            Integer available = availableMap.get(sku.getId());
+            vo.setAvailableStock(available == null ? 0 : available);
+            items.add(vo);
+        }
+        return items;
     }
 
     @Override

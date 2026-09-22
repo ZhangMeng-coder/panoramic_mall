@@ -26,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -164,6 +165,19 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
         return listByIds(ids).stream()
                 .collect(Collectors.toMap(StoreShop::getId,
                         shop -> shop.getShopName() == null ? "" : shop.getShopName(), (a, b) -> a));
+    }
+
+    @Override
+    public Map<Long, Integer> statusMap(Collection<Long> storeIds) {
+        if (storeIds == null || storeIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // 只读批量回填：查不到的 id 不进结果（调用方得 null），不补 0、不抛异常
+        Map<Long, Integer> map = new HashMap<>();
+        for (StoreShop shop : listByIds(storeIds)) {
+            map.put(shop.getId(), shop.getStatus());
+        }
+        return map;
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.panoramic.contract.store.dto.ShopAuditDTO;
 import com.panoramic.contract.store.dto.ShopPageQueryDTO;
 import com.panoramic.contract.store.dto.ShopSaveDTO;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuBatchQueryDTO;
@@ -16,9 +17,11 @@ import com.panoramic.contract.store.dto.StoreGoodsSpuUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
+import com.panoramic.contract.store.dto.StoreStockDeductDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.ShopVO;
+import com.panoramic.contract.store.vo.StoreGoodsSkuSnapshotVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
@@ -232,4 +235,56 @@ public interface StoreClient {
      */
     @PostMapping("/goods/spu/{id}/unlock")
     void unlockStoreGoods(@PathVariable("id") Long id);
+
+    // ---- 交易协作（调用方是 trade-center 的订单流水线适配器，**不是端 BFF**）----
+    // ⚠ 本节是 store 域**唯一**被域间调用的能力（cross-cutting 第 24 条）：trade-center → store 是全仓
+    //   唯一的跨域调用边，这也让「各域只依赖自己的 <域>-interface」的编译期守卫对它失效——只能靠登记 + 人工核对。
+    // ⚠ 三条都**无作用域锚点**（没有 storeId 字段）：调用方手上只有 skuId 与订单号，按**资源 id** 操作；
+    //   域内**不判身份、不做权限判断、不校验店铺归属**（身份头只用于审计留痕）。
+    // ⚠ 库存不足**不是 HTTP 错误**（R18）：deductStock 返回 false（HTTP 200），由交易域翻成业务错误；
+    //   按单回补是补偿路径，**宁可不做也不能炸**（R19）——入参空 / 该单没扣过一律 no-op，不抛异常。
+    // ⚠ 熔断口径与其它域调用一致：业务 4xx 还原为 ServiceException（调用方熔断忽略），5xx 计入失败率。
+    //   熔断线程下身份头可能丢失 → 审计留空（不影响业务，见第 24 条）。
+
+    /**
+     * 交易侧 SKU 快照批量读（落订单明细快照用，只读）。
+     * <p>调用方是 <b>trade-center 的订单流水线适配器</b>：按 SKU id 集合一次取回
+     * 名称 / 图片 / 规格 / 价格 / 上下架 / 锁定 / 店铺状态 / 可用库存，避免逐行回查。
+     * <b>SQL 条数与 {@code skuIds} 个数无关</b>（SKU / SPU / 店铺名 / 店铺状态 / 可用库存 各一次批量查）。</p>
+     * <p>⚠ 查不到的 skuId（SKU 或所属 SPU 已删除）<b>跳过、不出现在出参里</b>，不抛异常——
+     * 与 {@link #storeGoodsDetail} 取不到即 400 刻意不同：下单流水线要自己判「拿不到 = 商品不存在、
+     * 该行不可购买」，而不是让整批快照取不回来。</p>
+     * <p>⚠ 出参 {@link StoreGoodsSkuSnapshotVO} 是<b>交易视角</b>：{@code specAttrs} 是已解析的规格组合
+     * （不透出库里的 JSON 串）、{@code shopStatus} 为 null 表示无该店铺行（<b>不是</b>草稿态 0）；
+     * 域内<b>不判可购买性</b>，各维度状态如实给出，判据在交易侧。</p>
+     */
+    @PostMapping("/goods/trade/sku/batch")
+    List<StoreGoodsSkuSnapshotVO> tradeSkuSnapshotBatch(@RequestBody StoreGoodsSkuBatchQueryDTO dto);
+
+    /**
+     * 扣减库存（下单出库）：库存表上一条原子条件更新，<b>影响行数是唯一判据</b>。
+     * <p>调用方是 <b>trade-center 的库存适配器</b>。扣减成功返回 {@code true} 并记一条出库流水；
+     * <b>库存不足返回 {@code false}（HTTP 200），不记流水、不抛异常</b>——库存不足不是故障，
+     * 由交易域的校验步骤翻成 400「库存不足」（R18）。</p>
+     * <p>不判平台锁定、不判上下架、不校验店铺归属（R19）：可见性由交易侧的商品校验判，
+     * 本接口只管库存数够不够；库存行不存在同样按「不足」处理。</p>
+     * <p>⚠ 同一个 {@code orderNo + skuId} 重复扣减会撞流水唯一键
+     * （{@code uk_order_sku_kind}）——幂等由交易侧保证，本域不做「已扣过就跳过」的隐式兜底。</p>
+     */
+    @PostMapping("/goods/trade/stock/deduct")
+    boolean deductStock(@RequestBody StoreStockDeductDTO dto);
+
+    /**
+     * 按订单号回补库存（取消 / 超时 / 支付失败后的补偿路径）。
+     * <p>调用方是 <b>trade-center 的库存适配器</b>。回补该单<b>尚未回补过</b>的每一条出库流水
+     * （无守卫 {@code stock = stock + 数量}）并记一条回补流水；已回过补的跳过——
+     * 故<b>重复调用是 no-op</b>。全流程在同一事务内，库存与流水同成同败。</p>
+     * <p>⚠ <b>补偿路径宁可不做也不能炸</b>（R19）：{@code orderNo} 为空、该单没有出库流水、
+     * 库存行已不存在，都<b>静默成功</b>（不报错、不抛异常）——它在失败回滚链路上跑，
+     * 抛异常会把已经失败的订单再炸一次，反而丢掉本该归还的库存。</p>
+     * <p>⚠ 路径变量就一个 {@code orderNo}，故<b>保持裸参</b>（cross-cutting 第 23 条：路径变量不并入 DTO，
+     * 单个路径变量可裸类型），不为它单造一份一次性 DTO。</p>
+     */
+    @PostMapping("/goods/trade/stock/revert-by-order/{orderNo}")
+    void revertStockByOrder(@PathVariable("orderNo") String orderNo);
 }

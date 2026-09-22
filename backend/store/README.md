@@ -2,17 +2,18 @@
 
 全景商城**店铺业务域**（Servlet 技术栈，2026-09-07 由原 `store-center` 拆分而来），端口 **8083**。
 
-本域持**店铺资料 `store_shop`（含审核状态机）** 与 **店铺在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock`**，不带店主登录、不带页面编排。
+本域持**店铺资料 `store_shop`（含审核状态机）** 与 **店铺在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock` / `store_goods_sku_stock_log`**，不带店主登录、不带页面编排。
 
 ## 一、架构位置
 
-**下沉纯域（第 ② 层）**：不向页面暴露公网路由，只被各端 BFF 经注册中心**内部 Feign** 调用。
+**下沉纯域（第 ② 层）**：不向页面暴露公网路由，只被各端 BFF 经注册中心**内部 Feign** 调用（另有一条域间调用边：trade-center 的订单流水线，见下表与第 24 条）。
 
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调 | store-bff（**带作用域**：我的店铺、店铺商品、库存——`storeId` 取自店主登录态） | `store-interface` 的 `StoreClient`，带熔断降级 |
 | 被谁调 | admin BFF（**不带作用域**：店铺管理审核、店铺商品跨店管理与锁定） | 同上 |
 | 被谁调 | mall-bff（**不带作用域**：C 端商品分页、筛选聚合与详情） | 同上 |
+| 被谁调 | **trade-center（域，不是端）**：下单快照 + 库存扣减 / 回补（无锚点，按资源 id 操作） | 同上（`/goods/trade/**`）——⚠ 全仓**唯一的跨域调用边**，见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 |
 | 本域调谁 | — | **不启用 Feign 客户端，纯被调方** |
 
 - 店主账号 `store_user` 归 **store-bff**（见 [`../store-bff/README.md`](../store-bff/README.md)）；本域**不持店主账号**，平台侧也不与店主账号联查（D6）
@@ -31,6 +32,7 @@
 | `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
 | `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `warn_stock`；`locked_stock` **已废弃**（2026-09-21，不参与口径、不再写入，列待落库期删）；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
+| `store_goods_sku_stock_log` | **store（本域）** | SKU 库存变动流水（`sku_id` / `order_no` / `kind` = `OUT` 出库 · `REVERT` 回补 / `change_quantity` 恒正 / `occurred_at`）；**只增不改**（不提供 update / delete 入口）；唯一键 `(order_no, sku_id, kind)` 是回补幂等的落库兜底 |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
 建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
@@ -92,8 +94,12 @@
 - **可用库存 = `stock`**（`locked_stock` 已于 2026-09-21 废弃，不再参与口径），**C 端展示的一律是可用库存**；`warn_stock` 仅商户端低库存预警用（NULL = 不预警），**不进 C 端**
 - **库存不参与**「SPU 上架 ⟺ ≥1 SKU 上架」**不变量**（归零不触发任何下架），**也不参与 C 端可见性**（售罄商品照常可打开，C 端标售罄）
 - **平台锁定期库存同样只读**（店主视角整行只读由 `assertNotLocked` 域内强制）
-- **库存独立写操作不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**唯一例外**是 `replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行）
-- 写入点五处：库存页单行改、库存页批量改、新建 SKU 带初始库存、SKU 删除级联删、SPU 删除级联删；**归属校验**（`sku_id → sku.spu_id → spu.store_id`）与「仅新建行采信初始库存」的判定都在带作用域的商品编排里做，库存 service 不认识 `store_id`
+- **库存独立写操作不加外层 `@Transactional`**（单条语句自带事务，不拉长持锁时间）；**例外两处**：`replaceSkus` 内「新建 SKU + 建库存行」同一事务（只锁新建行），以及交易协作的扣减 / 回补（库存变更 + 流水写入必须**同成同败**）
+- 写入点七处：库存页单行改、库存页批量改、新建 SKU 带初始库存、SKU 删除级联删、SPU 删除级联删、**交易协作·下单扣减**、**交易协作·按单回补**；前五处的**归属校验**（`sku_id → sku.spu_id → spu.store_id`）与「仅新建行采信初始库存」的判定都在带作用域的商品编排里做，库存 service 不认识 `store_id`
+- **交易协作的扣减 / 回补（R18/R19，域间调用）**：⚠ 这两条**没有 `store_id` 锚点**（调用方是 trade-center，手上只有 `skuId` 与订单号），故**不做归属校验、不判锁定、不判上下架**——可见性由交易侧的商品校验判，本域只管库存数够不够
+  - **扣减**：库存表上一条**原子条件更新**（`stock = stock - ? where sku_id = ? and stock >= ?`），**影响行数是唯一判据**；够则记一条 `OUT` 流水并返回 `true`，不够则返回 `false` 且**不记流水**——⚠ **库存不足不是 HTTP 错误**（R18），由交易域翻成业务错误
+  - **回补**：取该单全部 `OUT` 流水，对**尚无 `REVERT` 流水**的每条做**无守卫**回补（`stock = stock + ?`）并记一条 `REVERT`；已有 `REVERT` 的跳过 → **重复调用是 no-op**；⚠ **补偿路径宁可不做也不能炸**（R19）——单号为空、该单没扣过、库存行已不在，一律静默 no-op，**绝不抛异常**（它在失败回滚链路上跑）
+  - 流水**只增不改**：写入口径是 `StoreGoodsSkuStockLogService`（唯一 owner，库存 service 不持流水 Mapper）
 
 ### 4. 平台锁定规则（R12）
 
@@ -108,7 +114,7 @@
 
 ### 5. 边界（本域不做什么）
 
-- **不做任何鉴权、不做任何权限判断、不校验 token**；唯一授权点是调用方端 BFF 的 `@PreAuthorize`；**不装配认证链**（不打 Redis、不查登录态，`application.yml` 不声明 auth 白名单）
+- **不做任何鉴权、不做任何权限判断、不校验 token**；唯一授权点是调用方端 BFF 的 `@PreAuthorize`（交易协作那三条的调用方是 **trade-center 这条域间边**，同样不鉴权、无 `@PreAuthorize` 可挂——防线仍是「域端口只在内网可达」）；**不装配认证链**（不打 Redis、不查登录态，`application.yml` 不声明 auth 白名单）
 - **不做审核门禁、不做版本比对、不解析分类路径**——三者都是调用方 BFF 的编排职责
 - **不持店主账号、不持分类表**
 - **跨店通用侧（`/goods/cross-shop/spu/page` 与 `/goods/facets`）无数据权限锚点**：限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**，域内不判身份、不做端别分流、**不含任何 C 端隐含约束**（C 端固定三个条件的口径在 mall-bff）；两者走 `POST + @RequestBody`（入参含集合，规避 `@SpringQueryMap` 序列化口径问题）。见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 17–19 条

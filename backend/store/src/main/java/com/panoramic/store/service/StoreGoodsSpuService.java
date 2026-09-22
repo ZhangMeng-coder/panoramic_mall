@@ -12,6 +12,7 @@ import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.contract.store.vo.PageResult;
+import com.panoramic.contract.store.vo.StoreGoodsSkuSnapshotVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
@@ -19,6 +20,7 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -215,4 +217,23 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @param id 店铺商品 id
      */
     void unlock(Long id);
+
+    // ---- 交易协作（域间调用，cross-cutting 第 24 条：无作用域锚点、按资源 id 操作、域内不判身份）----
+
+    /**
+     * 按 SKU id 批量取<b>交易侧快照</b>（下单流水线落订单明细快照用，只读）。
+     * <p>调用方是 <b>trade-center 的订单流水线适配器</b>：它手上只有购物车行里的 skuId 集合，
+     * 故本能力<b>按资源 id 操作、无作用域锚点</b>，域内不判身份、不校验店铺归属。
+     * <b>SQL 条数与 {@code skuIds} 个数无关</b>（SKU / SPU / 店铺 / 可用库存 各一次批量查询）。</p>
+     * <p>⚠ <b>查不到的 skuId 跳过、不出现在出参里，不抛异常</b>（商品或 SKU 已删除）；
+     * 同理 SPU 行取不到时整条跳过——不返回半个快照让调用方去猜缺的字段。
+     * 与 {@link #details} 同口径，由调用方按「拿不到 = 不存在」处理。</p>
+     * <p>字段口径见 {@link StoreGoodsSkuSnapshotVO}：{@code specAttrs} 是<b>已解析</b>的规格组合
+     * （存储格式是 store 的实现细节，不透出库里的 JSON 串）、{@code mainImage} 空则回退 SPU 主图、
+     * {@code shopStatus} 取店铺原值（<b>店铺行取不到时为 null，不补 0</b>）。</p>
+     *
+     * @param skuIds SKU id 集合（null / 空集合直接返回空列表）
+     * @return 快照列表（不含查不到的 id；调用方按 {@code skuId} 索引，不依赖顺序）
+     */
+    List<StoreGoodsSkuSnapshotVO> platformSkuSnapshotBySkuIds(Collection<Long> skuIds);
 }

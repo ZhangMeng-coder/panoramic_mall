@@ -84,6 +84,18 @@ public interface StoreShopService extends IService<StoreShop> {
     List<Long> idListByStatus(Integer status);
 
     /**
+     * 批量查店铺审核状态（交易侧 SKU 快照回填 {@code shopStatus} 用，避免 N+1）。
+     * <p>⚠ 查不到的店铺 id <b>不出现在结果里</b>（调用方得 {@code null}）——<b>不用 0 冒充</b>：
+     * 0 是「草稿」，是店主确实开了店但没提交；而查不到是「没有这一行」。
+     * 交易侧据此判「店铺不可购买」，把两者混为一谈会让调用方无法区分正常态与缺失态。</p>
+     * <p>不抛异常、不补默认值：这是只读的批量回填，不是校验入口。</p>
+     *
+     * @param storeIds 店铺 id 集合
+     * @return id -> 审核状态（{@code StoreShop.STATUS_*}）；入参空则空 Map
+     */
+    Map<Long, Integer> statusMap(Collection<Long> storeIds);
+
+    /**
      * 店铺下拉选项（管理后台「店铺商品管理」按店铺筛选用），按 id 升序。
      * <p>不按审核状态过滤：未审核通过的店铺本就没有商品，过滤无收益。</p>
      *
