@@ -4,7 +4,7 @@
 
 本域持**购物车 `trade_cart_item`** 与**订单**（`trade_order` 等 5 张表，`com.panoramic.trade.order`，DDD 三层）。
 ⚠ 订单**已落库**（2026-09-21 阶段一），商品 / 库存两个下游**已接真实 store 域**（2026-09-22，经内部 Feign：`infrastructure/feign` 的两个适配器）。
-结账、评价与 Seata 接入**不在本期**，计划见仓库根 [`todo.md`](../../todo.md)。
+结账与评价**不在本期**；**Seata 全局事务已接入**（2026-09-22 T12，见「三、订单领域」的 Seata 条目）。计划见仓库根 [`todo.md`](../../todo.md)。
 
 > 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)：
 > 那张表由 `docs/contracts/drift-check.mjs` 与代码**双向核对**，始终反映真实进度（本 README 里写死条数只会随每次实现失真）。
@@ -141,7 +141,7 @@
 ### 7. 订单领域（DDD 三层，已落库）
 
 `com.panoramic.trade.order`，DDD 三层：`domain`（**零 Spring 依赖**，纯 POJO）/ `application`（步骤流水线 + 编排）/ `infrastructure`（适配器 + Spring 装配）。
-订单**已真实落库**（`trade_order` 等 5 张表，见「二、实体标记」）；**Seata 仍未接入**。
+订单**已真实落库**（`trade_order` 等 5 张表，见「二、实体标记」）；**Seata 已接入**（全局事务在编排层入口，跨域那一半在 store 域）。
 
 ⚠ **订正一句早期说法**：曾写过「落库只换适配器，`domain` / `application` 一行都不用动」。那句话**是错的**——落库期实际动了三处且都是必需的：收货地址进模型、快递单号进模型、支付金额校验进聚合（理由见 `OrderModel` 的类注释）。适配器能替换的只是**外部依赖**（仓库 / 商品 / 库存），订单**自己有什么**必须由聚合说完。
 
@@ -171,7 +171,7 @@
 - **失败回滚**：任一笔失败即整次提交回滚（库内写入随事务消失，**失败不留残单**），只剩「回补库存」要还——库存是**外部资源**（store 域，经 Feign 写入），不随本地事务回滚，必须显式归还。⚠ **只回补本次新建的笔**：复用笔的库存在上一次就扣过了
 - ⚠ **回补按单、幂等由净额算出来**（`StockPort#revertByOrder(orderNo)`）：实现按流水算出「这一单每个 SKU 还欠多少」，还完净额归 0，重复调用即无欠可还。**不得**改成按 `orderNo + skuId` 记「已回补」标记的去重——失败提交从不落库，同一秒的两次失败提交可能拿到同一个单号，那个标记会**静默吞掉第二次回补**（库存净亏、流水却显示 0）。⚠ 同样**不得**改成逐行回补：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多且不报错
 - **读取时对账**：库里读到的数据也要自证——枚举名可解析、明细小计 = 单价×数量、轨迹 `seq` 连续且是合法的「下标 +1」路径、落库的总件数 / 总金额与按行重算的一致。任一条不符即 `IllegalStateException`（**数据被写坏**，不是 400——报成 400 等于把「库里的数据坏了」说成「你的操作不对」）
-- **Seata 落点**：`OrderCreateCoordinator#create` 的方法入口（将来在那里加 `@GlobalTransactional`），真实库存写入方在 store 域。本期**不引依赖、不加注解**——没有跨服务调用时它没有事务可管
+- **Seata 全局事务（已接入，2026-09-22 T12）**：`@GlobalTransactional` 在 `OrderCreateCoordinator#create` 的方法入口，与本地 `@Transactional` **并存**（本地事务仍管本地库那一半：先占键 + 订单落库；去掉它并不会被全局事务补上）。⚠ **没有跨服务调用时它没有事务可管**（一批全是复用笔的那条路径即是）。真实库存写入方在 store 域、其扣减 / 回补是**分支事务**，回滚依据是 store 库里的 `undo_log`；客户端配置在 Nacos 共享配置 `seata.yml`（`trade-center` 与 `store` 是两个加载它的域，见 cross-cutting 第 12 / 24 条）。⚠ 本域**仍不加载 `auth.yml`**：seata 只是事务协调客户端，与认证链无关
 - **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
 
 ## 四、配置说明

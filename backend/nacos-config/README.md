@@ -13,6 +13,7 @@
 | `datasource-redis.yml` | Redis 连接 |
 | `auth.yml` | `jwt-secret` / `jwt-expire-seconds` / `redis-prefix` / `header-name` |
 | `feign-circuitbreaker.yml` | Feign 熔断开关 + resilience4j 参数 |
+| `seata.yml` | Seata 客户端：`tx-service-group` / 直连 TC 的 `grouplist` / file 注册中心 / AT 模式数据源代理（加载方只有 `trade-center` 与 `store`） |
 
 > 📋 **谁加载什么**（加载矩阵）见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条 —— 那是跨服务契约，不在本文件重复。
 

@@ -11,6 +11,7 @@ import com.panoramic.trade.order.domain.port.OccupyResult;
 import com.panoramic.trade.order.domain.port.OrderRepository;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.domain.port.StockPort;
+import org.apache.seata.spring.annotation.GlobalTransactional;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
@@ -32,9 +33,12 @@ import java.util.TreeMap;
  * 以及「需要考虑订单重复提交的问题」的两级幂等（裁定 D6）。它是唯一知道「一次提交由哪些笔组成」的地方。</p>
  *
  * <h3>为什么事务边界在这个方法上（裁定 D4 + 先占键）</h3>
- * <p>todo 要求「订单创建过程中使用 seata 保证分布式事务」，本期**不引依赖**，但边界已经立在这里：
- * 将来接 Seata 的落点 = **本方法入口再加 {@code @GlobalTransactional}**（与本地 {@code @Transactional}
- * 并存：本地事务仍是本地库的那一半，全局事务管跨域的库存写入）。</p>
+ * <p>todo 要求「订单创建过程中使用 seata 保证分布式事务」，Seata **已接入**（2026-09-22 T12）：
+ * 本方法入口与本地 {@code @Transactional} **并存**地挂上了 {@code @GlobalTransactional}。
+ * 两者分工不同、**并存而非互相替代**——全局事务（TM）管的是**跨域的库存写入**（store 域是分支事务，
+ * 回滚依据在它自己库里的 undo_log），本地事务管的是本地库的那一半（先占键与订单一并落库）：
+ * 去掉本地那行并不会被全局事务补上，「键与订单同事务」这条不变量本就是本地事务给的；
+ * 反过来，**没有跨服务调用时全局事务也没有事务可管**（一批全是复用笔的那条路径即是）。</p>
  * <p>⚠ <b>本轮起它不再只是「将来的落点」，而是先占键语义的必要条件</b>：{@code occupy} 与 {@code saveAll}
  * 必须在**同一个事务**里，否则键会先落地——先到者随后业务失败时键残留，重放会回读到一个**空批次**；
  * 反之键与订单一并回滚，**失败不留残键**这件事就免费得到了，不需要任何清理补偿。</p>
@@ -91,6 +95,7 @@ public class OrderCreateCoordinator {
      * @throws ServiceException       商品不存在 / 不可购买 / 库存不足（HTTP 400，可原样透传页面）
      * @throws IllegalStateException  订单号连续冲突超过重试上限（生成器或环境出了问题）
      */
+    @GlobalTransactional
     @Transactional(rollbackFor = Exception.class)
     public List<OrderModel> create(OrderCreateCommand command) {
         Objects.requireNonNull(command, "下单入参不能为空");

@@ -47,6 +47,15 @@
             <groupId>com.alibaba.cloud</groupId>
             <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
         </dependency>
+        <!--
+          Seata 全局事务（版本由 spring-cloud-alibaba BOM 管理）。
+          ⚠ 本域是**参与方（RM）**：库存扣减 / 回补跑在 trade-center 发起的全局事务里，
+          回滚依据是本域库中的 undo_log（配置见 Nacos 共享配置 seata.yml，cross-cutting 第 12 / 24 条）。
+        -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-seata</artifactId>
+        </dependency>
         <!-- MyBatis-Plus（Spring Boot 4 专用 starter，版本由父 POM 管理） -->
         <dependency>
             <groupId>com.baomidou</groupId>

@@ -3,6 +3,8 @@
 -- 说明：trade-center 持**购物车** trade_cart_item 与**订单**（trade_order 等 5 张，2026-09-21 阶段一新增）；
 --       结账 / 评价不在本期，见仓库根 todo.md。顾客账号表 mall_user 在 mall-bff、
 --       店铺商品 store_goods_spu/sku 在 store 域，本表只记 id 引用（无外键）。
+--       末段另建 Seata AT 模式的回滚日志 undo_log（2026-09-22 T12）：业务代码不碰它、
+--       全域共用同一个库故全仓只需这一份，trade-center 与 store 都是它的读写方。
 --       列名与 common BaseEntity 字段对应（create_user/update_user/is_delete）。
 --       可重复执行（CREATE TABLE IF NOT EXISTS），纯新增、不改任何存量行。
 -- 执行方式：mysql -uroot -p < schema.sql
@@ -131,3 +133,18 @@ CREATE TABLE IF NOT EXISTS trade_order_status_log (
   PRIMARY KEY (id),
   UNIQUE KEY uk_order_seq (order_no, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='订单状态轨迹';
+
+-- ============ Seata AT 模式回滚日志表（T12） ============
+-- ⚠ 全域服务**共用同一个库**（panoramic_mall），故全仓只需一份：本表由 Seata 的 RM 自动读写，
+--    业务代码**不碰**它。trade-center 与 store 两域都是 RM（store 的库存扣减 / 回补是分支事务）。
+-- ⚠ 纯新增，可重复执行；应用见 todo.md T13（控制器执行，不在本席）。
+CREATE TABLE IF NOT EXISTS undo_log (
+  branch_id     BIGINT       NOT NULL COMMENT '分支事务 ID',
+  xid           VARCHAR(128) NOT NULL COMMENT '全局事务 ID',
+  context       VARCHAR(128) NOT NULL COMMENT 'undo_log 序列化方式等上下文',
+  rollback_info LONGBLOB     NOT NULL COMMENT '回滚信息（前后镜像）',
+  log_status    INT          NOT NULL COMMENT '0=正常 1=防悬挂',
+  log_created   DATETIME(6)  NOT NULL COMMENT '创建时间',
+  log_modified  DATETIME(6)  NOT NULL COMMENT '修改时间',
+  UNIQUE KEY ux_undo_log (xid, branch_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Seata AT 模式回滚日志';

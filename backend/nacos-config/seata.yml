@@ -1,0 +1,38 @@
+# ============================================================
+# Nacos 共享配置：Seata 客户端（data-id: seata.yml, GROUP: DEFAULT_GROUP）
+# 由 trade-center（TM + RM）与 store（RM，分支事务方）经 spring.config.import 加载。
+# 其余服务（gateway / admin / store-bff / mall-bff / goods-center / customer-center）不加载。
+# 加载矩阵见 docs/contracts/cross-cutting.md 第 12 条；跨域调用边见第 24 条。
+#
+# ⚠ 前提：TC（Seata Server）与 Nacos / 网关**同机部署在 ECS**，直连地址 127.0.0.1:8091
+#    （Seata 默认端口；与三端 yml 的 discovery.ip=127.0.0.1 同源）。失配的表现是
+#    「拿不到 TC」而不是配置报错（客户端连不上 TC 时不会说自己地址写错了）。
+# ⚠ 用**直连 grouplist + file 注册中心**，不用 nacos 注册中心：后者要额外猜一个
+#    「TC 在 Nacos 里注册的服务名」（默认 seata-server），而那个名字**本仓库无从核对**；
+#    grouplist 直接用上面这个**已被确认过的地址**，是假设最少的一种接法。
+#    若将来 TC 改由 Nacos 注册（服务名确认为 seata-server），把 registry 换回 nacos 即可：
+#      registry: { type: nacos, nacos: { server-addr: <与各服务同址>, ... } }
+#      service.vgroup-mapping.panoramic_mall_tx_group: seata-server
+# ⚠ 紧急退路：本文件发布态在 Nacos 控制台，把 seata.enabled 改成 false（或摘掉各服务 import 里这一行）
+#    即可让两个服务重新变成「无全局事务」——TC 不可用时不必回滚代码。
+#
+# ⚠ 本文件在 application.yml 的 import 中同样**不带 optional:** 前缀：
+#    缺本 data-id 时服务启动即失败，不做静默降级（取向与其余 data-id 一致）。
+# ============================================================
+seata:
+  enabled: true
+  application-id: ${spring.application.name}
+  # 事务分组名：本仓库只有一个分组，客户端的 vgroup-mapping 与 TC 按此名分组路由
+  tx-service-group: panoramic_mall_tx_group
+  service:
+    vgroup-mapping:
+      panoramic_mall_tx_group: default
+    grouplist:
+      default: 127.0.0.1:8091
+  registry:
+    type: file
+  config:
+    type: file
+  # AT 模式需要数据源代理来写 undo_log：保持默认 true（MyBatis-Plus 的数据源由 Nacos 提供，
+  # 代理由 Seata 自动包装；置 false 则 AT 模式失去回滚依据）
+  enable-auto-data-source-proxy: true
