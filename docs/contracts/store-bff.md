@@ -8,10 +8,10 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 # 店铺端 BFF（store-bff）对外契约 · 第 ① 层
 
-> 店主端页面接口（8084），经网关 `/store/**` 对外（`StripPrefix=1` 后落到本服务的 `/auth/**`、`/shops/**`、`/goods/**`）。
-> 签发 `type=store` 的登录令牌，经内部 Feign 编排 store 域、goods-center 与 trade-center（订单，**待实现**）。
+> 店主端页面接口（8084），经网关 `/store/**` 对外（`StripPrefix=1` 后落到本服务的 `/auth/**`、`/shops/**`、`/goods/**`、`/orders/**`）。
+> 签发 `type=store` 的登录令牌，经内部 Feign 编排 store 域、goods-center 与 trade-center（订单）。
 
-**共 23 个接口**（已实现 20 + **待实现 3**：订单列表 / 详情 / 发货）。
+**共 23 个接口**。
 
 ## 一、接口清单
 
@@ -37,11 +37,11 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | GoodsController.java:146 |  |
 | PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | GoodsController.java:154 |  |
 | PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | GoodsController.java:164 |  |
-| GET | /orders/page | — | StoreOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | — | 待实现 |
-| GET | /orders/{orderNo} | — | String | RespData<TradeOrderVO> | — | 待实现 |
-| POST | /orders/{orderNo}/ship | — | String, StoreOrderShipDTO | RespData<Void> | — | 待实现 |
+| GET | /orders/page | — | StoreOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | OrderController.java:51 |  |
+| GET | /orders/{orderNo} | — | String | RespData<TradeOrderVO> | OrderController.java:59 |  |
+| POST | /orders/{orderNo}/ship | — | String, StoreOrderShipDTO | RespData<Void> | OrderController.java:67 |  |
 
-> ⚠ **订单 3 条标 `待实现`**（契约先行）。列表**全状态可见**、含「待支付」（商户需要看到谁下了单没付钱）。
+> ⚠ **订单列表全状态可见**，含「待支付」（商户需要看到谁下了单没付钱）。
 > ⚠ **页面入参 DTO 与域侧入参 DTO 是两回事**（同 [mall-bff.md](./mall-bff.md) 的 `MallOrder*`、[admin.md](./admin.md) 的
 > `OrderPageQueryDTO` 做法）：上面两行是**本层自有**的页面 DTO（`StoreOrderPageQueryDTO` / `StoreOrderShipDTO`），
 > **不持作用域字段**——`storeId` 由本层从登录态取（`type=store` 的 `loginUser.getId()`）后写进**域侧**入参 DTO
@@ -82,8 +82,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 来源 | 类型 |
 |---|---|
 | 两个接口模块（`store-interface` 的 `com.panoramic.contract.store.*`；`goods-center-interface` 的 `.goods.vo`） | ShopVO, ShopSaveDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuPageItemVO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsStockPageItemVO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuPlatformDetailVO, PageResult, CategoryTreeVO, BrandVO, SpuBySkuCodeVO |
-| `trade-center-interface`（`com.panoramic.contract.trade`） | 订单（**待实现**）：出参 TradeOrderVO；**域侧入参**（由本层组装后传给域，不是页面入参）TradeOrderPageQueryDTO, TradeOrderShipDTO |
-| **store-bff 私有**（不在任何接口模块，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO`；订单页面入参（**待实现**）：`storebff/dto/StoreOrderPageQueryDTO`, `storebff/dto/StoreOrderShipDTO` |
+| `trade-center-interface`（`com.panoramic.contract.trade`） | 订单：出参 TradeOrderVO；**域侧入参**（由本层组装后传给域，不是页面入参）TradeOrderPageQueryDTO, TradeOrderQueryDTO, TradeOrderShipDTO |
+| **store-bff 私有**（不在任何接口模块，仅本服务用） | `storebff/vo/LoginResultVO`, `storebff/vo/CurrentUserVO`, `storebff/vo/StoreGoodsSpuDetailBffVO`, `storebff/dto/LoginDTO`, `storebff/dto/RegisterDTO`；订单页面入参：`storebff/dto/StoreOrderPageQueryDTO`, `storebff/dto/StoreOrderShipDTO` |
 
 ⚠ `StoreGoodsSpuDetailBffVO` 是 **BFF 独有**的详情出参（**不继承任何域类型**）：域详情出参
 `StoreGoodsSpuPlatformDetailVO` 是**管理端超集**（含 `lockUser` / `storeName` / …），
@@ -97,7 +97,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 |---|---|---|
 | store 域(8083) | Feign `StoreClient`（店主的店铺 / 商品能力，作用域写入入参 DTO） | 店铺详情（`getShop`）、店铺保存 / 提交；在售商品 CRUD、SKU 替换与上下架、库存；商品分页 |
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类树、分类全路径、品牌列表、SPU 详情、按 SKU 编码反查 SPU |
-| trade-center(8087) | Feign `TradeCenterClient`（**待实现**） | 商户侧订单分页 / 详情 / 发货（`storeId` 锚点由本层从登录态取） |
+| trade-center(8087) | Feign `TradeCenterClient` | 商户侧订单分页 / 详情 / 发货（`storeId` 锚点由本层从登录态取） |
 
 全部经 `common` 的 `BffFeignCall` 包装（剥 cause 链 + 降级文案）。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 

@@ -12,13 +12,16 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * 字段自动填充与安全链；MapperScan 仅扫本服务 mapper（store_user 账号栈归本模块）。
  * 店铺端 BFF 消费 store 域「店主能力」：扫描 store-interface 中同源的内部 Feign 客户端
  * （com.panoramic.contract.store）；店铺商品管理的分类/品牌下拉与「按 SKU 编码反查中台模板」
- * 还需消费 goods-center（com.panoramic.contract.goods，在 goods-center-interface 里）。
+ * 还需消费 goods-center（com.panoramic.contract.goods，在 goods-center-interface 里）；
+ * 商户侧订单（分页 / 详情 / 发货）消费 trade-center（com.panoramic.contract.trade，
+ * 在 trade-center-interface 里）。
  * 与 admin（平台端）互不调用、互不互通（D2/D6）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.panoramic")
 @MapperScan("com.panoramic.storebff.mapper")
 @EnableDiscoveryClient
-@EnableFeignClients(basePackages = {"com.panoramic.contract.store", "com.panoramic.contract.goods"})
+@EnableFeignClients(basePackages = {"com.panoramic.contract.store", "com.panoramic.contract.goods",
+        "com.panoramic.contract.trade"})
 public class StoreBffApplication {
 
     public static void main(String[] args) {
