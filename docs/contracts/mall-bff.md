@@ -71,7 +71,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > ⚠ **订单 5 条整列标 `待实现`**（契约先行：后端接口层还没写，前端可照表先写页面）；
 > `声明位置` 列填 `—` 而不是写计划落点——写一个尚不存在的文件只会变成新的漂移点。
 > 实现完成后**同一改动内把状态摘回留空**（不摘检查器报错）。
-> 订单的域侧契约（三侧锚点 / 出参类型）见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
+> 订单的域侧契约（作用域入参 / 出参类型）见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
 
 > ⚠ 订单**路径标识用 `orderNo`（业务可读单号）**，不是自增 id——理由与形状见 [trade-center.md](./trade-center.md)。
 
