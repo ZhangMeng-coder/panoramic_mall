@@ -139,7 +139,13 @@ public class OrderDomainConfiguration {
     }
 
     /**
-     * 下单编排器（拆单 / 两级幂等 / 失败整次回滚；Seata 的落点见其类注释）
+     * 下单编排器（拆单 / 两级幂等 / 失败整次回滚）
+     *
+     * <p>⚠ 本 bean 由 {@code @Bean} 方法产出，{@code BeanDefinition.getBeanClassName()} **恒为空**——
+     * 故 Seata 的 {@code @GlobalTransactional} **不得挂在这个 bean 的方法上**：
+     * {@code GlobalTransactionScanner} 按该值挑要增强的 bean，取不到类名即**静默跳过**（不报错、不开事务）。
+     * 全局事务落在用例入口 {@code OrderApplicationService#create}，本地 {@code @Transactional} 仍在
+     * 编排器方法上——两者分工见各自的类注释。</p>
      *
      * @return 编排器
      */

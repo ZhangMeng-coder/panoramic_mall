@@ -21,6 +21,7 @@ import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
 import com.panoramic.trade.support.ScopeGuard;
 import lombok.RequiredArgsConstructor;
+import org.apache.seata.spring.annotation.GlobalTransactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,9 +50,20 @@ import java.util.StringJoiner;
  * 只有它能挡，否则 {@code null} 会一路传到仓储、退化成「不限定」并**静默**改掉别人的单。
  * ⚠ 这道护栏是**入参不变量**（参数在不在），不是鉴权（是不是你的单）——后者域内一律不做。</p>
  *
- * <h3>为什么三个动作带事务、下单不带、两个读也带</h3>
- * <p>下单的事务边界在编排器方法上（先占键与订单必须同事务，见
- * {@link OrderRepository} 的接口注释），本类再声明一次只是重复。<br>
+ * <h3>为什么下单挂全局事务、三个动作各自带事务、两个读也带</h3>
+ * <p><b>下单挂的是全局事务（{@code @GlobalTransactional}，Seata TM 侧）</b>——它要**跨服务写库**：
+ * 库存的扣减与回补落在 store 域（分支事务），本地回滚补不回来。
+ * ⚠ 它**必须落在本类、不能挂在编排器入口**：Seata 的 {@code GlobalTransactionScanner} 按
+ * <b>{@code BeanDefinition.getBeanClassName()}</b> 挑要增强的 bean，**取不到类名即跳过**；而编排器
+ * {@link OrderCreateCoordinator} 由装配类（{@code OrderDomainConfiguration}）的 {@code @Bean} 方法产出、
+ * 类名**恒为空**，注解挂在那里会被**静默忽略**（不报错、不告警，事务根本不开）。本类是组件扫描出来的
+ * {@code @Service}，类名非空，注解才真的生效；落点由单测 {@code GlobalTransactionalPlacementTest} 守着
+ * （按「扫描到的组件里至少有一个方法带 {@code @GlobalTransactional}」断言，防的就是这种「挪个位置就静默失效」）。<br>
+ * 库里那一半（先占键 + 订单落库）的本地事务边界仍在 {@link OrderCreateCoordinator#create}
+ * （先占键与订单必须同事务，见 {@link OrderRepository} 的接口注释）——两者**分工不同、并存而非互相替代**，
+ * 去掉本地那行并不会被全局事务补上。⚠ 一批全是复用笔时没有跨服务写，全局事务里只剩 trade-center
+ * 自己那一个分支（AT 的数据源代理由 {@code seata.yml} 的 {@code enable-auto-data-source-proxy} 开着），
+ * 它不比本地事务多保护任何东西。<br>
  * 三个动作则必须自己带：它们是「读订单 → 聚合内迁移状态 → 落库」三步，而落库要写
  * <b>订单行 + 状态轨迹两处</b>（{@link OrderRepository#update}），任何一步失败都得整体回退，
  * 否则会留下「状态列已改、轨迹没跟上」这类自相矛盾的单（列表按状态列、详情按轨迹，同单两个状态）。<br>
@@ -87,6 +99,7 @@ public class OrderApplicationService {
      * @param dto 下单参数（**作用域** customerId + 来源 / 幂等键 / 地址快照 / 商品行）
      * @return 本次提交的整批订单（顺序 = {@code storeId} 升序）
      */
+    @GlobalTransactional
     public List<TradeOrderVO> create(TradeOrderCreateDTO dto) {
         ScopeGuard.require(dto.getCustomerId(), "顾客 id");
         OrderCreateCommand command = new OrderCreateCommand(dto.getCustomerId(),

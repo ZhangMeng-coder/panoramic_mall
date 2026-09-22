@@ -32,7 +32,9 @@ import java.util.Set;
  * <p>本类不认识仓库、不认识库存、不认识时钟——订单号查重、两级幂等、拆单、库存扣减与失败回滚
  * 都在编排层（{@code OrderCreateCoordinator}）。<br>
  * ⚠ 分布式事务（Seata）**不在此处**：本类是无事务语义的纯内存对象，{@code @GlobalTransactional}
- * 的落点在编排层方法入口（裁定 D4）。</p>
+ * 的落点在用例入口 {@code OrderApplicationService#create}（裁定 D4）——⚠ **不是**编排层方法入口：
+ * 挂在那里会被 Seata 静默忽略（它按 {@code BeanDefinition.getBeanClassName()} 挑目标，装配类
+ * {@code @Bean} 产出的 bean 类名恒空），见该类注释。</p>
  *
  * <p>⚠ <b>订正一句早期说法</b>：本类与 {@code OrderItem} 的注释曾写过「落库时只换适配器即可，
  * domain 一行都不用动」。那句话**是错的**，落库期（2026-09-21）实际动了三处，且都是必需的：
