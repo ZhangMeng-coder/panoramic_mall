@@ -4,15 +4,19 @@ import { useRoute, useRouter } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 import SearchBar from '../components/SearchBar.vue'
 import SiteFooter from '../components/SiteFooter.vue'
+import AddressPicker from '../components/AddressPicker.vue'
 import { catalogApi } from '../api/catalog'
 import { cartApi } from '../api/cart'
+import { orderApi } from '../api/order'
 import { LOGIN_REQUIRED_MSG } from '../api/request'
 import { getToken } from '../store/auth'
 import { refresh as refreshCartBadge } from '../store/cart'
 import { showToast } from '../composables/useToast'
 import type { GoodsDetail, GoodsDetailSku } from '../types/catalog'
+import type { OrderVO } from '../types/order'
 import { grad } from '../utils/gradient'
 import { priceParts, trimNum } from '../utils/format'
+import { newRequestId } from '../utils/requestId'
 
 /**
  * 商品详情页（`/goods/:id`，**需登录态**——路由 meta.requiresAuth 拦，见 router/index.ts）。
@@ -27,10 +31,11 @@ import { priceParts, trimNum } from '../utils/format'
  *    （剥脚本 / 事件属性 / 样式；白名单只此一份，admin 端同字段共用），本页**不需要、也不得**
  *    自己再拼一遍 HTML。
  *    ⚠ 别改回 `{{ }}` 插值：那样店主写的 `<p>` 会原样露在页面上。
- * ③ **「加入购物车」已接入，不做「立即购买」**：购物车接口已就绪（契约 docs/contracts/mall-bff.md
- *    的 `/cart` 八行），本页规格区下方摆数量 + 加入购物车；**下单 / 结算仍没有接口**，
- *    故不摆「立即购买」——摆一个点了没反应的按钮比不摆更糟（购物车页的「去结算」也是
- *    禁用按钮 + 一行「结算功能开发中」）。
+ * ③ **「加入购物车」与「立即下单」都已接入**：购物车走 `/cart` 八行、下单走 `/orders` 一行
+ *    （契约 docs/contracts/mall-bff.md），本页规格区下方摆数量 + 两个动作。
+ *    ⚠ 「立即下单」不是「立即购买」：它**不跳支付页**（C 端没有收银台），而是**就地展开选地址面板**
+ *    （`AddressPicker`，本端不引模态层），由顾客选好地址按「确认下单」才真的下单；
+ *    下单成功按「一笔 / 多笔」分流（一单一店，一次提交可能拆成多笔）。
  */
 
 const route = useRoute()
@@ -252,7 +257,7 @@ function stepBuyQty(delta: number): void {
 /**
  * 加入购物车。未登录 → 提示并去登录页（带回跳参数，登录后回本页）；
  * 加购**不校验库存**（契约口径）：库存只影响这行之后还能不能再加（`purchasable`），
- * 真正拦库存的是下单，而下单还没有接口。
+ * 真正拦库存的是**下单**（本页的「立即下单」与购物车结算），由域侧判定。
  *
  * ⚠ 成功后刷的是**行数徽标**（`GET /cart/count` 口径），故重拉而不是本地 `buyQty` 相加——
  * 那会把「件数」当「行数」记进徽标（见 store/cart.ts）。
@@ -280,6 +285,79 @@ async function addToCart(): Promise<void> {
   }
 }
 
+/* ---- 立即下单（source=DIRECT）---- */
+
+/** 选地址面板是否展开（**不引模态层**：就是就地展开一块，见 AddressPicker） */
+const pickerOpen = ref(false)
+
+/**
+ * 下单在途。⚠ 它同时是**防连点**的正解：`requestId` 在「确认下单」那一下才生成，
+ * 若两次点击各生成一个键，域侧的第一级幂等（按 `(customer_id, request_id)`）就**失效**，
+ * 连点两下就是两笔真实订单。故提交期间按钮禁用（AddressPicker 的 `submitting`）。
+ */
+const ordering = ref(false)
+
+/** 「立即下单」可点：与加购同一判据（选中规格 + 未售罄 + 没有请求在途） */
+const canBuyNow = computed(() => {
+  const sku = activeSku.value
+  return sku !== null && sku.availableStock > 0 && !ordering.value
+})
+
+/** 点「立即下单」：未登录先提示去登录（同加购）；已登录则展开选地址面板 */
+async function openBuyNow(): Promise<void> {
+  if (!canBuyNow.value) return
+
+  if (!getToken()) {
+    showToast(LOGIN_REQUIRED_MSG, 'info')
+    await router.push({ path: '/login', query: { redirect: route.fullPath } })
+    return
+  }
+
+  pickerOpen.value = true
+}
+
+/**
+ * 下单成功后的分流：**一笔 → 该单详情；多笔 → 订单列表 + 提示**
+ * （一次提交按 `storeId` 拆成多笔，顺序 = `storeId` 升序，契约口径）。
+ */
+async function afterOrdered(orders: OrderVO[]): Promise<void> {
+  if (orders.length === 1) {
+    await router.push(`/orders/${orders[0].orderNo}`)
+    return
+  }
+  // 0 笔理论上不会出现（域侧至少回一笔）；真出现时也别装没事，把人送到订单列表去看实情
+  if (orders.length > 1) showToast(`已按店铺拆成 ${orders.length} 笔订单`, 'info')
+  await router.push('/orders')
+}
+
+/**
+ * 确认下单（选地址面板的「确认下单」）：**这一刻**生成 requestId（每次确认一个），
+ * 提交期间面板整块禁用（防连点，见 `ordering`）。
+ *
+ * ⚠ 失败**不关面板**：域侧 400（商品已下架 / 库存不足）的中文文案由拦截器弹出，
+ * 顾客可以改地址或直接重试——关掉面板等于逼他再点一次「立即下单」。
+ */
+async function submitOrder(addressId: number): Promise<void> {
+  const sku = activeSku.value
+  if (!sku || ordering.value) return
+
+  ordering.value = true
+  try {
+    const orders = await orderApi.create({
+      source: 'DIRECT',
+      requestId: newRequestId(),
+      addressId,
+      items: [{ skuId: sku.id, quantity: buyQty.value }]
+    })
+    pickerOpen.value = false
+    await afterOrdered(orders)
+  } catch {
+    // 拦截器已弹后端 msg
+  } finally {
+    ordering.value = false
+  }
+}
+
 /** 换图重试一次：上一张图的加载失败态不该粘到新图上（与 CatalogCard 同款处理） */
 watch(activeImage, () => {
   stageFailed.value = false
@@ -288,6 +366,8 @@ watch(activeImage, () => {
 /** 换规格：数量重置为 1（不同 SKU 库存不同，继承上一个规格的数量会得到「一选就超上限」的怪状态） */
 watch(activeSku, () => {
   buyQty.value = 1
+  // 面板里正要下的是**上一个规格**，规格一换就把它收起（留着会让顾客对着新规格下旧规格的单）
+  pickerOpen.value = false
 })
 
 /**
@@ -415,7 +495,7 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               </button>
             </div>
 
-            <!-- 购买区：数量步进器 + 加入购物车（**不做「立即购买」**，见文件头 ③）。
+            <!-- 购买区：数量步进器 + 加入购物车 / 立即下单（见文件头 ③）。
                  未选规格 / 已售罄时按钮禁用，理由写在下面那行，别让用户猜 -->
             <div class="detail__buy">
               <div class="detail__qty" role="group" aria-label="购买数量">
@@ -443,8 +523,21 @@ watch(goodsId, (id) => void load(id), { immediate: true })
               <button class="detail__add" type="button" :disabled="!canAdd" @click="addToCart">
                 {{ adding ? '加入中…' : '加入购物车' }}
               </button>
+
+              <!-- 立即下单：就地展开选地址面板（不是「立即购买」——C 端没有收银台，见文件头 ③） -->
+              <button class="detail__buy-now" type="button" :disabled="!canBuyNow" @click="openBuyNow">
+                立即下单
+              </button>
             </div>
             <p v-if="buyHint" class="detail__buy-hint">{{ buyHint }}</p>
+
+            <!-- 选收货地址：在**本页就地展开**（本端没有模态层），选好按「确认下单」才真的下单 -->
+            <AddressPicker
+              v-if="pickerOpen"
+              :submitting="ordering"
+              @confirm="submitOrder"
+              @cancel="pickerOpen = false"
+            />
           </div>
         </div>
 

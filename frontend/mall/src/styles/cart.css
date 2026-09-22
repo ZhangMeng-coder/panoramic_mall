@@ -451,9 +451,10 @@
   font-size: var(--t-md);
 }
 
-/* 结算按钮：**恒禁用**（后端没有下单 / 结算接口，见 CartView.vue 文件头 ⑥）。
-   故它的禁用态是它的**常态**，按主按钮的形做出来（不是灰扑扑的「坏掉的按钮」），
-   但降低不透明度 + 禁手型，配上右侧那行说明 —— 用户一眼能看出「还不能点、原因是开发中」 */
+/* 结算按钮：**主按钮**（已接真实下单，见 CartView.vue 文件头 ⑥）。
+   禁用只发生在三种情形——没勾选有效行 / 整批写操作在途 / 选地址面板已展开，
+   那时才降不透明度 + 禁手型，并在左侧配一行「请先勾选要结算的商品」：
+   它是**暂时不能点**，不是「开发中」，别把它做回那个灰扑扑的常态 */
 .cart-sum__btn {
   height: 44px;
   padding: 0 var(--s-10);
@@ -463,6 +464,18 @@
   font-size: var(--t-md);
   font-weight: var(--w-semibold);
   letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.cart-sum__btn:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.cart-sum__btn:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.cart-sum__btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

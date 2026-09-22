@@ -62,6 +62,22 @@ const routes = [
     component: () => import('../views/CartView.vue'),
     meta: { title: '购物车', requiresAuth: true }
   },
+  // 我的订单：顾客自己的数据，与购物车同级——**要登录态**。也不挂在 /account 下：
+  // 它是顶栏 / 用户卡直达的一级页（那两处入口都指向 /orders）
+  {
+    path: '/orders',
+    name: 'orders',
+    component: () => import('../views/order/OrderListView.vue'),
+    meta: { title: '我的订单', requiresAuth: true }
+  },
+  // 订单详情：路径标识用**业务单号**（`orderNo`），不是自增 id（契约口径）；
+  // 与 /goods/:id 同理，涉及顾客自己的数据 → 要登录态
+  {
+    path: '/orders/:orderNo',
+    name: 'order-detail',
+    component: () => import('../views/order/OrderDetailView.vue'),
+    meta: { title: '订单详情', requiresAuth: true }
+  },
   // 个人中心：**二级结构**——父路由挂「左菜单 + 右内容」的外壳，内容各页是它的 children。
   // 顾客自己的数据一律要登录态（与「一涉及顾客数据就要登录」一致），故父子两级都标 requiresAuth。
   {

@@ -689,6 +689,31 @@
   cursor: not-allowed;
 }
 
+/* 「立即下单」：与主按钮同一形状的**次级**动作（柔色底 + 主色字，照 .acct__retry）——
+   主色实心只留给一个动作，两个实心按钮并排就没有主次了 */
+.detail__buy-now {
+  height: 44px;
+  padding: 0 var(--s-8);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.detail__buy-now:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+.detail__buy-now:disabled {
+  background: var(--n100);
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
 /* 按钮不可用的理由（请先选择规格 / 该规格已售罄） */
 .detail__buy-hint {
   margin-top: var(--s-3);

@@ -1,0 +1,987 @@
+/* ============================================================================
+   Order — 订单列表 / 订单详情 / 选收货地址面板（OrderListView / OrderDetailView / AddressPicker）
+   ----------------------------------------------------------------------------
+   只消费 tokens.css 的令牌：**禁止硬编码色值 / 圆角 / 阴影**。
+   只做宽屏：容器沿用 base.css 的 .container（1280px），不写媒体查询。
+   ⚠ 类名一律 `order-*` / `order__*` 前缀，与首页 .goods__* / 列表 .cat-card__* /
+     购物车 .cart-* / 账号 .acct__* 都分开（本仓库既有约定），视觉语言仍沿用同一套：
+     面板 = 白底 + n200 细边 + r-lg，行内轻按钮 = 无底色无边框、hover 起主色，
+     次级胶囊按钮 = 柔色底 + 主色字，降级块 = 白底实线 + 居中 + 「重试」，
+     空态 = 虚线框 + 引导（两者刻意不同形）。
+
+   类名清单：
+     页面骨架 .order-page / .order-detail / .order__head / .order__title / .order__desc /
+              .order__state / .order__fallback / .order__retry / .order__fallback-link /
+              .order__empty
+     列表     .order-list / .order-card（含 __hit 整卡链接 / __head / __body / __thumbs /
+              __sum / __foot / __ops）
+     详情     .order-detail__*（面包屑 / 状态条 / 信息面板 / 商品行 .order-line / 合计 / 操作区）
+     支付面板 .order-pay / .order-pay__*
+     选地址   .addr-pick / .addr-pick__*（详情页「立即下单」与购物车「去结算」共用）
+   ========================================================================== */
+
+.order-page,
+.order-detail {
+  padding: var(--s-6) 0 var(--s-16);
+  background: var(--n50);
+}
+
+/* ---- 页头：标题 + 「共 N 笔」 ---- */
+
+.order__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+}
+
+.order__title {
+  color: var(--n900);
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  letter-spacing: -0.3px;
+}
+
+.order__desc {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order__desc b {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+/* 加载中的整块占位（与购物车页 .cart__state 同一形状） */
+.order__state {
+  padding: var(--s-16) 0;
+  color: var(--n500);
+  font-size: var(--t-base);
+  text-align: center;
+}
+
+/* ---- 降级块（读不到）与空态（一笔都没有）**刻意不同形**，别合成一块 ---- */
+
+.order__fallback {
+  padding: var(--s-10) var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.order__fallback-text {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+/* 次级胶囊（降级块的重试；形状照 .cart__retry / .acct__retry） */
+.order__retry {
+  height: 36px;
+  margin-top: var(--s-4);
+  padding: 0 var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-medium);
+  transition: background var(--dur) var(--ease);
+}
+
+.order__retry:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+/* 详情页错误态多一个去处（返回我的订单）：行内轻按钮，不另起一块按钮 */
+.order__fallback-link {
+  display: inline-block;
+  margin-top: var(--s-4);
+  margin-left: var(--s-5);
+  color: var(--n600);
+  font-size: var(--t-sm);
+  transition: color var(--dur) var(--ease);
+}
+
+.order__fallback-link:hover {
+  color: var(--brand);
+}
+
+.order__empty {
+  padding: var(--s-16) var(--s-5);
+  border: 1px dashed var(--n300);
+  border-radius: var(--r-lg);
+  text-align: center;
+}
+
+.order__empty-text {
+  color: var(--n800);
+  font-size: var(--t-md);
+  font-weight: var(--w-medium);
+}
+
+.order__empty-hint {
+  margin-top: var(--s-2);
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+/* 空态的入口做成主色胶囊按钮（比一行文字更像「下一步该点这里」） */
+.order__empty-link {
+  display: inline-block;
+  height: 40px;
+  margin-top: var(--s-6);
+  padding: 0 var(--s-8);
+  line-height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+  transition: background var(--dur) var(--ease);
+}
+
+.order__empty-link:hover {
+  background: var(--brand-grad-hover);
+}
+
+/* ============================================================================
+   订单列表：一单一卡（卡内 = 头 / 体 / 脚三段）
+   ========================================================================== */
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.order-card {
+  position: relative; /* 整卡链接的定位锚（见 .order-card__hit） */
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+  transition:
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.order-card:hover {
+  border-color: var(--n300);
+  box-shadow: var(--sh-md);
+}
+
+/* 整卡链接：铺满卡片的透明层（同 .cat-card__hit）。
+   ⚠ 行内操作按钮必须压在它上面（z-index，见 .order-card__ops），否则点「确认收货」会顺带跳走 */
+.order-card__hit {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--r-lg);
+}
+
+.order-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-5);
+  border-bottom: 1px solid var(--n200);
+  background: var(--n50);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+}
+
+.order-card__no {
+  color: var(--n800);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+
+.order-card__store {
+  overflow: hidden;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 状态：常态即主色字（它是这一行最该被看见的信息），文案由域下发 */
+.order-card__status {
+  margin-left: auto;
+  color: var(--brand);
+  font-size: var(--t-sm);
+  font-weight: var(--w-semibold);
+}
+
+.order-card__body {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  padding: var(--s-4) var(--s-5);
+}
+
+/* 商品缩略：横向一排，每个缩略带名字与规格（比只给图更像「我买的到底是哪几件」） */
+.order-card__thumbs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: var(--s-4);
+}
+
+.order-card__thumbs > li {
+  width: 120px;
+  min-width: 0;
+}
+
+.order-card__thumb {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+.order-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.order-card__ph {
+  font-size: var(--t-lg);
+  font-weight: var(--w-semibold);
+}
+
+.order-card__goods {
+  margin-top: var(--s-2);
+  color: var(--n700);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.order-card__spec {
+  margin-top: var(--s-1);
+  overflow: hidden;
+  color: var(--n500);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.order-card__sum {
+  flex: none;
+  min-width: 140px;
+  text-align: right;
+}
+
+.order-card__qty {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-card__qty b {
+  color: var(--n800);
+  font-weight: var(--w-medium);
+}
+
+.order-card__amount {
+  margin-top: var(--s-2);
+  color: var(--brand);
+  font-size: var(--t-lg);
+  font-weight: var(--w-bold);
+  line-height: 1;
+}
+
+.order-card__sym {
+  font-size: var(--t-sm);
+}
+
+.order-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-5);
+  border-top: 1px solid var(--n200);
+}
+
+.order-card__time {
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+.order-card__ship {
+  color: var(--n600);
+  font-size: var(--t-xs);
+}
+
+/* 行内操作：压在整卡链接**上面**（否则点按钮会先命中那层透明链接跳走） */
+.order-card__ops {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.order-card__confirm {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 卡片里的动作按钮：胶囊、小一号（列表不是操作主场景，别做成详情页那种大按钮） */
+.order-card__btn {
+  height: 32px;
+  padding: 0 var(--s-5);
+  border: 1px solid var(--n300);
+  border-radius: var(--r-pill);
+  color: var(--n700);
+  font-size: var(--t-sm);
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.order-card__btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+/* 主动作（去支付 / 确认收货）：柔色底 + 主色字 */
+.order-card__btn--main {
+  border-color: transparent;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-weight: var(--w-medium);
+}
+
+.order-card__btn--main:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+.order-card__btn:disabled {
+  border-color: var(--n200);
+  background: var(--n100);
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+/* 行内轻按钮（查看详情 / 取消）：无底色无边框，hover 起主色（照 .cart__link） */
+.order-card__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.order-card__link:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.order-card__link:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   订单详情
+   ========================================================================== */
+
+.order-detail__crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+.order-detail__crumb-link:hover {
+  color: var(--brand);
+}
+
+.order-detail__crumb-sep {
+  color: var(--n400);
+}
+
+.order-detail__crumb-cur {
+  overflow: hidden;
+  color: var(--n700);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 状态条：状态文案 + 下单时间（域下发的文案是这一屏的主信息） */
+.order-detail__status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  background: var(--brand-soft);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+}
+
+.order-detail__status-text {
+  color: var(--brand);
+  font-size: var(--t-lg);
+  font-weight: var(--w-bold);
+}
+
+.order-detail__status-sub {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-detail__panel {
+  margin-top: var(--s-4);
+  padding: var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.order-detail__block-title {
+  margin-bottom: var(--s-3);
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+/* 键值对：清单式两列（左键定宽，右键吃满），不用表格——它不是数据网格 */
+.order-detail__meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.order-detail__meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+}
+
+.order-detail__meta-key {
+  flex: none;
+  width: 80px;
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+.order-detail__meta-val {
+  min-width: 0;
+  color: var(--n800);
+  font-size: var(--t-sm);
+  word-break: break-all;
+}
+
+/* 收货地址快照：与上面的键值对隔一条细线（它是独立一块，不是又一行元数据） */
+.order-detail__addr {
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--n200);
+}
+
+.order-detail__addr-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.order-detail__addr-name {
+  color: var(--n800);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+}
+
+.order-detail__addr-phone {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-detail__addr-text {
+  margin-top: var(--s-1);
+  color: var(--n600);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+
+/* ---- 商品行：图 / 信息 / 单价 / 数量 / 小计 —— 五列固定栅格（行与行的各列左边缘对齐）---- */
+
+.order-detail__items {
+  display: flex;
+  flex-direction: column;
+}
+
+.order-line {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 110px 90px 110px;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+}
+
+.order-line + .order-line {
+  border-top: 1px solid var(--n200);
+}
+
+.order-line__thumb {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+.order-line__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.order-line__ph {
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.order-line__info {
+  min-width: 0;
+}
+
+.order-line__name {
+  color: var(--n800);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.order-line__spec {
+  margin-top: var(--s-1);
+  overflow: hidden;
+  color: var(--n500);
+  font-size: var(--t-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.order-line__price,
+.order-line__qty {
+  color: var(--n700);
+  font-size: var(--t-sm);
+}
+
+/* 小计：这一行唯一的加粗数字（合计在下面那块，不在这里） */
+.order-line__sub {
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+  text-align: right;
+}
+
+.order-detail__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--n200);
+}
+
+.order-detail__total-qty {
+  margin-right: auto;
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-detail__total-qty b {
+  color: var(--n800);
+  font-weight: var(--w-medium);
+}
+
+.order-detail__total-label {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-detail__total-amount {
+  color: var(--brand);
+  font-size: var(--t-xl);
+  font-weight: var(--w-bold);
+  line-height: 1;
+}
+
+.order-detail__total-sym {
+  font-size: var(--t-md);
+}
+
+/* ---- 操作区：按状态显示（待支付 → 去支付；已发货 → 确认收货）---- */
+
+.order-detail__ops {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-4);
+  padding: var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.order-detail__confirm {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.order-detail__btn {
+  height: 44px;
+  padding: 0 var(--s-10);
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.order-detail__btn:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.order-detail__btn:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.order-detail__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.order-detail__link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.order-detail__link:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.order-detail__link:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   支付面板：行内展开（不引遮罩），一个金额输入 + 确认 —— 内容窄，不跟着面板铺满
+   ========================================================================== */
+
+.order-pay {
+  margin-top: var(--s-4);
+  padding: var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.order-pay__title {
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.order-pay__form {
+  max-width: 420px;
+  margin-top: var(--s-4);
+}
+
+/* 两个按钮一行：确认吃掉剩余宽度，取消是行内轻按钮（同 .acct__form-ops） */
+.order-pay__ops {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.order-pay__submit {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.order-pay__submit:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.order-pay__submit:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.order-pay__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.order-pay__cancel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.order-pay__cancel:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.order-pay__cancel:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   选收货地址面板（AddressPicker）—— 详情页「立即下单」与购物车「去结算」共用
+   ========================================================================== */
+
+.addr-pick {
+  margin-top: var(--s-6);
+  padding: var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.addr-pick__title {
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.addr-pick__state {
+  padding: var(--s-6) 0;
+  color: var(--n500);
+  font-size: var(--t-base);
+  text-align: center;
+}
+
+.addr-pick__fallback {
+  margin-top: var(--s-4);
+  padding: var(--s-6) var(--s-5);
+  background: var(--n50);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.addr-pick__fallback-text {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+.addr-pick__retry {
+  height: 36px;
+  margin-top: var(--s-4);
+  padding: 0 var(--s-6);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-base);
+  font-weight: var(--w-medium);
+  transition: background var(--dur) var(--ease);
+}
+
+.addr-pick__retry:hover:not(:disabled) {
+  background: var(--brand-soft-2);
+}
+
+.addr-pick__empty {
+  margin-top: var(--s-4);
+  padding: var(--s-8) var(--s-5);
+  border: 1px dashed var(--n300);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.addr-pick__empty-text {
+  color: var(--n700);
+  font-size: var(--t-base);
+}
+
+.addr-pick__empty-link {
+  display: inline-block;
+  height: 40px;
+  margin-top: var(--s-5);
+  padding: 0 var(--s-8);
+  line-height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+  transition: background var(--dur) var(--ease);
+}
+
+.addr-pick__empty-link:hover {
+  background: var(--brand-grad-hover);
+}
+
+/* 地址列表：一段窄栏（一行字太长反而难读，同 .acct__form） */
+.addr-pick__list {
+  max-width: 560px;
+  margin-top: var(--s-4);
+}
+
+.addr-pick__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.addr-pick__list > li + li {
+  margin-top: var(--s-3);
+}
+
+.addr-pick__opt:hover {
+  border-color: var(--n300);
+}
+
+/* 选中态：主色描边 + 柔色底（与输入框聚焦同一套语言） */
+.addr-pick__opt.is-on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+/* 原生 radio + accent-color 上主色，不自造一套控件（同购物车勾选框） */
+.addr-pick__radio {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.addr-pick__radio:disabled {
+  cursor: not-allowed;
+}
+
+.addr-pick__body {
+  min-width: 0;
+}
+
+.addr-pick__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+
+.addr-pick__name {
+  color: var(--n800);
+  font-size: var(--t-base);
+  font-weight: var(--w-semibold);
+}
+
+.addr-pick__phone {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 「默认」标记：柔色底 + 主色字（它是标记，不是按钮） */
+.addr-pick__tag {
+  padding: 1px var(--s-2);
+  border-radius: var(--r-sm);
+  background: var(--brand-soft-2);
+  color: var(--brand);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+}
+
+.addr-pick__text {
+  display: block;
+  margin-top: var(--s-1);
+  color: var(--n600);
+  font-size: var(--t-sm);
+  line-height: 1.6;
+}
+
+.addr-pick__ops {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  max-width: 560px;
+  margin-top: var(--s-5);
+}
+
+.addr-pick__submit {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.addr-pick__submit:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.addr-pick__submit:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.addr-pick__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.addr-pick__cancel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.addr-pick__cancel:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.addr-pick__cancel:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}

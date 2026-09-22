@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import TopBar from '../components/TopBar.vue'
 import SiteFooter from '../components/SiteFooter.vue'
+import AddressPicker from '../components/AddressPicker.vue'
 import { cartApi } from '../api/cart'
+import { orderApi } from '../api/order'
 import { refresh as refreshBadge } from '../store/cart'
 import { showToast } from '../composables/useToast'
 import type { CartItem, CartResult } from '../types/cart'
+import type { OrderVO } from '../types/order'
 import { grad } from '../utils/gradient'
 import { trimNum } from '../utils/format'
+import { newRequestId } from '../utils/requestId'
 
 /**
  * 购物车页（`/cart`，**需登录态**——路由 meta.requiresAuth 拦，见 router/index.ts）。
@@ -39,18 +44,30 @@ import { trimNum } from '../utils/format'
  *    删除是独立动作（还要两步确认），把「减一格」和「删掉这一行」绑在一起，误触代价不对等。
  *    另外 `+` 还夹了一道**前端镜像的 999 上限**（域侧单行上限，超限必然 400），
  *    免得点出一个注定失败的请求。
- * ⑥ **不摆「立即购买」，「去结算」是禁用按钮** + 一行「结算功能开发中」：后端没有下单 /
- *    结算接口，摆一个点了没反应的按钮比不摆更糟。
+ * ⑥ **「去结算」已接真实下单**（`source=CART`）：没勾选任何有效行时按钮不可点（判据就是
+ *    页面上勾得到的那些行），点了**就地展开选地址面板**（本端没有模态层，面板由 `AddressPicker`
+ *    提供），选好地址按「确认下单」才真的下单。⚠ 提交那一下才生成 `requestId`，期间整块禁用——
+ *    连点两下会生成两个键，域侧的第一级幂等就失效了，那是**两笔真实订单**。
+ *    成功后的分流与详情页「立即下单」相同（一笔跳详情 / 多笔跳列表）；**购物车由服务端在
+ *    下单成功后自己清**（前端不再调删除接口），页面只需重拉一次**行数徽标**。
  * ⑦ **破坏性动作走行内两步确认**（本端没有模态层，也不用 `window.confirm`，同收货地址页）：
  *    行删除就地变成「确认删除？/ 确认删除 / 取消」；「删除选中」「清空购物车」共用一处
  *    待确认态（`pendingWipe`），同时只留一处确认，不并列弹两块。
  *    ⚠ **唯一例外是「清除失效商品」**（顶部操作条，`invalidCount > 0` 才渲染，点了就删）：
  *    它删掉的本就是**买不了**的行，误删的代价是「重新加购一次」，与「删掉一堆正常商品」
  *    不对等——代价不对等，确认步骤就不该一样。⚠ 别顺手把它补进 `pendingWipe` 那套确认。
+ * ⑧ **结算 payload 的 `items` 与 `cartItemIds` 必须同源**：两者都从 `checkoutRows`
+ *    （有效且勾选的行）**派生一次**，不要各算一遍。`items[].skuId` 是商品规格 id、
+ *    `cartItemIds` 是**购物车行 id**，两者不是一回事；而契约里「只清本次结算的行」是
+ *    **客户端义务**（服务端不做 `cartItemIds ⊆ items` 的交叉校验），算岔了会把**没结算的行
+ *    静默删掉**——没有任何报错信号，顾客只能自己发现车里的东西少了。
  */
 
 /** 单行数量上限（域侧口径的前端镜像，见文件头 ⑤）；只在 `+` 的禁用判据里用 */
 const MAX_QUANTITY = 999
+
+/** 结算成功后的分流要跳页（一笔 → 详情 / 多笔 → 列表），故本页也用得上路由器 */
+const router = useRouter()
 
 const cart = ref<CartResult | null>(null)
 const loading = ref(false)
@@ -89,8 +106,13 @@ const allSelected = computed(
   () => validItems.value.length > 0 && validItems.value.every((i) => i.selected)
 )
 
-/** 页面上勾得到的行 id（「删除选中」的作用域，见文件头 ③） */
-const selectedVisibleIds = computed(() => validItems.value.filter((i) => i.selected).map((i) => i.id))
+/**
+ * 本次结算的选中行（有效且勾选）—— **`items` 与 `cartItemIds` 都只从这一份派生**（见文件头 ⑧）。
+ */
+const checkoutRows = computed(() => validItems.value.filter((i) => i.selected))
+
+/** 页面上勾得到的行 id（「删除选中」的作用域，见文件头 ③；也是本次结算要清掉的那些购物车行） */
+const selectedVisibleIds = computed(() => checkoutRows.value.map((i) => i.id))
 
 /** 汇总：全部取服务端算好的值（见文件头 ①） */
 const selectedQuantity = computed(() => cart.value?.selectedQuantity ?? 0)
@@ -353,6 +375,68 @@ async function removeInvalid(): Promise<void> {
     busyAll.value = false
   }
 }
+
+/* ---- 去结算（source=CART，见文件头 ⑥）---- */
+
+/** 选地址面板是否展开（**不引模态层**：就是就地展开一块，见 AddressPicker） */
+const checkoutOpen = ref(false)
+
+/** 下单在途。⚠ 它同时是**防连点**的正解：`requestId` 在「确认下单」那一下才生成，
+ *  提交期间整块禁用——两次点击各生成一个键就不再命中请求级幂等，那是两笔真实订单 */
+const placing = ref(false)
+
+/** 点「去结算」：展开选地址面板（没勾选任何有效行时按钮本就不可点，这里再兜一层） */
+function openCheckout(): void {
+  if (!checkoutRows.value.length) return
+  checkoutOpen.value = true
+}
+
+/** 下单成功后的分流：一笔 → 该单详情；多笔 → 订单列表 + 提示（与详情页「立即下单」同一口径） */
+async function afterOrdered(orders: OrderVO[]): Promise<void> {
+  if (orders.length === 1) {
+    await router.push(`/orders/${orders[0].orderNo}`)
+    return
+  }
+  if (orders.length > 1) showToast(`已按店铺拆成 ${orders.length} 笔订单`, 'info')
+  await router.push('/orders')
+}
+
+/**
+ * 确认下单（选地址面板的「确认下单」）。
+ *
+ * ⚠ **两个行集合派生自同一份 `checkoutRows`**（见文件头 ⑧）：`items` 要的是 `skuId`，
+ * `cartItemIds` 要的是**购物车行 id**——各算一遍就可能对不上，而服务端不做交叉校验，
+ * 对不上会**静默删掉没结算的行**。
+ * ⚠ 下单成功后**购物车由服务端清**（前端不再调删除接口），这里只重拉行数徽标。
+ * ⚠ 失败**不关面板**：域侧 400（商品已下架 / 库存不足）的文案由拦截器弹出，顾客可改地址重试。
+ */
+async function submitCheckout(addressId: number): Promise<void> {
+  if (placing.value) return
+  const rows = checkoutRows.value
+  if (!rows.length) {
+    showToast('请先勾选要结算的商品', 'info')
+    return
+  }
+
+  placing.value = true
+  try {
+    const orders = await orderApi.create({
+      source: 'CART',
+      requestId: newRequestId(),
+      addressId,
+      items: rows.map((r) => ({ skuId: r.skuId, quantity: r.quantity })),
+      cartItemIds: rows.map((r) => r.id)
+    })
+    checkoutOpen.value = false
+    // 徽标口径是**行数**：下单成功后服务端把结算掉的行删了，行数变了，故重拉（本地减不出来）
+    void refreshBadge()
+    await afterOrdered(orders)
+  } catch {
+    // 拦截器已弹后端 msg
+  } finally {
+    placing.value = false
+  }
+}
 </script>
 
 <template>
@@ -564,6 +648,15 @@ async function removeInvalid(): Promise<void> {
           </section>
         </div>
 
+        <!-- 去结算：选好地址按「确认下单」才真的下单（`source=CART`）。成功后购物车由服务端清，
+             本页只重拉徽标并跳转（一笔 → 详情 / 多笔 → 列表） -->
+        <AddressPicker
+          v-if="checkoutOpen"
+          :submitting="placing"
+          @confirm="submitCheckout"
+          @cancel="checkoutOpen = false"
+        />
+
         <!-- 底部汇总栏：件数与金额都取服务端值（文件头 ①）；吸底，长列表滚动时也看得见。
              ⚠ 它已在 .container（1280）里面，不要再套一层 container —— 那是 1280 套 1280 的自我重复 -->
         <div class="cart-sum">
@@ -575,10 +668,19 @@ async function removeInvalid(): Promise<void> {
               <span class="cart-sum__amount tnum">
                 <span class="cart-sum__sym">¥</span>{{ trimNum(selectedAmount) }}
               </span>
-              <!-- 「去结算」**恒禁用** + 一行说明：后端没有下单 / 结算接口（文件头 ⑥），
-                   别改成可点，也别在它旁边再摆一个「立即购买」 -->
-              <button class="cart-sum__btn" type="button" disabled>去结算</button>
-              <span class="cart-sum__hint">结算功能开发中</span>
+              <!-- 「去结算」：**已接真实下单**（文件头 ⑥）。未勾选有效行时不可点，
+                   点了就地展开选地址面板，选好按「确认下单」才真的下单 -->
+              <span v-if="!selectedVisibleIds.length" class="cart-sum__hint">
+                请先勾选要结算的商品
+              </span>
+              <button
+                class="cart-sum__btn"
+                type="button"
+                :disabled="!selectedVisibleIds.length || busyAll || checkoutOpen"
+                @click="openCheckout"
+              >
+                去结算
+              </button>
             </div>
           </div>
         </div>

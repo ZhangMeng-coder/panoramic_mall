@@ -109,7 +109,9 @@ async function logout(): Promise<void> {
           <span v-if="cartCount > 0" class="topbar__count tnum">{{ badgeText }}</span>
         </router-link>
         <span class="topbar__divider"></span>
-        <a class="topbar__link" href="#">
+        <!-- 我的订单：**真实路由**（原来是 `href="#"` 死链）。与上面「购物车」同一写法：
+             router-link + 同一个 `.topbar__link` 类名 -->
+        <router-link class="topbar__link" to="/orders">
           <svg class="topbar__icon" viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M6 3h12a1 1 0 0 1 1 1v16l-3.5-2.2L12 20l-3.5-2.2L5 20V4a1 1 0 0 1 1-1z"
@@ -127,7 +129,7 @@ async function logout(): Promise<void> {
             />
           </svg>
           我的订单
-        </a>
+        </router-link>
       </nav>
     </div>
   </header>

@@ -64,7 +64,8 @@ const perks = [
         </div>
 
         <router-link v-if="!loggedIn" class="usercard__cta" to="/login">去登录</router-link>
-        <a v-else class="usercard__cta" href="#">查看我的订单</a>
+        <!-- 「查看我的订单」：**真实路由**（原来是 `href="#"` 死链），与顶栏那处指向同一个 /orders -->
+        <router-link v-else class="usercard__cta" to="/orders">查看我的订单</router-link>
 
         <div class="usercard__perks">
           <div v-for="p in perks" :key="p.label" class="perk">
