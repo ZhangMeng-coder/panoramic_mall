@@ -32,7 +32,8 @@ import java.util.TreeMap;
  * 以及「需要考虑订单重复提交的问题」的两级幂等（裁定 D6）。它是唯一知道「一次提交由哪些笔组成」的地方。</p>
  *
  * <h3>为什么本地事务边界在这个方法上（裁定 D4 + 先占键）</h3>
- * <p>⚠ <b>全局事务 {@code @GlobalTransactional} 不在这里，在 {@link OrderApplicationService#create}</b>——
+ * <p>⚠ <b>全局事务 {@code @GlobalTransactional} 不在这里，在用例入口上</b>（本链路那一个是
+ * {@link OrderApplicationService#create}）——
  * 那不是随手挪的：Seata 的 {@code GlobalTransactionScanner} 是按
  * <b>{@code BeanDefinition.getBeanClassName()}</b> 选目标的（类名为空即跳过），而本类由装配层的
  * {@code @Bean} 方法产出、<b>类名恒为空</b>，注解挂在这里会被**静默忽略**（不报错、不告警，事务根本不开）。
