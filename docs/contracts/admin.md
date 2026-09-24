@@ -20,108 +20,108 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | AuthController.java:37 |  |
-| POST | /auth/logout | — | — | RespData<Void> | AuthController.java:45 |  |
-| GET | /auth/me | — | — | RespData<CurrentUserVO> | AuthController.java:57 |  |
-| PUT | /auth/password | — | ChangePasswordDTO | RespData<Void> | AuthController.java:65 |  |
+| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | `AuthController#login` |  |
+| POST | /auth/logout | — | — | RespData<Void> | `AuthController#logout` |  |
+| GET | /auth/me | — | — | RespData<CurrentUserVO> | `AuthController#me` |  |
+| PUT | /auth/password | — | ChangePasswordDTO | RespData<Void> | `AuthController#changePassword` |  |
 
 ### RoleController — `/roles`（10）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /roles/page | system:role:list | RolePageQueryDTO | RespData<PageResult<RoleVO>> | RoleController.java:41 |  |
-| GET | /roles/list | system:role:list | — | RespData<List<RoleVO>> | RoleController.java:50 |  |
-| GET | /roles/{id} | system:role:list | Long | RespData<RoleVO> | RoleController.java:59 |  |
-| POST | /roles | system:role:add | RoleSaveDTO | RespData<Long> | RoleController.java:68 |  |
-| PUT | /roles/{id} | system:role:edit | Long, RoleUpdateDTO | RespData<Void> | RoleController.java:77 |  |
-| DELETE | /roles/{id} | system:role:delete | Long | RespData<Void> | RoleController.java:88 |  |
-| GET | /roles/{id}/permissions | system:role:assignPermission | Long | RespData<List<Long>> | RoleController.java:98 |  |
-| PUT | /roles/{id}/permissions | system:role:assignPermission | Long, RolePermissionIdsDTO | RespData<Void> | RoleController.java:107 |  |
-| GET | /roles/{id}/user-ids | system:role:assignUser | Long | RespData<List<Long>> | RoleController.java:118 |  |
-| PUT | /roles/{id}/users | system:role:assignUser | Long, RoleUserIdsDTO | RespData<Void> | RoleController.java:127 |  |
+| GET | /roles/page | system:role:list | RolePageQueryDTO | RespData<PageResult<RoleVO>> | `RoleController#page` |  |
+| GET | /roles/list | system:role:list | — | RespData<List<RoleVO>> | `RoleController#list` |  |
+| GET | /roles/{id} | system:role:list | Long | RespData<RoleVO> | `RoleController#detail` |  |
+| POST | /roles | system:role:add | RoleSaveDTO | RespData<Long> | `RoleController#save` |  |
+| PUT | /roles/{id} | system:role:edit | Long, RoleUpdateDTO | RespData<Void> | `RoleController#update` |  |
+| DELETE | /roles/{id} | system:role:delete | Long | RespData<Void> | `RoleController#delete` |  |
+| GET | /roles/{id}/permissions | system:role:assignPermission | Long | RespData<List<Long>> | `RoleController#permissionIds` |  |
+| PUT | /roles/{id}/permissions | system:role:assignPermission | Long, RolePermissionIdsDTO | RespData<Void> | `RoleController#assignPermissions` |  |
+| GET | /roles/{id}/user-ids | system:role:assignUser | Long | RespData<List<Long>> | `RoleController#userRoleIds` |  |
+| PUT | /roles/{id}/users | system:role:assignUser | Long, RoleUserIdsDTO | RespData<Void> | `RoleController#assignUsers` |  |
 
 ### UserController — `/users`（8）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /users/page | system:user:list | UserPageQueryDTO | RespData<PageResult<UserVO>> | UserController.java:42 |  |
-| GET | /users/{id} | system:user:list | Long | RespData<UserVO> | UserController.java:51 |  |
-| POST | /users | system:user:add | UserSaveDTO | RespData<Long> | UserController.java:60 |  |
-| PUT | /users/{id} | system:user:edit | Long, UserUpdateDTO | RespData<Void> | UserController.java:69 |  |
-| DELETE | /users/{id} | system:user:delete | Long | RespData<Void> | UserController.java:80 |  |
-| GET | /users/{id}/roles | system:user:assignRole | Long | RespData<List<Long>> | UserController.java:90 |  |
-| PUT | /users/{id}/roles | system:user:assignRole | Long, UserRoleIdsDTO | RespData<Void> | UserController.java:99 |  |
-| GET | /users/unassigned/page | system:user:list | Long, RoleUnassignedUserPageQueryDTO | RespData<PageResult<UserVO>> | UserController.java:110 |  |
+| GET | /users/page | system:user:list | UserPageQueryDTO | RespData<PageResult<UserVO>> | `UserController#page` |  |
+| GET | /users/{id} | system:user:list | Long | RespData<UserVO> | `UserController#detail` |  |
+| POST | /users | system:user:add | UserSaveDTO | RespData<Long> | `UserController#save` |  |
+| PUT | /users/{id} | system:user:edit | Long, UserUpdateDTO | RespData<Void> | `UserController#update` |  |
+| DELETE | /users/{id} | system:user:delete | Long | RespData<Void> | `UserController#delete` |  |
+| GET | /users/{id}/roles | system:user:assignRole | Long | RespData<List<Long>> | `UserController#roleIds` |  |
+| PUT | /users/{id}/roles | system:user:assignRole | Long, UserRoleIdsDTO | RespData<Void> | `UserController#assignRoles` |  |
+| GET | /users/unassigned/page | system:user:list | Long, RoleUnassignedUserPageQueryDTO | RespData<PageResult<UserVO>> | `UserController#unassignedUsersPage` |  |
 
 ### PermissionController — `/permissions`（6）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /permissions/tree | system:permission:list | — | RespData<List<PermissionTreeVO>> | PermissionController.java:38 |  |
-| GET | /permissions/menus | — | — | RespData<List<PermissionTreeVO>> | PermissionController.java:47 |  |
-| GET | /permissions/{id} | system:permission:list | Long | RespData<PermissionTreeVO> | PermissionController.java:55 |  |
-| POST | /permissions | system:permission:add | PermissionSaveDTO | RespData<Long> | PermissionController.java:64 |  |
-| PUT | /permissions/{id} | system:permission:edit | Long, PermissionUpdateDTO | RespData<Void> | PermissionController.java:73 |  |
-| DELETE | /permissions/{id} | system:permission:delete | Long | RespData<Void> | PermissionController.java:84 |  |
+| GET | /permissions/tree | system:permission:list | — | RespData<List<PermissionTreeVO>> | `PermissionController#tree` |  |
+| GET | /permissions/menus | — | — | RespData<List<PermissionTreeVO>> | `PermissionController#menus` |  |
+| GET | /permissions/{id} | system:permission:list | Long | RespData<PermissionTreeVO> | `PermissionController#detail` |  |
+| POST | /permissions | system:permission:add | PermissionSaveDTO | RespData<Long> | `PermissionController#save` |  |
+| PUT | /permissions/{id} | system:permission:edit | Long, PermissionUpdateDTO | RespData<Void> | `PermissionController#update` |  |
+| DELETE | /permissions/{id} | system:permission:delete | Long | RespData<Void> | `PermissionController#delete` |  |
 
 ### shop/ShopController — `/shop/shops`（3）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /shop/shops | store:shop:list | ShopPageQueryDTO | RespData<PageResult<ShopVO>> | ShopController.java:37 |  |
-| GET | /shop/shops/{id} | store:shop:list | Long | RespData<ShopVO> | ShopController.java:46 |  |
-| POST | /shop/shops/{id}/audit | store:shop:audit | Long, ShopAuditDTO | RespData<Void> | ShopController.java:55 |  |
+| GET | /shop/shops | store:shop:list | ShopPageQueryDTO | RespData<PageResult<ShopVO>> | `ShopController#page` |  |
+| GET | /shop/shops/{id} | store:shop:list | Long | RespData<ShopVO> | `ShopController#detail` |  |
+| POST | /shop/shops/{id}/audit | store:shop:audit | Long, ShopAuditDTO | RespData<Void> | `ShopController#audit` |  |
 
 ### shop/ShopGoodsController — `/shop/goods`（7）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /shop/goods/page | store:goods:list | ShopGoodsPageQueryDTO | RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>> | ShopGoodsController.java:48 |  |
-| GET | /shop/goods/{id} | store:goods:list | Long | RespData<StoreGoodsSpuPlatformDetailVO> | ShopGoodsController.java:57 |  |
-| POST | /shop/goods/{id}/lock | store:goods:lock | Long, StoreGoodsLockDTO | RespData<Void> | ShopGoodsController.java:66 |  |
-| POST | /shop/goods/{id}/unlock | store:goods:lock | Long | RespData<Void> | ShopGoodsController.java:77 |  |
-| GET | /shop/goods/categories | store:goods:list | — | RespData<List<CategoryTreeVO>> | ShopGoodsController.java:87 |  |
-| GET | /shop/goods/brands | store:goods:list | — | RespData<List<BrandVO>> | ShopGoodsController.java:96 |  |
-| GET | /shop/goods/shops | store:goods:list | — | RespData<List<ShopOptionVO>> | ShopGoodsController.java:105 |  |
+| GET | /shop/goods/page | store:goods:list | ShopGoodsPageQueryDTO | RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>> | `ShopGoodsController#page` |  |
+| GET | /shop/goods/{id} | store:goods:list | Long | RespData<StoreGoodsSpuPlatformDetailVO> | `ShopGoodsController#detail` |  |
+| POST | /shop/goods/{id}/lock | store:goods:lock | Long, StoreGoodsLockDTO | RespData<Void> | `ShopGoodsController#lock` |  |
+| POST | /shop/goods/{id}/unlock | store:goods:lock | Long | RespData<Void> | `ShopGoodsController#unlock` |  |
+| GET | /shop/goods/categories | store:goods:list | — | RespData<List<CategoryTreeVO>> | `ShopGoodsController#categoryTree` |  |
+| GET | /shop/goods/brands | store:goods:list | — | RespData<List<BrandVO>> | `ShopGoodsController#brands` |  |
+| GET | /shop/goods/shops | store:goods:list | — | RespData<List<ShopOptionVO>> | `ShopGoodsController#shopOptions` |  |
 
 ### goods/GoodsSpuController — `/goods/spu`（7）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /goods/spu/page | goods:spu:list | SpuPageQueryDTO | RespData<PageResult<SpuPageItemVO>> | GoodsSpuController.java:42 |  |
-| GET | /goods/spu/{id} | goods:spu:list | Long | RespData<SpuDetailVO> | GoodsSpuController.java:51 |  |
-| POST | /goods/spu | goods:spu:add | SpuSaveDTO | RespData<Long> | GoodsSpuController.java:60 |  |
-| PUT | /goods/spu/{id} | goods:spu:edit | Long, SpuUpdateDTO | RespData<Void> | GoodsSpuController.java:69 |  |
-| PUT | /goods/spu/{id}/skus | goods:spu:edit | Long, SpuSkuReplaceDTO | RespData<Void> | GoodsSpuController.java:80 |  |
-| PUT | /goods/spu/{id}/status | goods:spu:edit | Long, SpuStatusDTO | RespData<Void> | GoodsSpuController.java:91 |  |
-| DELETE | /goods/spu/{id} | goods:spu:delete | Long | RespData<Void> | GoodsSpuController.java:102 |  |
+| GET | /goods/spu/page | goods:spu:list | SpuPageQueryDTO | RespData<PageResult<SpuPageItemVO>> | `GoodsSpuController#page` |  |
+| GET | /goods/spu/{id} | goods:spu:list | Long | RespData<SpuDetailVO> | `GoodsSpuController#detail` |  |
+| POST | /goods/spu | goods:spu:add | SpuSaveDTO | RespData<Long> | `GoodsSpuController#save` |  |
+| PUT | /goods/spu/{id} | goods:spu:edit | Long, SpuUpdateDTO | RespData<Void> | `GoodsSpuController#update` |  |
+| PUT | /goods/spu/{id}/skus | goods:spu:edit | Long, SpuSkuReplaceDTO | RespData<Void> | `GoodsSpuController#replaceSkus` |  |
+| PUT | /goods/spu/{id}/status | goods:spu:edit | Long, SpuStatusDTO | RespData<Void> | `GoodsSpuController#updateStatus` |  |
+| DELETE | /goods/spu/{id} | goods:spu:delete | Long | RespData<Void> | `GoodsSpuController#delete` |  |
 
 ### goods/GoodsCategoryController — `/goods/categories`（4）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /goods/categories | goods:category:add | CategorySaveDTO | RespData<Long> | GoodsCategoryController.java:39 |  |
-| GET | /goods/categories/tree | goods:category:list | — | RespData<List<CategoryTreeVO>> | GoodsCategoryController.java:48 |  |
-| PUT | /goods/categories/{id} | goods:category:edit | Long, CategoryUpdateDTO | RespData<Void> | GoodsCategoryController.java:57 |  |
-| DELETE | /goods/categories/{id} | goods:category:delete | Long | RespData<Void> | GoodsCategoryController.java:68 |  |
+| POST | /goods/categories | goods:category:add | CategorySaveDTO | RespData<Long> | `GoodsCategoryController#save` |  |
+| GET | /goods/categories/tree | goods:category:list | — | RespData<List<CategoryTreeVO>> | `GoodsCategoryController#tree` |  |
+| PUT | /goods/categories/{id} | goods:category:edit | Long, CategoryUpdateDTO | RespData<Void> | `GoodsCategoryController#update` |  |
+| DELETE | /goods/categories/{id} | goods:category:delete | Long | RespData<Void> | `GoodsCategoryController#delete` |  |
 
 ### goods/GoodsBrandController — `/goods/brands`（6）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /goods/brands/page | goods:brand:list | BrandPageQueryDTO | RespData<PageResult<BrandVO>> | GoodsBrandController.java:41 |  |
-| GET | /goods/brands/list | goods:brand:list | — | RespData<List<BrandVO>> | GoodsBrandController.java:50 |  |
-| GET | /goods/brands/{id} | goods:brand:list | Long | RespData<BrandVO> | GoodsBrandController.java:59 |  |
-| POST | /goods/brands | goods:brand:add | BrandSaveDTO | RespData<Long> | GoodsBrandController.java:68 |  |
-| PUT | /goods/brands/{id} | goods:brand:edit | Long, BrandUpdateDTO | RespData<Void> | GoodsBrandController.java:77 |  |
-| DELETE | /goods/brands/{id} | goods:brand:delete | Long | RespData<Void> | GoodsBrandController.java:88 |  |
+| GET | /goods/brands/page | goods:brand:list | BrandPageQueryDTO | RespData<PageResult<BrandVO>> | `GoodsBrandController#page` |  |
+| GET | /goods/brands/list | goods:brand:list | — | RespData<List<BrandVO>> | `GoodsBrandController#list` |  |
+| GET | /goods/brands/{id} | goods:brand:list | Long | RespData<BrandVO> | `GoodsBrandController#detail` |  |
+| POST | /goods/brands | goods:brand:add | BrandSaveDTO | RespData<Long> | `GoodsBrandController#save` |  |
+| PUT | /goods/brands/{id} | goods:brand:edit | Long, BrandUpdateDTO | RespData<Void> | `GoodsBrandController#update` |  |
+| DELETE | /goods/brands/{id} | goods:brand:delete | Long | RespData<Void> | `GoodsBrandController#delete` |  |
 
 ### order/OrderController — `/orders`（2）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | OrderController.java:45 |  |
-| GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | OrderController.java:54 |  |
+| GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | `OrderController#page` |  |
+| GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | `OrderController#detail` |  |
 
 > ⚠ **管理端对订单只读**——只有这两个查询端点，**没有任何写动作**（改状态 / 改单 / 删单都不做）。
 > 订单的状态流转入口只在两端：C 端 `pay` / `receive` / `cancel` / `refund`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。

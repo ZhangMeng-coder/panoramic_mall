@@ -25,30 +25,30 @@ typeDirs: backend/store-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| getShop | GET | /shops/{id} | Long | ShopVO | StoreClient.java:73 | ShopController.java:70 | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff), StoreShopBffService(admin), CatalogBffService(mall-bff) |  |
-| saveShop | POST | /shops/save | ShopSaveDTO | void | StoreClient.java:79 | ShopController.java:43 | StoreShopBffService(store-bff) |  |
-| submitShop | POST | /shops/submit | ShopSaveDTO | void | StoreClient.java:85 | ShopController.java:51 | StoreShopBffService(store-bff) |  |
-| pageShops | GET | /shops/page | ShopPageQueryDTO | PageResult<ShopVO> | StoreClient.java:91 | ShopController.java:59 | StoreShopBffService(admin) |  |
-| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | void | StoreClient.java:97 | ShopController.java:78 | StoreShopBffService(admin) |  |
-| listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | StoreClient.java:104 | ShopController.java:87 | ShopGoodsBffService(admin) |  |
-| pageStoreGoods | GET | /goods/spu/page | StoreGoodsSpuPageQueryDTO | PageResult<StoreGoodsSpuPageItemVO> | StoreClient.java:114 | GoodsController.java:65 | StoreGoodsBffService(store-bff) |  |
-| storeGoodsDetail | GET | /goods/spu/{id} | Long, StoreGoodsSpuDetailQueryDTO | StoreGoodsSpuPlatformDetailVO | StoreClient.java:125 | GoodsController.java:77 | StoreGoodsBffService(store-bff), ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| saveStoreGoods | POST | /goods/spu | StoreGoodsSpuSaveDTO | Long | StoreClient.java:132 | GoodsController.java:86 | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoods | PUT | /goods/spu/{id} | Long, StoreGoodsSpuUpdateDTO | void | StoreClient.java:138 | GoodsController.java:94 | StoreGoodsBffService(store-bff) |  |
-| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | StoreClient.java:148 | GoodsController.java:106 | StoreGoodsBffService(store-bff) |  |
-| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, StoreGoodsSkuReplaceDTO | void | StoreClient.java:154 | GoodsController.java:115 | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, StoreGoodsSkuShelfDTO | void | StoreClient.java:160 | GoodsController.java:124 | StoreGoodsBffService(store-bff) |  |
-| pageSkuStock | GET | /goods/stock/page | StoreGoodsStockPageQueryDTO | PageResult<StoreGoodsStockPageItemVO> | StoreClient.java:170 | GoodsController.java:137 | StoreGoodsBffService(store-bff) |  |
-| updateSkuStock | PUT | /goods/stock/{skuId} | Long, StoreGoodsStockUpdateDTO | void | StoreClient.java:177 | GoodsController.java:146 | StoreGoodsBffService(store-bff) |  |
-| batchUpdateSkuStock | PUT | /goods/stock/batch | StoreGoodsStockBatchUpdateDTO | void | StoreClient.java:184 | GoodsController.java:155 | StoreGoodsBffService(store-bff) |  |
-| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | StoreClient.java:201 | GoodsController.java:170 | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | StoreClient.java:209 | GoodsController.java:180 | CatalogBffService(mall-bff) |  |
-| batchSpuDetail | POST | /goods/spu/batch | StoreGoodsSpuBatchQueryDTO | List<StoreGoodsSpuPlatformDetailVO> | StoreClient.java:224 | GoodsController.java:196 | CatalogBffService(mall-bff) |  |
-| lockStoreGoods | POST | /goods/spu/{id}/lock | Long, StoreGoodsLockDTO | void | StoreClient.java:230 | GoodsController.java:206 | ShopGoodsBffService(admin) |  |
-| unlockStoreGoods | POST | /goods/spu/{id}/unlock | Long | void | StoreClient.java:236 | GoodsController.java:214 | ShopGoodsBffService(admin) |  |
-| tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | List<StoreGoodsSkuSnapshotVO> | StoreClient.java:261 | GoodsTradeController.java:43 | GoodsQueryAdapter(trade-center) |  |
-| deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | boolean | StoreClient.java:274 | GoodsTradeController.java:53 | StockAdapter(trade-center) |  |
-| revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | void | StoreClient.java:288 | GoodsTradeController.java:63 | StockAdapter(trade-center) |  |
+| getShop | GET | /shops/{id} | Long | ShopVO | `StoreClient#getShop` | `ShopController#getShop` | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff), StoreShopBffService(admin), CatalogBffService(mall-bff) |  |
+| saveShop | POST | /shops/save | ShopSaveDTO | void | `StoreClient#saveShop` | `ShopController#save` | StoreShopBffService(store-bff) |  |
+| submitShop | POST | /shops/submit | ShopSaveDTO | void | `StoreClient#submitShop` | `ShopController#submit` | StoreShopBffService(store-bff) |  |
+| pageShops | GET | /shops/page | ShopPageQueryDTO | PageResult<ShopVO> | `StoreClient#pageShops` | `ShopController#page` | StoreShopBffService(admin) |  |
+| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | void | `StoreClient#auditShop` | `ShopController#audit` | StoreShopBffService(admin) |  |
+| listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | `StoreClient#listShopOptions` | `ShopController#options` | ShopGoodsBffService(admin) |  |
+| pageStoreGoods | GET | /goods/spu/page | StoreGoodsSpuPageQueryDTO | PageResult<StoreGoodsSpuPageItemVO> | `StoreClient#pageStoreGoods` | `GoodsController#page` | StoreGoodsBffService(store-bff) |  |
+| storeGoodsDetail | GET | /goods/spu/{id} | Long, StoreGoodsSpuDetailQueryDTO | StoreGoodsSpuPlatformDetailVO | `StoreClient#storeGoodsDetail` | `GoodsController#detail` | StoreGoodsBffService(store-bff), ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| saveStoreGoods | POST | /goods/spu | StoreGoodsSpuSaveDTO | Long | `StoreClient#saveStoreGoods` | `GoodsController#save` | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoods | PUT | /goods/spu/{id} | Long, StoreGoodsSpuUpdateDTO | void | `StoreClient#updateStoreGoods` | `GoodsController#update` | StoreGoodsBffService(store-bff) |  |
+| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | `StoreClient#deleteStoreGoods` | `GoodsController#delete` | StoreGoodsBffService(store-bff) |  |
+| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, StoreGoodsSkuReplaceDTO | void | `StoreClient#replaceStoreGoodsSkus` | `GoodsController#replaceSkus` | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, StoreGoodsSkuShelfDTO | void | `StoreClient#updateStoreGoodsSkuShelf` | `GoodsController#updateSkuShelf` | StoreGoodsBffService(store-bff) |  |
+| pageSkuStock | GET | /goods/stock/page | StoreGoodsStockPageQueryDTO | PageResult<StoreGoodsStockPageItemVO> | `StoreClient#pageSkuStock` | `GoodsController#pageSkuStock` | StoreGoodsBffService(store-bff) |  |
+| updateSkuStock | PUT | /goods/stock/{skuId} | Long, StoreGoodsStockUpdateDTO | void | `StoreClient#updateSkuStock` | `GoodsController#updateSkuStock` | StoreGoodsBffService(store-bff) |  |
+| batchUpdateSkuStock | PUT | /goods/stock/batch | StoreGoodsStockBatchUpdateDTO | void | `StoreClient#batchUpdateSkuStock` | `GoodsController#batchUpdateSkuStock` | StoreGoodsBffService(store-bff) |  |
+| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | `StoreClient#pageStoreGoodsCrossShop` | `GoodsController#crossShopPage` | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | `StoreClient#crossShopFacets` | `GoodsController#facets` | CatalogBffService(mall-bff) |  |
+| batchSpuDetail | POST | /goods/spu/batch | StoreGoodsSpuBatchQueryDTO | List<StoreGoodsSpuPlatformDetailVO> | `StoreClient#batchSpuDetail` | `GoodsController#batchSpuDetail` | CatalogBffService(mall-bff) |  |
+| lockStoreGoods | POST | /goods/spu/{id}/lock | Long, StoreGoodsLockDTO | void | `StoreClient#lockStoreGoods` | `GoodsController#lock` | ShopGoodsBffService(admin) |  |
+| unlockStoreGoods | POST | /goods/spu/{id}/unlock | Long | void | `StoreClient#unlockStoreGoods` | `GoodsController#unlock` | ShopGoodsBffService(admin) |  |
+| tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | List<StoreGoodsSkuSnapshotVO> | `StoreClient#tradeSkuSnapshotBatch` | `GoodsTradeController#tradeSkuSnapshotBatch` | GoodsQueryAdapter(trade-center) |  |
+| deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | boolean | `StoreClient#deductStock` | `GoodsTradeController#deductStock` | StockAdapter(trade-center) |  |
+| revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | void | `StoreClient#revertStockByOrder` | `GoodsTradeController#revertStockByOrder` | StockAdapter(trade-center) |  |
 
 > ⚠ **「入参」列不再有位置约定**（cross-cutting 第 23 条）：除路径变量外最多只有一个 DTO，
 > 作用域是**该 DTO 的字段**，不是位置裸参——`storeGoodsDetail` 的 `Long, StoreGoodsSpuDetailQueryDTO`

@@ -38,39 +38,39 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | AuthController.java:39 | |
-| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | AuthController.java:48 | |
-| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | AuthController.java:56 | |
-| POST | /auth/logout | — | — | `Void` | AuthController.java:64 | |
-| GET | /auth/me | — | — | `CurrentUserVO` | AuthController.java:76 | |
-| GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | CatalogController.java:46 | |
-| POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | CatalogController.java:61 | |
-| POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | CatalogController.java:69 | |
-| GET | /catalog/goods/{id} | — | `Long` | `MallGoodsDetailVO` | CatalogController.java:80 | |
-| PUT | /profile | — | `ProfileSaveDTO` | `Void` | ProfileController.java:36 | |
-| GET | /addresses | — | — | `List<AddressVO>` | AddressController.java:46 | |
-| POST | /addresses | — | `AddressSaveDTO` | `Long` | AddressController.java:54 | |
-| PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | AddressController.java:62 | |
-| DELETE | /addresses/{id} | — | `Long` | `Void` | AddressController.java:71 | |
-| POST | /addresses/{id}/default | — | `Long` | `Void` | AddressController.java:80 | |
-| GET | /addresses/status | — | — | `AddressStatusVO` | AddressController.java:62 | |
-| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | AuthController.java:86 | |
-| GET | /cart | — | — | `MallCartVO` | CartController.java:59 | |
-| GET | /cart/count | — | — | `Integer` | CartController.java:67 | |
-| POST | /cart/items | — | `MallCartItemAddDTO` | `Long` | CartController.java:77 | |
-| PUT | /cart/items/{id} | — | `Long`, `MallCartItemUpdateDTO` | `Void` | CartController.java:85 | |
-| PUT | /cart/items/{id}/selected | — | `Long`, `MallCartSelectDTO` | `Void` | CartController.java:95 | |
-| PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | CartController.java:105 | |
-| POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | CartController.java:114 | |
-| DELETE | /cart | — | — | `Void` | CartController.java:123 | |
-| POST | /orders | — | `MallOrderCreateDTO` | `List<MallOrderVO>` | OrderController.java:58 | |
-| POST | /orders/page | — | `MallOrderPageQueryDTO` | `PageResult<MallOrderVO>` | OrderController.java:68 | |
-| GET | /orders/{orderNo} | — | `String` | `MallOrderVO` | OrderController.java:76 | |
-| POST | /orders/{orderNo}/pay | — | `String`, `MallOrderPayDTO` | `Void` | OrderController.java:84 | |
-| POST | /orders/{orderNo}/receive | — | `String` | `Void` | OrderController.java:94 | |
-| PUT | /orders/{orderNo}/address | — | `String`, `MallOrderAddressUpdateDTO` | `Void` | OrderController.java:100 | |
-| POST | /orders/{orderNo}/cancel | — | `String` | `Void` | OrderController.java:125 | |
-| POST | /orders/{orderNo}/refund | — | `String` | `Void` | OrderController.java:140 | |
+| POST | /auth/sms-code | — | `SmsCodeDTO` | `Void` | `AuthController#smsCode` | |
+| POST | /auth/register | — | `RegisterDTO` | `LoginResultVO` | `AuthController#register` | |
+| POST | /auth/login | — | `LoginDTO` | `LoginResultVO` | `AuthController#login` | |
+| POST | /auth/logout | — | — | `Void` | `AuthController#logout` | |
+| GET | /auth/me | — | — | `CurrentUserVO` | `AuthController#me` | |
+| GET | /catalog/categories | — | — | `List<CategoryTreeVO>` | `CatalogController#categories` | |
+| POST | /catalog/goods | — | `MallGoodsPageQueryDTO` | `PageResult<MallGoodsItemVO>` | `CatalogController#goods` | |
+| POST | /catalog/facets | — | `MallFacetQueryDTO` | `MallFacetVO` | `CatalogController#facets` | |
+| GET | /catalog/goods/{id} | — | `Long` | `MallGoodsDetailVO` | `CatalogController#detail` | |
+| PUT | /profile | — | `ProfileSaveDTO` | `Void` | `ProfileController#save` | |
+| GET | /addresses | — | — | `List<AddressVO>` | `AddressController#list` | |
+| POST | /addresses | — | `AddressSaveDTO` | `Long` | `AddressController#save` | |
+| PUT | /addresses/{id} | — | `Long`, `AddressSaveDTO` | `Void` | `AddressController#update` | |
+| DELETE | /addresses/{id} | — | `Long` | `Void` | `AddressController#delete` | |
+| POST | /addresses/{id}/default | — | `Long` | `Void` | `AddressController#setDefault` | |
+| GET | /addresses/status | — | — | `AddressStatusVO` | `AddressController#status` | |
+| POST | /auth/phone | — | `ChangePhoneDTO` | `Void` | `AuthController#changePhone` | |
+| GET | /cart | — | — | `MallCartVO` | `CartController#cart` | |
+| GET | /cart/count | — | — | `Integer` | `CartController#count` | |
+| POST | /cart/items | — | `MallCartItemAddDTO` | `Long` | `CartController#addItem` | |
+| PUT | /cart/items/{id} | — | `Long`, `MallCartItemUpdateDTO` | `Void` | `CartController#updateQuantity` | |
+| PUT | /cart/items/{id}/selected | — | `Long`, `MallCartSelectDTO` | `Void` | `CartController#setItemSelected` | |
+| PUT | /cart/selected | — | `MallCartSelectDTO` | `Void` | `CartController#setAllSelected` | |
+| POST | /cart/items/remove | — | `MallCartItemIdsDTO` | `Void` | `CartController#removeItems` | |
+| DELETE | /cart | — | — | `Void` | `CartController#clear` | |
+| POST | /orders | — | `MallOrderCreateDTO` | `List<MallOrderVO>` | `OrderController#create` | |
+| POST | /orders/page | — | `MallOrderPageQueryDTO` | `PageResult<MallOrderVO>` | `OrderController#page` | |
+| GET | /orders/{orderNo} | — | `String` | `MallOrderVO` | `OrderController#detail` | |
+| POST | /orders/{orderNo}/pay | — | `String`, `MallOrderPayDTO` | `Void` | `OrderController#pay` | |
+| POST | /orders/{orderNo}/receive | — | `String` | `Void` | `OrderController#receive` | |
+| PUT | /orders/{orderNo}/address | — | `String`, `MallOrderAddressUpdateDTO` | `Void` | `OrderController#updateAddress` | |
+| POST | /orders/{orderNo}/cancel | — | `String` | `Void` | `OrderController#cancel` | |
+| POST | /orders/{orderNo}/refund | — | `String` | `Void` | `OrderController#refund` | |
 
 > ⚠ **新增 2 条：取消订单 / 仅退款**。两者都是 `POST` 命令语义 + 出参 `Void`（页面重拉详情 / 列表），
 > **入参只有路径里的 `orderNo`，没有本端 DTO**（与域侧一致——这正是「同一份形状不造第二个出口」）。

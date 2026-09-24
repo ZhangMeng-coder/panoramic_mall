@@ -49,14 +49,14 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| listCartItems | GET | /cart | `Long` | `List<TradeCartItemVO>` | TradeCenterClient.java:70 | CartController.java:48 | CartBffService(mall-bff) |  |
-| cartItemCount | GET | /cart/count | `Long` | `Integer` | TradeCenterClient.java:79 | CartController.java:56 | CartBffService(mall-bff) |  |
-| addCartItem | POST | /cart/items | `TradeCartItemAddDTO` | `Long` | TradeCenterClient.java:89 | CartController.java:64 | CartBffService(mall-bff) |  |
-| updateCartItemQuantity | PUT | /cart/items/{id} | `Long`, `TradeCartItemUpdateDTO` | `void` | TradeCenterClient.java:98 | CartController.java:72 | CartBffService(mall-bff) |  |
-| setCartItemSelected | PUT | /cart/items/{id}/selected | `Long`, `TradeCartSelectDTO` | `void` | TradeCenterClient.java:108 | CartController.java:81 | CartBffService(mall-bff) |  |
-| setAllCartItemsSelected | PUT | /cart/selected | `TradeCartSelectDTO` | `void` | TradeCenterClient.java:119 | CartController.java:90 | CartBffService(mall-bff) |  |
-| removeCartItems | POST | /cart/items/remove | `TradeCartItemIdsDTO` | `void` | TradeCenterClient.java:127 | CartController.java:98 | CartBffService(mall-bff) |  |
-| clearCart | DELETE | /cart | `Long` | `void` | TradeCenterClient.java:135 | CartController.java:106 | CartBffService(mall-bff) |  |
+| listCartItems | GET | /cart | `Long` | `List<TradeCartItemVO>` | `TradeCenterClient#listCartItems` | `CartController#listCartItems` | CartBffService(mall-bff) |  |
+| cartItemCount | GET | /cart/count | `Long` | `Integer` | `TradeCenterClient#cartItemCount` | `CartController#cartItemCount` | CartBffService(mall-bff) |  |
+| addCartItem | POST | /cart/items | `TradeCartItemAddDTO` | `Long` | `TradeCenterClient#addCartItem` | `CartController#addCartItem` | CartBffService(mall-bff) |  |
+| updateCartItemQuantity | PUT | /cart/items/{id} | `Long`, `TradeCartItemUpdateDTO` | `void` | `TradeCenterClient#updateCartItemQuantity` | `CartController#updateCartItemQuantity` | CartBffService(mall-bff) |  |
+| setCartItemSelected | PUT | /cart/items/{id}/selected | `Long`, `TradeCartSelectDTO` | `void` | `TradeCenterClient#setCartItemSelected` | `CartController#setCartItemSelected` | CartBffService(mall-bff) |  |
+| setAllCartItemsSelected | PUT | /cart/selected | `TradeCartSelectDTO` | `void` | `TradeCenterClient#setAllCartItemsSelected` | `CartController#setAllCartItemsSelected` | CartBffService(mall-bff) |  |
+| removeCartItems | POST | /cart/items/remove | `TradeCartItemIdsDTO` | `void` | `TradeCenterClient#removeCartItems` | `CartController#removeCartItems` | CartBffService(mall-bff) |  |
+| clearCart | DELETE | /cart | `Long` | `void` | `TradeCenterClient#clearCart` | `CartController#clearCart` | CartBffService(mall-bff) |  |
 
 > ⚠ 作用域 `customerId` **不进路径段**（[cross-cutting.md](./cross-cutting.md) 第 22 / 23 条）：
 > 只有**一个非路径入参**的三条（列表 / 计数 / 清空）收裸 `Long`，其余五条把它放进各自 DTO 的
@@ -74,15 +74,15 @@ typeDirs: backend/trade-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| createOrder | POST | /order | `TradeOrderCreateDTO` | `List<TradeOrderVO>` | TradeCenterClient.java:150 | OrderController.java:51 | `mall-bff/OrderBffService` |  |
-| pageOrders | POST | /order/page | `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | TradeCenterClient.java:160 | OrderController.java:60 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
-| getOrder | GET | /order/{orderNo} | `String`, `TradeOrderQueryDTO` | `TradeOrderVO` | TradeCenterClient.java:171 | OrderController.java:68 | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
-| payOrder | POST | /order/{orderNo}/pay | `String`, `TradeOrderPayDTO` | `void` | TradeCenterClient.java:185 | OrderController.java:77 | `mall-bff/OrderBffService` |  |
-| updateOrderAddress | PUT | /order/{orderNo}/address | `String`, `TradeOrderAddressUpdateDTO` | `void` | TradeCenterClient.java:178 | OrderController.java:81 | `mall-bff/OrderBffService` |  |
-| shipOrder | POST | /order/{orderNo}/ship | `String`, `TradeOrderShipDTO` | `void` | TradeCenterClient.java:196 | OrderController.java:86 | `store-bff/StoreOrderBffService` |  |
-| receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `void` | TradeCenterClient.java:207 | OrderController.java:95 | `mall-bff/OrderBffService` |  |
-| cancelOrder | POST | /order/{orderNo}/cancel | `String`, `TradeOrderCancelDTO` | `void` | TradeCenterClient.java:246 | OrderController.java:121 | `mall-bff/OrderBffService` |  |
-| refundOrder | POST | /order/{orderNo}/refund | `String`, `TradeOrderRefundDTO` | `void` | TradeCenterClient.java:259 | OrderController.java:130 | `mall-bff/OrderBffService` |  |
+| createOrder | POST | /order | `TradeOrderCreateDTO` | `List<TradeOrderVO>` | `TradeCenterClient#createOrder` | `OrderController#createOrder` | `mall-bff/OrderBffService` |  |
+| pageOrders | POST | /order/page | `TradeOrderPageQueryDTO` | `TradeOrderPageVO` | `TradeCenterClient#pageOrders` | `OrderController#pageOrders` | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
+| getOrder | GET | /order/{orderNo} | `String`, `TradeOrderQueryDTO` | `TradeOrderVO` | `TradeCenterClient#getOrder` | `OrderController#getOrder` | `mall-bff/OrderBffService`、`store-bff/StoreOrderBffService`、`admin/AdminOrderBffService` |  |
+| payOrder | POST | /order/{orderNo}/pay | `String`, `TradeOrderPayDTO` | `void` | `TradeCenterClient#payOrder` | `OrderController#payOrder` | `mall-bff/OrderBffService` |  |
+| updateOrderAddress | PUT | /order/{orderNo}/address | `String`, `TradeOrderAddressUpdateDTO` | `void` | `TradeCenterClient#updateOrderAddress` | `OrderController#updateOrderAddress` | `mall-bff/OrderBffService` |  |
+| shipOrder | POST | /order/{orderNo}/ship | `String`, `TradeOrderShipDTO` | `void` | `TradeCenterClient#shipOrder` | `OrderController#shipOrder` | `store-bff/StoreOrderBffService` |  |
+| receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `void` | `TradeCenterClient#receiveOrder` | `OrderController#receiveOrder` | `mall-bff/OrderBffService` |  |
+| cancelOrder | POST | /order/{orderNo}/cancel | `String`, `TradeOrderCancelDTO` | `void` | `TradeCenterClient#cancelOrder` | `OrderController#cancelOrder` | `mall-bff/OrderBffService` |  |
+| refundOrder | POST | /order/{orderNo}/refund | `String`, `TradeOrderRefundDTO` | `void` | `TradeCenterClient#refundOrder` | `OrderController#refundOrder` | `mall-bff/OrderBffService` |  |
 
 > ⚠ **新增 2 条动作：取消（`cancelOrder`）/ 仅退款（`refundOrder`）**
 > 形状与三个既有动作同形：`POST` 命令语义、出参 `void`（页面改完重拉详情 / 列表）、

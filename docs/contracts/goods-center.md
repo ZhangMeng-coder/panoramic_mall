@@ -24,25 +24,25 @@ typeDirs: backend/goods-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| pageBrands | GET | /brands/page | BrandPageQueryDTO | PageResult<BrandVO> | GoodsCenterClient.java:48 | BrandController.java:40 | GoodsTemplateBffService |  |
-| listBrands | GET | /brands/list | — | List<BrandVO> | GoodsCenterClient.java:51 | BrandController.java:48 | GoodsTemplateBffService, ShopGoodsBffService |  |
-| brandDetail | GET | /brands/{id} | Long | BrandVO | GoodsCenterClient.java:54 | BrandController.java:56 | GoodsTemplateBffService |  |
-| saveBrand | POST | /brands | BrandSaveDTO | Long | GoodsCenterClient.java:57 | BrandController.java:64 | GoodsTemplateBffService |  |
-| updateBrand | PUT | /brands/{id} | Long, BrandUpdateDTO | void | GoodsCenterClient.java:60 | BrandController.java:72 | GoodsTemplateBffService |  |
-| deleteBrand | DELETE | /brands/{id} | Long | void | GoodsCenterClient.java:63 | BrandController.java:81 | GoodsTemplateBffService |  |
-| saveCategory | POST | /categories | CategorySaveDTO | Long | GoodsCenterClient.java:67 | CategoryController.java:39 | GoodsTemplateBffService |  |
-| categoryTree | GET | /categories/tree | — | List<CategoryTreeVO> | GoodsCenterClient.java:70 | CategoryController.java:47 | GoodsTemplateBffService, ShopGoodsBffService, StoreGoodsBffService |  |
-| categoryPaths | POST | /categories/paths | List<Long> | Map<Long, String> | GoodsCenterClient.java:79 | CategoryController.java:56 | ShopGoodsBffService, StoreGoodsBffService |  |
-| updateCategory | PUT | /categories/{id} | Long, CategoryUpdateDTO | void | GoodsCenterClient.java:82 | CategoryController.java:64 | GoodsTemplateBffService |  |
-| deleteCategory | DELETE | /categories/{id} | Long | void | GoodsCenterClient.java:85 | CategoryController.java:73 | GoodsTemplateBffService |  |
-| pageSpu | GET | /spu/page | SpuPageQueryDTO | PageResult<SpuPageItemVO> | GoodsCenterClient.java:89 | SpuController.java:43 | GoodsTemplateBffService |  |
-| spuDetail | GET | /spu/{id} | Long | SpuDetailVO | GoodsCenterClient.java:92 | SpuController.java:61 | GoodsTemplateBffService, StoreGoodsBffService |  |
-| spuDetailBySkuCode | GET | /spu/by-sku-code | String | SpuBySkuCodeVO | GoodsCenterClient.java:100 | SpuController.java:53 | StoreGoodsBffService |  |
-| saveSpu | POST | /spu | SpuSaveDTO | Long | GoodsCenterClient.java:103 | SpuController.java:69 | GoodsTemplateBffService |  |
-| updateSpu | PUT | /spu/{id} | Long, SpuUpdateDTO | void | GoodsCenterClient.java:106 | SpuController.java:77 | GoodsTemplateBffService |  |
-| replaceSpuSkus | PUT | /spu/{id}/skus | Long, SpuSkuReplaceDTO | void | GoodsCenterClient.java:109 | SpuController.java:86 | GoodsTemplateBffService |  |
-| updateSpuStatus | PUT | /spu/{id}/status | Long, SpuStatusDTO | void | GoodsCenterClient.java:112 | SpuController.java:95 | GoodsTemplateBffService |  |
-| deleteSpu | DELETE | /spu/{id} | Long | void | GoodsCenterClient.java:115 | SpuController.java:104 | GoodsTemplateBffService |  |
+| pageBrands | GET | /brands/page | BrandPageQueryDTO | PageResult<BrandVO> | `GoodsCenterClient#pageBrands` | `BrandController#page` | GoodsTemplateBffService |  |
+| listBrands | GET | /brands/list | — | List<BrandVO> | `GoodsCenterClient#listBrands` | `BrandController#list` | GoodsTemplateBffService, ShopGoodsBffService |  |
+| brandDetail | GET | /brands/{id} | Long | BrandVO | `GoodsCenterClient#brandDetail` | `BrandController#detail` | GoodsTemplateBffService |  |
+| saveBrand | POST | /brands | BrandSaveDTO | Long | `GoodsCenterClient#saveBrand` | `BrandController#saveBrand` | GoodsTemplateBffService |  |
+| updateBrand | PUT | /brands/{id} | Long, BrandUpdateDTO | void | `GoodsCenterClient#updateBrand` | `BrandController#updateBrand` | GoodsTemplateBffService |  |
+| deleteBrand | DELETE | /brands/{id} | Long | void | `GoodsCenterClient#deleteBrand` | `BrandController#deleteBrand` | GoodsTemplateBffService |  |
+| saveCategory | POST | /categories | CategorySaveDTO | Long | `GoodsCenterClient#saveCategory` | `CategoryController#saveCategory` | GoodsTemplateBffService |  |
+| categoryTree | GET | /categories/tree | — | List<CategoryTreeVO> | `GoodsCenterClient#categoryTree` | `CategoryController#tree` | GoodsTemplateBffService, ShopGoodsBffService, StoreGoodsBffService |  |
+| categoryPaths | POST | /categories/paths | List<Long> | Map<Long, String> | `GoodsCenterClient#categoryPaths` | `CategoryController#paths` | ShopGoodsBffService, StoreGoodsBffService |  |
+| updateCategory | PUT | /categories/{id} | Long, CategoryUpdateDTO | void | `GoodsCenterClient#updateCategory` | `CategoryController#updateCategory` | GoodsTemplateBffService |  |
+| deleteCategory | DELETE | /categories/{id} | Long | void | `GoodsCenterClient#deleteCategory` | `CategoryController#deleteCategory` | GoodsTemplateBffService |  |
+| pageSpu | GET | /spu/page | SpuPageQueryDTO | PageResult<SpuPageItemVO> | `GoodsCenterClient#pageSpu` | `SpuController#page` | GoodsTemplateBffService |  |
+| spuDetail | GET | /spu/{id} | Long | SpuDetailVO | `GoodsCenterClient#spuDetail` | `SpuController#detail` | GoodsTemplateBffService, StoreGoodsBffService |  |
+| spuDetailBySkuCode | GET | /spu/by-sku-code | String | SpuBySkuCodeVO | `GoodsCenterClient#spuDetailBySkuCode` | `SpuController#findBySkuCode` | StoreGoodsBffService |  |
+| saveSpu | POST | /spu | SpuSaveDTO | Long | `GoodsCenterClient#saveSpu` | `SpuController#saveSpu` | GoodsTemplateBffService |  |
+| updateSpu | PUT | /spu/{id} | Long, SpuUpdateDTO | void | `GoodsCenterClient#updateSpu` | `SpuController#updateSpu` | GoodsTemplateBffService |  |
+| replaceSpuSkus | PUT | /spu/{id}/skus | Long, SpuSkuReplaceDTO | void | `GoodsCenterClient#replaceSpuSkus` | `SpuController#replaceSkus` | GoodsTemplateBffService |  |
+| updateSpuStatus | PUT | /spu/{id}/status | Long, SpuStatusDTO | void | `GoodsCenterClient#updateSpuStatus` | `SpuController#updateStatus` | GoodsTemplateBffService |  |
+| deleteSpu | DELETE | /spu/{id} | Long | void | `GoodsCenterClient#deleteSpu` | `SpuController#deleteSpu` | GoodsTemplateBffService |  |
 
 > 「入参」列里，`Long` 单独出现通常是 `@PathVariable` 的 id。
 > `pageBrands` / `pageSpu` 的查询对象是 `@SpringQueryMap`，`categoryPaths` 是 `@RequestBody List<Long>`。

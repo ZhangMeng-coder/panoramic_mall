@@ -17,29 +17,29 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
-| POST | /auth/register | — | RegisterDTO | RespData<LoginResultVO> | AuthController.java:32 |  |
-| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | AuthController.java:40 |  |
-| POST | /auth/logout | — | — | RespData<Void> | AuthController.java:48 |  |
-| GET | /auth/me | — | — | RespData<CurrentUserVO> | AuthController.java:60 |  |
-| GET | /shops/mine | — | — | RespData<ShopVO> | ShopController.java:31 |  |
-| POST | /shops/save | — | ShopSaveDTO | RespData<Void> | ShopController.java:39 |  |
-| POST | /shops/submit | — | ShopSaveDTO | RespData<Void> | ShopController.java:48 |  |
-| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | GoodsController.java:55 |  |
-| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | GoodsController.java:63 |  |
-| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | GoodsController.java:71 |  |
-| PUT | /goods/spu/{id} | — | Long, StoreGoodsSpuUpdateDTO | RespData<Void> | GoodsController.java:79 |  |
-| DELETE | /goods/spu/{id} | — | Long | RespData<Void> | GoodsController.java:89 |  |
-| PUT | /goods/spu/{id}/skus | — | Long, StoreGoodsSkuReplaceDTO | RespData<Void> | GoodsController.java:98 |  |
-| PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | — | Long, Long, StoreGoodsSkuShelfDTO | RespData<Void> | GoodsController.java:108 |  |
-| GET | /goods/categories/tree | — | — | RespData<List<CategoryTreeVO>> | GoodsController.java:119 |  |
-| GET | /goods/brands | — | — | RespData<List<BrandVO>> | GoodsController.java:127 |  |
-| GET | /goods/center/spu-by-sku-code | — | String | RespData<SpuBySkuCodeVO> | GoodsController.java:137 |  |
-| GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | GoodsController.java:146 |  |
-| PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | GoodsController.java:154 |  |
-| PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | GoodsController.java:164 |  |
-| GET | /orders/page | — | StoreOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | OrderController.java:51 |  |
-| GET | /orders/{orderNo} | — | String | RespData<TradeOrderVO> | OrderController.java:59 |  |
-| POST | /orders/{orderNo}/ship | — | String, StoreOrderShipDTO | RespData<Void> | OrderController.java:67 |  |
+| POST | /auth/register | — | RegisterDTO | RespData<LoginResultVO> | `AuthController#register` |  |
+| POST | /auth/login | — | LoginDTO | RespData<LoginResultVO> | `AuthController#login` |  |
+| POST | /auth/logout | — | — | RespData<Void> | `AuthController#logout` |  |
+| GET | /auth/me | — | — | RespData<CurrentUserVO> | `AuthController#me` |  |
+| GET | /shops/mine | — | — | RespData<ShopVO> | `ShopController#mine` |  |
+| POST | /shops/save | — | ShopSaveDTO | RespData<Void> | `ShopController#save` |  |
+| POST | /shops/submit | — | ShopSaveDTO | RespData<Void> | `ShopController#submit` |  |
+| GET | /goods/spu/page | — | StoreGoodsSpuPageQueryDTO | RespData<PageResult<StoreGoodsSpuPageItemVO>> | `GoodsController#page` |  |
+| GET | /goods/spu/{id} | — | Long | RespData<StoreGoodsSpuDetailBffVO> | `GoodsController#detail` |  |
+| POST | /goods/spu | — | StoreGoodsSpuSaveDTO | RespData<Long> | `GoodsController#save` |  |
+| PUT | /goods/spu/{id} | — | Long, StoreGoodsSpuUpdateDTO | RespData<Void> | `GoodsController#update` |  |
+| DELETE | /goods/spu/{id} | — | Long | RespData<Void> | `GoodsController#delete` |  |
+| PUT | /goods/spu/{id}/skus | — | Long, StoreGoodsSkuReplaceDTO | RespData<Void> | `GoodsController#replaceSkus` |  |
+| PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | — | Long, Long, StoreGoodsSkuShelfDTO | RespData<Void> | `GoodsController#updateSkuShelf` |  |
+| GET | /goods/categories/tree | — | — | RespData<List<CategoryTreeVO>> | `GoodsController#categoryTree` |  |
+| GET | /goods/brands | — | — | RespData<List<BrandVO>> | `GoodsController#listBrands` |  |
+| GET | /goods/center/spu-by-sku-code | — | String | RespData<SpuBySkuCodeVO> | `GoodsController#centerSpuBySkuCode` |  |
+| GET | /goods/stock/page | — | StoreGoodsStockPageQueryDTO | RespData<PageResult<StoreGoodsStockPageItemVO>> | `GoodsController#pageStock` |  |
+| PUT | /goods/stock/{skuId} | — | Long, StoreGoodsStockUpdateDTO | RespData<Void> | `GoodsController#updateSkuStock` |  |
+| PUT | /goods/stock/batch | — | StoreGoodsStockBatchUpdateDTO | RespData<Void> | `GoodsController#batchUpdateSkuStock` |  |
+| GET | /orders/page | — | StoreOrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | `OrderController#page` |  |
+| GET | /orders/{orderNo} | — | String | RespData<TradeOrderVO> | `OrderController#detail` |  |
+| POST | /orders/{orderNo}/ship | — | String, StoreOrderShipDTO | RespData<Void> | `OrderController#ship` |  |
 
 > ⚠ **订单列表全状态可见**，含「待支付」（商户需要看到谁下了单没付钱）。
 > ⚠ **页面入参 DTO 与域侧入参 DTO 是两回事**（同 [mall-bff.md](./mall-bff.md) 的 `MallOrder*`、[admin.md](./admin.md) 的

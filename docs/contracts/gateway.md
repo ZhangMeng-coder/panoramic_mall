@@ -66,7 +66,7 @@ config: backend/gateway/src/main/resources/application.yml
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 |
 |---|---|---|---|---|---|
-| GET | /discovery/services | — | — | `Mono<List<ServiceInfo>>` | DiscoveryController.java:34 |
+| GET | /discovery/services | — | — | `Mono<List<ServiceInfo>>` | `DiscoveryController#services` |
 
 > 这是网关唯一的 `@RestController`，`@RequestMapping("/discovery")`（:19）。
 > 它**不在任何路由内**（无 `GATEWAY_ROUTE_ATTR`），所以 `BffRouteGuardFilter` 直接放行；靠第三节的白名单免鉴权。
