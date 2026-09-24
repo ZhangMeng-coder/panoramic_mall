@@ -3,11 +3,13 @@ package com.panoramic.trade.order.application;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
 import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
 import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
@@ -26,13 +28,15 @@ import org.apache.seata.spring.annotation.GlobalTransactional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * 订单用例入口（按能力七条：下单、分页、详情、支付、发货、收货、改收货地址）：{@code create} /
+ * 订单用例入口（按能力九条：下单、分页、详情、支付、发货、收货、改收货地址、取消、仅退款）：{@code create} /
  * {@code pageOrders} / {@code getOrder} / {@code payOrder} / {@code shipOrder} / {@code receiveOrder} /
- * {@code updateAddress}。
+ * {@code updateAddress} / {@code cancelOrder} / {@code refundOrder}。
  *
  * <p>控制器（{@code controller/OrderController}）只做参数绑定与校验，其余全在这里；
  * 编排（拆单 / 两级幂等 / 失败回滚）在 {@link OrderCreateCoordinator}，本类**不重复它的逻辑**——
@@ -48,13 +52,13 @@ import java.util.StringJoiner;
  *
  * <p>⚠ <b>写侧的作用域必填，两道防线</b>（{@code customerId} / {@code storeId}）：写没有「合法全量视角」，
  * 省掉作用域就是「能改任意一笔单」。第一道是各入参 DTO 上的 {@code @NotNull}（只覆盖 MVC 边界）；
- * 第二道是本类五个写方法开头的 {@link ScopeGuard#require}——绕过 MVC 的调用（内部直连 / 单测 / 将来的批处理）
+ * 第二道是本类七个写方法开头的 {@link ScopeGuard#require}——绕过 MVC 的调用（内部直连 / 单测 / 将来的批处理）
  * 只有它能挡，否则 {@code null} 会一路传到仓储、退化成「不限定」并**静默**改掉别人的单。
  * ⚠ 这道护栏是**入参不变量**（参数在不在），不是鉴权（是不是你的单）——后者域内一律不做。</p>
  *
- * <h3>为什么下单挂全局事务、三个动作各自带事务、两个读也带</h3>
- * <p><b>下单挂的是全局事务（{@code @GlobalTransactional}，Seata TM 侧）</b>——它要**跨服务写库**：
- * 库存的扣减与回补落在 store 域（分支事务），本地回滚补不回来。
+ * <h3>为什么下单、取消、仅退款挂全局事务，三个动作各自带事务、两个读也带</h3>
+ * <p><b>下单 / 取消 / 仅退款挂的是全局事务（{@code @GlobalTransactional}，Seata TM 侧）</b>——它们都
+ * **跨服务写库**：下单扣库存、取消与仅退款回补库存，写入都落在 store 域（分支事务），本地回滚补不回来。
  * ⚠ 它**必须落在本类、不能挂在编排器入口**：Seata 的 {@code GlobalTransactionScanner} 按
  * <b>{@code BeanDefinition.getBeanClassName()}</b> 挑要增强的 bean，**取不到类名即跳过**；而编排器
  * {@link OrderCreateCoordinator} 由装配类（{@code OrderDomainConfiguration}）的 {@code @Bean} 方法产出、
@@ -69,6 +73,13 @@ import java.util.StringJoiner;
  * 三个动作则必须自己带：它们是「读订单 → 聚合内迁移状态 → 落库」三步，而落库要写
  * <b>订单行 + 状态轨迹两处</b>（{@link OrderRepository#update}），任何一步失败都得整体回退，
  * 否则会留下「状态列已改、轨迹没跟上」这类自相矛盾的单（列表按状态列、详情按轨迹，同单两个状态）。<br>
+ * 取消 / 仅退款两条**两样都占**（跨服务回补库存 + 三段式）：全局事务挂在本类（组件扫描出来的
+ * {@code @Service}），库里那一半的本地事务在 {@link OrderCancelService}——与下单同一套分工，
+ * 理由见该类注释（顺带：域内超时关单任务也复用它，故它必须是独立的一处）。<br>
+ * ⚠ <b>超时自动关单是第四个跨服务写的入口，但它不在本类</b>（在 {@link OrderTimeoutCloseService}）：
+ * 它不是任何页面能力（不经 Controller、也没有调用方要传的作用域），而是域内的系统级动作，
+ * 由 {@link OrderTimeoutCloseTask} 周期触发。放进本类会让「按能力九条」这句话不再成立，
+ * 也会让它的作用域凭空变成必填（而它本来就该是全量视角）。<br>
  * ⚠ 两个读路径（分页 + 详情）也声明 {@code readOnly} 事务——**不是为了回滚，是为了一个读视图**：
  * 仓库组装一笔订单要三次查询（订单行 → 明细 → 轨迹），而重建聚合时的对账正好横跨其中两处
  * （「快递单号 ⟺ 轨迹含已发货」跨第 1 与第 3 次，「总额 ⟺ 明细之和」跨第 1 与第 2 次）。
@@ -90,8 +101,10 @@ import java.util.StringJoiner;
 public class OrderApplicationService {
 
     private final OrderCreateCoordinator orderCreateCoordinator;
+    private final OrderCancelService orderCancelService;
     private final OrderRepository orderRepository;
     private final OrderStatusFlow orderStatusFlow;
+    private final Clock clock;
 
     // ── 写侧：作用域必填（在各自 DTO 上以 @NotNull 表达） ────────────────────────
 
@@ -115,17 +128,33 @@ public class OrderApplicationService {
     }
 
     /**
-     * 支付（假支付；金额校验在聚合内，不一致即 400）
+     * 支付（假支付；超时判定在最前，金额校验在聚合内，不一致即 400）
+     *
+     * <p>⚠ <b>超时判定（{@link OrderModel#isTimedOut}）必须在金额校验与状态迁移之前</b>：
+     * 一笔过了截止时刻的单，无论顾客填的金额对不对，结论都该是「已过期」而不是「金额不符」——
+     * 后者会让人以为改个金额还能付。判定通过后照样走原来的顺序：校验先于迁移、迁移先于落库
+     * （见 {@code OrderModel#markPaid}），任何一处抛出都不写库。</p>
+     *
+     * <p>⚠ <b>本方法只拒付，不在这里顺手关单</b>（关单是 {@link OrderTimeoutCloseTask} 的事）——
+     * 不是漏了，是那样做必然错：本方法带 {@code @Transactional}，在它里面把单取消掉再抛异常，
+     * 取消会随同一个事务**一起回滚**（库里仍是待支付，而顾客已经收到「已过期」），
+     * 等于白做一次跨服务的库存回补。要让它成立就得把取消拆到另一个事务里去，
+     * 那正是「一个动作两个开点」的复杂度，换来的只是把「最晚晚一次扫描」提前到当下。</p>
      *
      * @param orderNo 业务可读单号
      * @param dto     支付金额 + **作用域** customerId（必填）
-     * @throws ServiceException 缺少作用域 / 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
+     * @throws ServiceException 缺少作用域 / 订单已过期 / 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
      */
     @Transactional(rollbackFor = Exception.class)
     public void payOrder(String orderNo, TradeOrderPayDTO dto) {
         ScopeGuard.require(dto.getCustomerId(), "顾客 id");
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
-        // 校验先于迁移，迁移先于落库：任何一处抛出都不写库（见 OrderModel#markPaid 的说明）
+        if (order.isTimedOut(LocalDateTime.now(clock))) {
+            // 提示语只说事实与出路，不承诺「已经帮你取消了」：关单是关单任务的动作，
+            // 此刻这笔单可能还是待支付（最晚晚一次扫描）。订单被关掉之后本方法仍走这一句
+            // ——顾客看到的都是「过了支付时限」，不因任务恰好跑过而变成另一种说法。
+            throw new ServiceException(400, "该订单已过期（超过支付时限），请重新下单");
+        }
         order.markPaid(orderStatusFlow, dto.getAmount());
         orderRepository.update(order);
     }
@@ -158,6 +187,35 @@ public class OrderApplicationService {
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         order.markReceived(orderStatusFlow);
         orderRepository.update(order);
+    }
+
+    /**
+     * 取消订单（**仅待支付可取消**；回补库存 → 全局事务）
+     *
+     * <p>⚠ 触发方有两个：这里（顾客主动取消）与域内的**超时未支付自动关单**任务。两者的域侧口径
+     * 完全一致，落在 {@link OrderCancelService} 一处；本方法只多做一件事——把作用域翻译成查询条件。</p>
+     *
+     * @param orderNo 业务可读单号
+     * @param dto     **作用域** customerId（必填）
+     * @throws ServiceException 缺少作用域 / 非待支付状态（HTTP 400）、订单不属本人（404）
+     */
+    @GlobalTransactional
+    public void cancelOrder(String orderNo, TradeOrderCancelDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
+        orderCancelService.cancel(requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null)));
+    }
+
+    /**
+     * 仅退款（**仅「已支付、未发货」可退**，全额退、一步生效；回补库存 → 全局事务）
+     *
+     * @param orderNo 业务可读单号
+     * @param dto     **作用域** customerId（必填）
+     * @throws ServiceException 缺少作用域 / 非「已支付未发货」（HTTP 400）、订单不属本人（404）
+     */
+    @GlobalTransactional
+    public void refundOrder(String orderNo, TradeOrderRefundDTO dto) {
+        ScopeGuard.require(dto.getCustomerId(), "顾客 id");
+        orderCancelService.refund(requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null)));
     }
 
     /**
@@ -303,6 +361,7 @@ public class OrderApplicationService {
         vo.setTotalAmount(order.getTotalAmount());
         vo.setShipNo(order.getShipNo());
         vo.setCreateTime(order.getCreateTime());
+        vo.setExpireTime(order.getExpireTime());
         vo.setAddress(toAddressVo(order.getAddress()));
         vo.setItems(order.getItems().stream().map(OrderApplicationService::toItemVo).toList());
         return vo;

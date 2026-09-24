@@ -43,7 +43,8 @@ class InMemoryOrderRepositoryTest {
 
     private static OrderModel order(String orderNo) {
         return OrderModel.open(orderNo, CUSTOMER_ID, 7L, "示例店铺", OrderSource.CART, ADDRESS,
-                REQUEST_ID, "fp-" + orderNo, LocalDateTime.of(2026, 9, 21, 12, 0, 0), List.of(new OrderLine(10L, 1)));
+                REQUEST_ID, "fp-" + orderNo, LocalDateTime.of(2026, 9, 21, 12, 0, 0),
+                LocalDateTime.of(2026, 9, 21, 12, 10, 0), List.of(new OrderLine(10L, 1)));
     }
 
     // ── 占键与提交 ──────────────────────────────────────────────────────────────

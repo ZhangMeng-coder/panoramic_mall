@@ -1,20 +1,24 @@
 package com.panoramic.trade.order.application;
 
 import com.panoramic.common.exception.ServiceException;
+import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
+import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.application.step.GoodsCheckStep;
 import com.panoramic.trade.order.application.step.PriceComputeStep;
 import com.panoramic.trade.order.application.step.StockCheckStep;
-import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.support.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.support.InMemoryStockPort;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * 订单**四个写**路径的锚点护栏：作用域为 {@code null} 一律 400（{@code ScopeGuard}）。
+ * 订单**七个写**路径的锚点护栏（一条用例对一个路径）：作用域为 {@code null} 一律 400（{@code ScopeGuard}）。
  *
  * <p>⚠ 守的是哪条默认路径：契约层 DTO 上的 {@code @NotNull} 只在 MVC 边界生效，绕过它的调用
  * （内部 Feign 直连、单测、将来的批处理）会把 {@code null} 一路送进仓储；而 {@code null} 在域内的
@@ -59,7 +63,7 @@ class OrderApplicationServiceScopeGuardTest {
 
         OrderProperties properties = new OrderProperties();
         properties.setSteps(List.of(GoodsCheckStep.NAME, StockCheckStep.NAME, PriceComputeStep.NAME));
-        properties.setStatusFlow(List.of(OrderStatus.values()));
+        properties.setStatusFlow(OrderStatusChain.production());
         properties.setIdempotencyWindowSeconds(300);
         properties.setOrderNoMaxRetry(5);
 
@@ -70,7 +74,9 @@ class OrderApplicationServiceScopeGuardTest {
         OrderCreateCoordinator coordinator = new OrderCreateCoordinator(orderRepository, goodsQueryPort, stockPort,
                 new DefaultOrderNoGenerator(clock, sequence::getAndIncrement), pipeline, properties, clock);
 
-        service = new OrderApplicationService(coordinator, orderRepository, new OrderStatusFlow(List.of(OrderStatus.values())));
+        OrderStatusFlow statusFlow = new OrderStatusFlow(OrderStatusChain.production());
+        service = new OrderApplicationService(coordinator,
+                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock);
     }
 
     @Test
@@ -118,6 +124,48 @@ class OrderApplicationServiceScopeGuardTest {
         TradeOrderReceiveDTO dto = new TradeOrderReceiveDTO();
 
         assertThatThrownBy(() -> service.receiveOrder("202609221200000001", dto))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("缺少顾客 id");
+
+        assertThat(orderRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("改收货地址缺 customerId → 400，且订单不被改")
+    void updateAddressWithoutScopeIsRejected() {
+        TradeOrderAddressUpdateDTO dto = new TradeOrderAddressUpdateDTO();
+        TradeOrderAddressDTO address = new TradeOrderAddressDTO();
+        address.setReceiverName("张三");
+        address.setReceiverPhone("13800000000");
+        address.setRegion("浙江省杭州市西湖区");
+        address.setDetail("文一西路 969 号 1 幢 101 室");
+        dto.setAddress(address);
+
+        assertThatThrownBy(() -> service.updateAddress("202609221200000001", dto))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("缺少顾客 id");
+
+        assertThat(orderRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("取消缺 customerId → 400，且订单不被改（不会去还别人的库存）")
+    void cancelWithoutScopeIsRejected() {
+        TradeOrderCancelDTO dto = new TradeOrderCancelDTO();
+
+        assertThatThrownBy(() -> service.cancelOrder("202609221200000001", dto))
+                .isInstanceOf(ServiceException.class)
+                .hasMessageContaining("缺少顾客 id");
+
+        assertThat(orderRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("仅退款缺 customerId → 400，且订单不被改")
+    void refundWithoutScopeIsRejected() {
+        TradeOrderRefundDTO dto = new TradeOrderRefundDTO();
+
+        assertThatThrownBy(() -> service.refundOrder("202609221200000001", dto))
                 .isInstanceOf(ServiceException.class)
                 .hasMessageContaining("缺少顾客 id");
 

@@ -8,11 +8,13 @@ import com.panoramic.contract.trade.api.TradeCenterClient;
 import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeOrderAddressDTO;
 import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
 import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
 import com.panoramic.mallbff.dto.MallOrderAddressUpdateDTO;
@@ -27,16 +29,16 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * C 端订单编排（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址）。
+ * C 端订单编排（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址 / 取消订单 / 仅退款）。
  *
  * <p><b>三层归属</b>：订单本体（单据、状态、明细快照、金额）属 <b>trade-center</b>，
  * 收货地址属 <b>customer-center</b>，本层只做「取地址 → 组下单参数 → 调域 → 成功后清车」的页面编排，
  * 不复制任何域的表、也不重写状态文案（文案由域下发，见 {@link MallOrderVO}）。</p>
  *
  * <p><b>锚点一律取自登录态</b>（调用方传 {@code UserContext.getUserId()}，本类不碰登录态）：
- * 六个方法都把它填进域入参 DTO（{@code page} / {@code detail} 是可选作用域，本层<b>无条件</b>写成本人，
+ * 八个方法都把它填进域入参 DTO（{@code page} / {@code detail} 是可选作用域，本层<b>无条件</b>写成本人，
  * 因为 C 端只有「我的订单」一个视角；{@code create} / {@code pay} / {@code receive} / {@code updateAddress}
- * 上域侧是必填）。
+ * / {@code cancel} / {@code refund} 上域侧是必填）。
  * 绝不从请求体 / 路径接送——域内不做任何鉴权，这个 id 就是数据权限本身。</p>
  *
  * <p>⚠ <b>读路径没有本层的「锚点非空」断言，是有意为之、且有一条必须守住的依赖</b>：
@@ -61,13 +63,14 @@ import java.util.List;
  *
  * <p>⚠ <b>清车刻意不走 {@link BffFeignCall}</b>：它<b>没有页面出口</b>——订单已建是不可逆的主结果，
  * 清车只是可重放的补偿（顾客手动删、或再提交一次都行；指纹窗口内重复提交同一批商品会<b>复用原单</b>，
- * 不会重复下单）。套一层降级文案等于凭空给页面一个「清车失败」的假出口，而那时页面什么都做不了。
+ * 不会重复下单——原单已结束（已收货 / 已取消 / 已退款）时除外，那种单不参与复用，会真下出新的一笔）。
+ * 套一层降级文案等于凭空给页面一个「清车失败」的假出口，而那时页面什么都做不了。
  * 故这里直接 {@code try/catch} + {@code log.warn}，<b>不让下单整体失败</b>。</p>
  *
- * <p><b>写路径直透</b>：支付 / 收货 / 改地址是「用户点了就生效」的原子操作，本层不二次判定、不补偿，
- * 一律经 {@link BffFeignCall} 调 trade-center。下游业务 4xx（金额不符 / 非法状态迁移 400、
- * 订单不存在或不属本人 404）<b>原样透传</b>给页面，其余（熔断 / 连接等）才降级为
- * {@link #ORDER_DOWN_MSG}。</p>
+ * <p><b>写路径直透</b>：支付 / 收货 / 改地址 / 取消 / 仅退款是「用户点了就生效」的原子操作，
+ * 本层不二次判定、不补偿，一律经 {@link BffFeignCall} 调 trade-center。下游业务 4xx
+ * （金额不符 / 非法状态迁移 / 该单已过期 400、订单不存在或不属本人 404）<b>原样透传</b>给页面，
+ * 其余（熔断 / 连接等）才降级为 {@link #ORDER_DOWN_MSG}。</p>
  */
 @Slf4j
 @Service
@@ -214,6 +217,48 @@ public class OrderBffService {
         });
     }
 
+    /**
+     * 取消订单（**仅待支付可取消**，闸门在域内：其余状态 400 原样透传）
+     *
+     * <p>⚠ 域侧取消**一律回补库存**（下单即扣的库存在这里还回去），故这一条是跨服务写；
+     * 本层不判「能不能取消」——状态是域的事实，本层只看得到可能已经过期的快照。</p>
+     *
+     * <p>⚠ 「超时未支付被自动关掉」走的是**域内定时任务**，不是本接口：它没有页面出口，
+     * 页面只需在拿到的状态已是「已取消」时如实展示。</p>
+     *
+     * @param customerId 顾客账号 id（只能取自登录态）
+     * @param orderNo    业务可读单号
+     */
+    public void cancel(Long customerId, String orderNo) {
+        TradeOrderCancelDTO payload = new TradeOrderCancelDTO();
+        payload.setCustomerId(customerId);
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
+            tradeCenterClient.cancelOrder(orderNo, payload);
+            return null;
+        });
+    }
+
+    /**
+     * 仅退款（**仅「已支付、未发货」可退**，闸门在域内：其余状态 400 原样透传）
+     *
+     * <p>⚠ 一步生效、无需商户同意，全额退、不传金额——退款金额恒等于订单总额（聚合里冻结的那个值），
+     * 让页面传金额等于给「退多少」开出第二个说了算的地方。</p>
+     *
+     * <p>⚠ 与{@link #cancel} 是**两个动作**、不是同一个：取消说的是「没付过钱的单不买了」，
+     * 仅退款说的是「付过的钱退回去」——域侧是两个状态、两条迁移边，故本层也是两个出口。</p>
+     *
+     * @param customerId 顾客账号 id（只能取自登录态）
+     * @param orderNo    业务可读单号
+     */
+    public void refund(Long customerId, String orderNo) {
+        TradeOrderRefundDTO payload = new TradeOrderRefundDTO();
+        payload.setCustomerId(customerId);
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
+            tradeCenterClient.refundOrder(orderNo, payload);
+            return null;
+        });
+    }
+
     // ---- 内部 ----
 
     /**
@@ -297,6 +342,9 @@ public class OrderBffService {
         vo.setTotalAmount(source.getTotalAmount());
         vo.setShipNo(source.getShipNo());
         vo.setCreateTime(source.getCreateTime());
+        // 支付截止时刻原样透传：倒计时（页面）与「是否过期」（域侧支付校验）必须同一份时刻，
+        // 本层再算一次就是第二个说了算的地方。null = 无超时（老单），照传，由页面决定不倒计时
+        vo.setExpireTime(source.getExpireTime());
         vo.setAddress(toAddress(source.getAddress()));
         if (source.getItems() != null) {
             vo.setItems(source.getItems().stream().map(this::toItem).toList());

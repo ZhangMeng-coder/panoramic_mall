@@ -8,10 +8,12 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * 订单主表实体（一笔订单一店）。
- * <p>收件人四项为下单时的地址快照；{@code fingerprint} 是 L2 批次指纹（窗口内命中即复用既有单）。</p>
+ * <p>收件人四项为下单时的地址快照；{@code fingerprint} 是 L2 批次指纹（窗口内命中**且那一笔仍未结束**时才复用——
+ * 已收货 / 已取消 / 已退款不参与复用，见 {@code OrderRepository#findRecentByFingerprint}）。</p>
  * <p>⚠ 本表 {@code is_delete} 恒 0：订单不删行，该列只为对齐 {@link BaseEntity} 而保留。</p>
  * <p>审计字段（create_user/update_user/create_time/update_time）由 common 的 {@code MyMetaObjectHandler}
  * 经 {@code UserContext} 自动填充，本实体不显式赋值。</p>
@@ -63,7 +65,7 @@ public class TradeOrder extends BaseEntity {
     private String fingerprint;
 
     /**
-     * 订单状态：PENDING_PAYMENT/PAID/SHIPPED/RECEIVED
+     * 订单状态：PENDING_PAYMENT/PAID/SHIPPED/RECEIVED/CANCELLED/REFUNDED
      */
     private String status;
 
@@ -101,4 +103,11 @@ public class TradeOrder extends BaseEntity {
      * 快递单号（发货时录入）
      */
     private String shipNo;
+
+    /**
+     * 支付截止时刻（下单时算好落库 = 下单时刻 + 配置的支付时限）
+     *
+     * <p>⚠ {@code null} = 无超时：本列上线前创建的历史行没有值，不视为「已过期」（不重算、不回填）。</p>
+     */
+    private LocalDateTime expireTime;
 }

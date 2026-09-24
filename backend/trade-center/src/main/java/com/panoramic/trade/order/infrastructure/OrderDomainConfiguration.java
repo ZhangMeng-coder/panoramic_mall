@@ -75,10 +75,11 @@ public class OrderDomainConfiguration {
     }
 
     /**
-     * 订单状态机（顺序来自配置；构造期即断言配置覆盖 {@code OrderStatus} 全部常量，缺一个就起不来）
+     * 订单状态机（**主链**来自配置——有序数组，顺序即先后；两个结束过程写死在动作方法里，不在这里；
+     * 构造期即断言「主链 + 两个结束过程的落点」覆盖 {@code OrderStatus} 全部常量，缺一个就起不来）
      *
      * @param properties 订单配置
-     * @return 由 {@code panoramic.trade.order.status-flow} 建起的状态机
+     * @return 由 {@code panoramic.trade.order.status-flow} 那份有序主链建起的状态机
      */
     @Bean
     public OrderStatusFlow orderStatusFlow(OrderProperties properties) {

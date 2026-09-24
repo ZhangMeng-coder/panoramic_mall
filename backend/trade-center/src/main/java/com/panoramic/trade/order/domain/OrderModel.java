@@ -21,12 +21,17 @@ import java.util.Set;
  * {@link #applyPrice} 填单价与小计。等到 {@link #seal} 时，模型自己校验「每一行都齐备、总额与行求和一致」——
  * 这样**步骤少跑一个、跑错顺序、算出不一致的金额，都会在建单的最后一步被拦住**，而不是等落库后才被发现。
  * 代价是模型对外有短暂的不完整状态，这是刻意的：<b>不完整的状态不允许被当成订单用</b>
- * （未 seal 的模型连状态都不能迁移，见 {@link #transitionTo}）。</p>
+ * （未 seal 的模型连状态都不能迁移，见 {@link OrderStatusFlow#advance}）。</p>
  *
- * <h3>为什么状态迁移要经 {@link OrderStatusFlow}</h3>
- * <p>「只前不退、不跨级」的顺序写在配置里而不是代码里（裁定 D7），本类只负责在迁移成功后**追加轨迹**
+ * <h3>状态迁移：主链的顺序来自配置，两个结束过程写在本类的动作里</h3>
+ * <p>「只前不退、不跨级」的主链顺序写在配置里而不是代码里（裁定 D7），本类只负责在迁移成功后**追加轨迹**
  * （{@link #getStatusTrail}，裁定 D16）。轨迹让「只前不退」在数据上可断言，而不是只靠「抛没抛异常」——
  * 一个被回滚过的状态变更不会留下痕迹，而轨迹会。</p>
+ *
+ * <p>⚠ <b>两个「结束过程」的判据在本类，不在状态机</b>（2026-09-24 起的口径）：取消 = 待支付 → 已取消、
+ * 仅退款 = 已支付 → 已退款。它们不是配置上可选的分支，而**就是那两个动作的定义**
+ * （见 {@link #markCancelled} / {@link #markRefunded}）——「取消只能从未支付来」这句话里已经含着那个前置状态。
+ * 做成可配的只多出一个能配错的地方。</p>
  *
  * <h3>边界（含落库期的订正）</h3>
  * <p>本类不认识仓库、不认识库存、不认识时钟——订单号查重、两级幂等、拆单、库存扣减与失败回滚
@@ -66,6 +71,17 @@ public final class OrderModel {
     /** 订单指纹（裁定 D6 第二级）；由 {@link OrderFingerprint} 算出，不含金额与时间 */
     private final String fingerprint;
     private final LocalDateTime createTime;
+    /**
+     * 支付截止时刻（{@code = 下单时刻 + 配置的支付时限}；**由编排层算好传入**，与 {@link #createTime} 同一手法：
+     * 模型不自己取时间、也不读配置 → 单测可预测）。
+     *
+     * <p>⚠ 可为 {@code null}：本列上线前创建的历史行没有截止时刻，语义是**无超时**——
+     * 支付不因超时被拒、超时关单任务也捞不到它。新单一律非 null（编排层必然给）。</p>
+     *
+     * <p>⚠ 它是**算好落库的快照**，不是「按当前配置现算」：改配置不回头改动已下的单
+     * （拿配置重算老单，等于让改一次配置变成对存量订单的批量改写），故读侧一律读库里的那一列。</p>
+     */
+    private final LocalDateTime expireTime;
 
     /** 订单行：开单时按 skuId 升序排好（确定性——同一批入参无论顺序如何，模型内部状态一致） */
     private final List<OrderItem> items;
@@ -89,6 +105,7 @@ public final class OrderModel {
                        String requestId,
                        String fingerprint,
                        LocalDateTime createTime,
+                       LocalDateTime expireTime,
                        List<OrderItem> items) {
         this.orderNo = orderNo;
         this.customerId = customerId;
@@ -99,6 +116,14 @@ public final class OrderModel {
         this.requestId = requestId;
         this.fingerprint = fingerprint;
         this.createTime = createTime;
+        this.expireTime = expireTime;
+        // ⚠ 两条入口（开单 / 重建）共用的不变量就放在这里，不各写一份：
+        //    「截止时刻不晚于下单时刻」的单子，一开出来就是过期的——开单侧是配置错（时限配成 0 或负数），
+        //    重建侧是数据被写坏。两种都是 IllegalStateException（不是用户输入问题），故落点一致。
+        if (expireTime != null && !expireTime.isAfter(createTime)) {
+            throw new IllegalStateException("订单 " + orderNo + " 的支付截止时刻(" + expireTime
+                    + ")不晚于下单时刻(" + createTime + ")，这笔单开出来就已过期");
+        }
         this.items = List.copyOf(items);
         // 订单一旦开出来就是「待支付」（todo：订单创建完成时将订单状态设置为待支付）
         this.status = OrderStatus.PENDING_PAYMENT;
@@ -126,9 +151,11 @@ public final class OrderModel {
      * @param requestId   请求级幂等键，可为 null
      * @param fingerprint 订单指纹（{@link OrderFingerprint#of} 算出）
      * @param createTime  下单时刻（由编排层传入，模型不自己取时间 → 单测可预测）
+     * @param expireTime  支付截止时刻（同上：编排层按配置算好传入）
      * @param lines       订单行（只有 skuId + 数量）
      * @return 未 seal 的订单，等待步骤链补全
      * @throws IllegalArgumentException 同一 skuId 出现多次，或数量越界（{@code 1..999}）
+     * @throws IllegalStateException    截止时刻不晚于下单时刻（时限配成了 0 或负数）
      */
     public static OrderModel open(String orderNo,
                                   Long customerId,
@@ -139,6 +166,7 @@ public final class OrderModel {
                                   String requestId,
                                   String fingerprint,
                                   LocalDateTime createTime,
+                                  LocalDateTime expireTime,
                                   List<OrderLine> lines) {
         Objects.requireNonNull(orderNo, "订单号不能为空");
         Objects.requireNonNull(customerId, "顾客 id 不能为空");
@@ -146,6 +174,8 @@ public final class OrderModel {
         Objects.requireNonNull(source, "订单来源不能为空");
         Objects.requireNonNull(address, "收货地址不能为空");
         Objects.requireNonNull(createTime, "下单时间不能为空");
+        // 新单一律有截止时刻（老单的 null 只会出现在重建路径上，见字段说明）
+        Objects.requireNonNull(expireTime, "支付截止时刻不能为空");
 
         List<OrderLine> incoming = lines == null ? List.of() : List.copyOf(lines);
         List<OrderItem> opened = new ArrayList<>(incoming.size());
@@ -161,7 +191,8 @@ public final class OrderModel {
             opened.add(OrderItem.open(line.skuId(), line.quantity()));
         }
         opened.sort(Comparator.comparing(OrderItem::getSkuId));
-        return new OrderModel(orderNo, customerId, storeId, storeName, source, address, requestId, fingerprint, createTime, opened);
+        return new OrderModel(orderNo, customerId, storeId, storeName, source, address, requestId, fingerprint,
+                createTime, expireTime, opened);
     }
 
     /**
@@ -176,7 +207,7 @@ public final class OrderModel {
      * <p>断言四条（任一不满足即 {@link IllegalStateException}，都是「数据被写坏」而不是用户输入问题）：</p>
      * <ol>
      *   <li>订单行非空、按 skuId 严格升序且不重复（顺序错说明读出来的行串了）；</li>
-     *   <li>轨迹非空、首项是状态机的初始状态、且每一步都是「下标 +1」（轨迹被截断或跳级都拦下）；</li>
+     *   <li>轨迹非空、首项是状态机的初始状态、且每一步都是配置里声明过的一条边（被截断 / 被改坏的轨迹都拦下）；</li>
      *   <li>快递单号与轨迹一致：轨迹里出现过「已发货」⟺ 单号非空（发货了没单号、没发货有单号都拦下）；</li>
      *   <li>总件数与总金额由订单行重算（{@code refreshTotals}），落库值与它的一致性由适配器对账
      *      ——那两列在库里，聚合只认它自己的行。</li>
@@ -192,9 +223,11 @@ public final class OrderModel {
      * @param fingerprint 订单指纹
      * @param shipNo      快递单号（未发货为 null）
      * @param createTime  下单时刻
+     * @param expireTime  支付截止时刻；**可为 null**（本列上线前的历史行 = 无超时），非空时必须晚于下单时刻
      * @param items       订单行（已补全；按 skuId 升序）
      * @param statusTrail 状态轨迹（按 {@code seq} 升序的完整轨迹，含初始状态）
-     * @param flow        状态机（用于校验轨迹是否是一条合法的「下标 +1」路径）
+     * @param flow        状态机（用于校验轨迹是不是一条合法路径——主链的一段前缀、至多再加一个
+     *                    结束过程收尾，见 {@link OrderStatusFlow#assertLegalTrail}）
      * @return 已封存的订单
      * @throws IllegalStateException 上面四条断言任一不满足
      */
@@ -208,6 +241,7 @@ public final class OrderModel {
                                        String fingerprint,
                                        String shipNo,
                                        LocalDateTime createTime,
+                                       LocalDateTime expireTime,
                                        List<OrderItem> items,
                                        List<OrderStatus> statusTrail,
                                        OrderStatusFlow flow) {
@@ -219,7 +253,9 @@ public final class OrderModel {
         Objects.requireNonNull(createTime, "下单时间不能为空");
         Objects.requireNonNull(flow, "订单状态机不能为空");
         requireReadableItems(orderNo, items);
-        requireReadableTrail(orderNo, statusTrail, flow);
+        // ⚠ 轨迹校验**不在这里另写一份**：读侧与写侧（JdbcOrderRepository#insertStatusTrail）共用状态机那一份
+        //    ——旧版两处各写一遍「下标 +1」，改口径时漏掉一处的后果是「写进去的不合法、读出来才炸」
+        flow.assertLegalTrail(orderNo, statusTrail);
         String trackingNo = trimToNull(shipNo);
         if (trackingNo != null && trackingNo.length() > MAX_TRACKING_NO_LENGTH) {
             throw new IllegalStateException("订单 " + orderNo + " 落库的快递单号超过 "
@@ -232,7 +268,7 @@ public final class OrderModel {
         }
 
         OrderModel order = new OrderModel(orderNo, customerId, storeId, storeName, source, address,
-                requestId, fingerprint, createTime, items);
+                requestId, fingerprint, createTime, expireTime, items);
         order.statusTrail.clear();
         order.statusTrail.addAll(statusTrail);
         order.status = statusTrail.get(statusTrail.size() - 1);
@@ -290,26 +326,6 @@ public final class OrderModel {
     }
 
     /**
-     * 迁移到目标状态（经状态机校验；只能「下标 +1」地前进）
-     *
-     * <p>⚠ <b>未 seal 的模型不允许迁移</b>：一笔还没补全的订单不能是「待支付」——它此刻既没有完整金额
-     * 也没有商品快照，把它置成待支付等于把一个半成品交给用户。</p>
-     *
-     * <p>⚠ <b>seal 之后迁移照常允许</b>：封存冻结的是「订单行与金额」，不是状态——已下单的订单当然要能发货。
-     * 两条规则不矛盾：一条防的是「拿半成品当订单」，一条是订单的正常生命期。</p>
-     *
-     * @param target 目标状态
-     * @param flow   状态机（顺序来自配置，裁定 D7）
-     * @throws IllegalStateException 模型尚未 seal
-     * @throws com.panoramic.common.exception.ServiceException 非法迁移（跳级 / 回退 / 重复），HTTP 400
-     */
-    public void transitionTo(OrderStatus target, OrderStatusFlow flow) {
-        Objects.requireNonNull(flow, "订单状态机不能为空");
-        assertSealed();
-        flow.transition(this, target);
-    }
-
-    /**
      * 置为已支付（付款成功后调用），同时校验支付金额
      *
      * <p>⚠ <b>金额校验只能在聚合力做</b>：它是「实付 vs 订单总额」的比对，而订单总额是封存时冻结在
@@ -325,27 +341,29 @@ public final class OrderModel {
      * @throws ServiceException 金额与订单总额不一致（HTTP 400，提示语可直接展示给顾客）
      */
     public void markPaid(OrderStatusFlow flow, BigDecimal paidAmount) {
+        Objects.requireNonNull(flow, "订单状态机不能为空");
         Objects.requireNonNull(paidAmount, "支付金额不能为空");
         if (paidAmount.compareTo(totalAmount) != 0) {
             throw new ServiceException(400, "支付金额与订单总额不一致（应付 " + totalAmount.toPlainString()
                     + " 元，实付 " + paidAmount.toPlainString() + " 元）");
         }
-        transitionTo(OrderStatus.PAID, flow);
+        flow.advance(this, OrderStatus.PAID);
     }
 
     /**
      * 置为已发货（店主发货后调用），并记下快递单号
      *
      * <p>⚠ 入参校验 → 状态迁移 → 记单号，**顺序不可颠倒**：单号为空、或状态机拒绝这次迁移
-     * （重复发货 / 跳级）时，{@code shipNo} 必须保持原样。先记后迁移的话，一次被拒的发货会在这笔单上
+     * （重复发货 / 这笔单当前状态不允许发货）时，{@code shipNo} 必须保持原样。先记后迁移的话，一次被拒的发货会在这笔单上
      * 留下一个「没发货却有了单号」的中间态——事务回滚能救库里的数据，救不了手里这个对象，
      * 而它正是接下来要被拿去落库的那个。</p>
      *
      * @param flow       状态机
      * @param trackingNo 快递单号（必填）
-     * @throws ServiceException 单号为空或超长（HTTP 400），或状态机拒绝本次迁移（重复发货 / 跳级）
+     * @throws ServiceException 单号为空或超长（HTTP 400），或状态机拒绝本次迁移（重复发货 / 当前状态不许发货）
      */
     public void markShipped(OrderStatusFlow flow, String trackingNo) {
+        Objects.requireNonNull(flow, "订单状态机不能为空");
         String normalized = trimToNull(trackingNo);
         if (normalized == null) {
             throw new ServiceException(400, "发货必须填写快递单号");
@@ -353,7 +371,7 @@ public final class OrderModel {
         if (normalized.length() > MAX_TRACKING_NO_LENGTH) {
             throw new ServiceException(400, "快递单号不能超过 " + MAX_TRACKING_NO_LENGTH + " 个字符");
         }
-        transitionTo(OrderStatus.SHIPPED, flow);
+        flow.advance(this, OrderStatus.SHIPPED);
         this.shipNo = normalized;
     }
 
@@ -363,20 +381,60 @@ public final class OrderModel {
      * @param flow 状态机
      */
     public void markReceived(OrderStatusFlow flow) {
-        transitionTo(OrderStatus.RECEIVED, flow);
+        Objects.requireNonNull(flow, "订单状态机不能为空");
+        flow.advance(this, OrderStatus.RECEIVED);
+    }
+
+    /**
+     * 置为已取消（**仅待支付可取消**：顾客主动取消 / 超时未支付自动关单，两者都走这里）
+     *
+     * <p>⚠ <b>「必须未支付」这个前置状态写在本方法里，不写在状态机里</b>（2026-09-24 起的口径）：
+     * 它就是本动作的**定义**——「取消 = 把这笔待支付的单作废」这句话里已经含着它。
+     * 状态机拿到的只是「从待支付到已取消」这个三元组（{@link OrderStatusFlow#endWith}），
+     * 它并不知道这是取消该有的前置，也不该知道（旧版把这份前置状态配进配置，那份第二定义已撤掉）。</p>
+     *
+     * <p>⚠ <b>本方法里仍没有「必须未支付」的 {@code if}</b>：判据只有 {@link OrderStatusFlow#endWith}
+     * 里那一次比对，这里再写一遍就等于同一件事有两处说了算。</p>
+     *
+     * <p>⚠ <b>库存回补不在这里做</b>：库存在 store 域（跨服务写），聚合既拿不到它、也不该知道它。
+     * 调用方（取消服务）负责在落库之后归还——聚合只管「这笔单的状态到哪儿了」。</p>
+     *
+     * @param flow 状态机
+     * @throws ServiceException 当前状态不是待支付（HTTP 400，提示语可直接展示）
+     */
+    public void markCancelled(OrderStatusFlow flow) {
+        Objects.requireNonNull(flow, "订单状态机不能为空");
+        flow.endWith(this, OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED);
+    }
+
+    /**
+     * 置为已退款（**仅「已支付、未发货」可退**；全额退、一步生效，无需商户同意）
+     *
+     * <p>⚠ 同 {@link #markCancelled}：「只能从已支付来」这个前置状态写在本方法里（它是本动作的定义），
+     * 状态机只负责把它与这笔单的当前状态对上；本方法不另写 {@code if}；库存回补同理在调用方。</p>
+     *
+     * <p>⚠ 本期**不需要传退款金额**：退款恒为全额（聚合里冻结的 {@code totalAmount}），
+     * 让调用方传金额等于给「退多少」开出第二个说了算的地方。</p>
+     *
+     * @param flow 状态机
+     * @throws ServiceException 当前状态不是「已支付」（HTTP 400，提示语可直接展示）
+     */
+    public void markRefunded(OrderStatusFlow flow) {
+        Objects.requireNonNull(flow, "订单状态机不能为空");
+        flow.endWith(this, OrderStatus.PAID, OrderStatus.REFUNDED);
     }
 
     /**
      * 改收货地址（覆盖地址快照；**仅待支付可改**）
      *
      * <p>⚠ <b>这不是状态流转</b>：状态原地不变、**轨迹不追加一行**——轨迹的语义是「这笔单走过哪些状态」，
-     * 它的 {@code seq} 连续性是对账依据（见 {@link #requireReadableTrail}），
+     * 它的 {@code seq} 连续且构成一整条合法路径，是对账依据（见 {@link OrderStatusFlow#assertLegalTrail}），
      * 往里面塞一条与状态无关的记录会把它从「状态轨迹」变成「操作日志」，两种语义混在一起就都不可断言了。
      * 改地址的留痕靠 {@code BaseEntity} 的审计字段。</p>
      *
      * <p>⚠ <b>为什么只允许待支付</b>：付款之后再改地址，等于顾客与商家对「这单寄到哪儿」的共识
      * 在发货前被单方面改写（而包裹可能已经按旧地址在路上）。故它是一道**业务闸门**，
-     * 与状态机的「下标 +1」无关，故写在这里而不是 {@link OrderStatusFlow} 里。</p>
+     * 与状态机的迁移判据（主链的下一步 / 结束过程声明的来源状态）无关，故写在这里而不是 {@link OrderStatusFlow} 里。</p>
      *
      * @param newAddress 新的地址快照（**必填**；其构造器已做长度与空白校验）
      * @throws IllegalStateException 模型尚未 seal（未封存的模型不能被当成订单用）
@@ -393,7 +451,7 @@ public final class OrderModel {
      * 改地址的状态闸门（**仅待支付**）
      *
      * <p>⚠ <b>公开静态</b>是为了让落库实现的条件更新「0 行」时能拿到**同一句提示**
-     * （它只能用库里的当前状态重新跑一遍这道闸门）：与 {@link OrderStatusFlow#assertCanTransition}
+     * （它只能用库里的当前状态重新跑一遍这道闸门）：与 {@link OrderStatusFlow#cannotMove}
      * 被 {@code JdbcOrderRepository#update} 复用的手法同形——同一句提示只此一份。</p>
      *
      * @param status 订单当前状态
@@ -409,9 +467,9 @@ public final class OrderModel {
     /**
      * 改状态并留下轨迹（**包内可见**：唯一合法的调用者是同包的 {@link OrderStatusFlow}）
      *
-     * <p>⚠ seal 检查放在这里而不是只放在 {@link #transitionTo}：本方法是所有状态变更的**唯一**写入口，
-     * 从 {@link OrderStatusFlow#transition} 直接进来（测试、将来的其它调用方）也必须得到同一种异常，
-     * 不能因为「走哪个入口」而给出不同的错误类型。</p>
+     * <p>⚠ seal 检查放在这里而不是只放在 {@link OrderStatusFlow#advance} / {@link OrderStatusFlow#endWith}：
+     * 本方法是所有状态变更的**唯一**写入口，从状态机的两个入口直接进来（测试、将来的其它调用方）
+     * 也必须得到同一种异常，不能因为「走哪个入口」而给出不同的错误类型。</p>
      *
      * @param target 目标状态
      * @throws IllegalStateException 模型尚未 seal
@@ -523,6 +581,36 @@ public final class OrderModel {
     }
 
     /**
+     * @return 支付截止时刻；{@code null} = 无超时（本列上线前的历史行）
+     */
+    public LocalDateTime getExpireTime() {
+        return expireTime;
+    }
+
+    /**
+     * 这笔单是否**已过支付截止时刻**（支付前判定「已过期」与超时关单共用这一条判据）
+     *
+     * <p>⚠ 两个边界口径写死在这里，别处不许另写一份：</p>
+     * <ul>
+     *   <li><b>{@code null} = 永不超时</b>（本列上线前的历史行）：没有截止时刻就判不出过期，
+     *       故它恒为 {@code false}——否则会把一批老单在关单任务上线的那一刻全部判成超时；</li>
+     *   <li><b>到点即过期</b>（{@code now == expireTime} 算超时）：截到 12:10:00 的单，
+     *       12:10:00 那一刻就不能再付了。故判据是「不小于」，与落库查询的
+     *       {@code expire_time <= ?} 是同一句话（见 {@code OrderRepository#findTimeoutPending}）。</li>
+     * </ul>
+     *
+     * <p>⚠ 时刻由调用方传入（取 {@code Clock}），模型不取系统时间——与 {@code createTime} / {@code expireTime}
+     * 同一口径，单测才能钉住边界那一秒。</p>
+     *
+     * @param now 当前时刻
+     * @return 已过期则 {@code true}
+     */
+    public boolean isTimedOut(LocalDateTime now) {
+        Objects.requireNonNull(now, "当前时刻不能为空");
+        return expireTime != null && !now.isBefore(expireTime);
+    }
+
+    /**
      * @return 状态轨迹（**不可变副本**，含初始状态；「只前不退」在数据上的证据，裁定 D16）
      */
     public List<OrderStatus> getStatusTrail() {
@@ -605,33 +693,6 @@ public final class OrderModel {
                         + item.getSkuId() + " 出现在 " + previousSkuId + " 之后），不能重建");
             }
             previousSkuId = item.getSkuId();
-        }
-    }
-
-    /**
-     * 校验从库里读出来的状态轨迹是一条合法的路径（{@link #rehydrate} 用）
-     *
-     * <p>轨迹是「只前不退」在数据上的证据（裁定 D16），故它必须与状态机的配置对得上：
-     * 首项是配置里的初始状态，之后每一步都是「下标 +1」。跳级 / 回退 / 被截断的轨迹都拦在这里
-     * ——否则一笔数据被改坏的单会带着一条假轨迹继续流转。</p>
-     */
-    private static void requireReadableTrail(String orderNo, List<OrderStatus> trail, OrderStatusFlow flow) {
-        if (trail == null || trail.isEmpty()) {
-            throw new IllegalStateException("订单 " + orderNo + " 落库的状态轨迹为空，不能重建");
-        }
-        List<OrderStatus> configured = flow.statuses();
-        if (trail.get(0) != configured.get(0)) {
-            throw new IllegalStateException("订单 " + orderNo + " 落库的状态轨迹不是从初始状态开始的（首项="
-                    + trail.get(0) + "，配置的初始状态=" + configured.get(0) + "）");
-        }
-        for (int i = 1; i < trail.size(); i++) {
-            OrderStatus from = trail.get(i - 1);
-            OrderStatus to = trail.get(i);
-            if (to == null || from == null || configured.indexOf(to) != configured.indexOf(from) + 1) {
-                throw new IllegalStateException("订单 " + orderNo + " 落库的状态轨迹不是合法的「下标 +1」路径："
-                        + "第 " + (i + 1) + " 项是 " + (to == null ? "null" : to.name())
-                        + "，它前面是 " + (from == null ? "null" : from.name()));
-            }
         }
     }
 

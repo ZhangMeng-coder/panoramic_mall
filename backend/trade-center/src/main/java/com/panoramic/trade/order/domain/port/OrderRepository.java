@@ -1,6 +1,7 @@
 package com.panoramic.trade.order.domain.port;
 
 import com.panoramic.trade.order.domain.OrderModel;
+import com.panoramic.trade.order.domain.OrderStatus;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -89,13 +90,18 @@ public interface OrderRepository {
      * <p>窗口是**闭区间**（{@code createTime >= since}）：边界那一刻算「窗口内」。
      * 窗口外同指纹是**新单**——「同一顾客过一会儿又买同一批东西」是真实需求，不是重复提交。</p>
      *
+     * <p>⚠ <b>已结束的单（已收货 / 已取消 / 已退款）不参与复用</b>（{@link OrderStatus#isEnded()}，
+     * 与状态机在装配期锁死——判据是「主链末项 + 两个结束过程的落点」）：「命中即复用」的前提是那一笔**仍代表一次活着的购买意图**，而结束的单不是
+     * ——复用它会让「取消 / 退款 / 收货后重下同一批商品」拿回那笔既没重新扣库存、也付不了款的旧单
+     * （顾客侧看到的却是下单成功）。故判据是「窗口内**且仍未结束**的那一笔」，不是「窗口内同指纹的那一笔」。</p>
+     *
      * <p>⚠ 返回「最早的一笔」而不是「那一笔」：同指纹的多笔在**窗口外**是正常的（上面那句），
      * 同一次查询窗口内理论上至多一笔，但配置被调小、并发双击这类情况下可能出现两笔，
      * 那时取最早的一笔＝取「第一次那次提交记下的那笔」，语义唯一且确定（{@code create_time, id} 升序）。</p>
      *
      * @param fingerprint 订单指纹（由 {@code OrderFingerprint} 算出，不含金额与时间）
      * @param since       窗口起点：只认 {@code createTime >= since} 的订单
-     * @return 命中的那一笔；没有则空
+     * @return 命中的那一笔；没有则空（窗口内同指纹的单若**全是**已结束的，同样按「没有」处理 → 新建一笔）
      */
     Optional<OrderModel> findRecentByFingerprint(String fingerprint, LocalDateTime since);
 
@@ -106,6 +112,35 @@ public interface OrderRepository {
      * @return 已存在则为 {@code true}
      */
     boolean existsByOrderNo(String orderNo);
+
+    /**
+     * 捞一批**已过支付截止时刻、仍停在「待支付」**的单（超时关单任务的取数口）
+     *
+     * <p>⚠ 三个条件缺一不可，每个都是为了不误伤：</p>
+     * <ul>
+     *   <li><b>仍停在待支付</b>：已支付 / 已取消 / 已发货的单不该被关掉——状态机也会拒（取消这个结束过程
+     *       声明的来源状态只有「待支付」，见 {@code OrderModel#markCancelled}），但那是一次注定失败的尝试，
+     *       能不在 SQL 里捞出来就不捞；</li>
+     *   <li><b>截止时刻非空</b>：{@code expire_time} 为 NULL 的是本列上线前的历史行，
+     *       语义是**无超时**（见 {@code OrderModel#isTimedOut}）——漏了这一条会把一批老单在任务上线的
+     *       那一刻全部判成超时并关掉；</li>
+     *   <li><b>截止时刻不晚于 now</b>：闭区间（到点即过期），与 {@code OrderModel#isTimedOut}
+     *       的判据**逐字对齐**——两处判超时的地方各写一个边界，就会出现「SQL 捞出来了、域内说没过期」
+     *       这种不报错的分歧。</li>
+     * </ul>
+     *
+     * <p>⚠ {@code limit} 是**单批上限**（不是分页）：超时未支付的单可能积压（任务停过一段时间、
+     * 或故障后补跑），一次全捞进内存再逐笔关，会让一次扫描的耗时与内存随积压量线性增长。
+     * 上限内的单先关，剩下的下一轮再关——**任务本身幂等**（关过的单不再满足「仍停在待支付」），
+     * 故反复扫不会重复处理。</p>
+     *
+     * <p>顺序 = 截止时刻升序（先到期的先关），同一时刻按主键升序（顺序稳定、可断言）。</p>
+     *
+     * @param now   当前时刻（由调用方从 {@code Clock} 取，见 {@code OrderModel#isTimedOut}）
+     * @param limit 单批上限（必须为正数）
+     * @return 命中批（按截止时刻升序）；没有则空列表
+     */
+    List<OrderModel> findTimeoutPending(LocalDateTime now, int limit);
 
     /**
      * 落库一次提交新建的订单（订单 + 明细 + 初始状态轨迹 + 提交关联），**一次写入**
@@ -135,7 +170,7 @@ public interface OrderRepository {
      *
      * <p>⚠ <b>因此本方法不再是「重放无副作用」</b>：库里已不在来时状态时抛
      * {@code ServiceException}(400)，且提示语与**顺序调用**同一个动作得到的完全一致
-     * （由状态机生成，见 {@code OrderStatusFlow#assertCanTransition}）——「重复动作该不该 400」
+     * （由状态机生成，见 {@code OrderStatusFlow#cannotMove}）——「重复动作该不该 400」
      * 只有一个答案，不该因为「两次请求是否撞在一起」而给出两种结果（R8：重复动作由状态机拒，
      * 而不是静默成功、也不是 500）。</p>
      *

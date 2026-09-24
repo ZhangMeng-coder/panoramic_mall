@@ -77,6 +77,18 @@ public class MallOrderVO {
     private LocalDateTime createTime;
 
     /**
+     * 支付截止时刻——<b>原样取域的</b>，本层不按自己的配置再算一次
+     *
+     * <p>页面拿它做待支付倒计时（终点）。⚠ 它必须与域侧「支付时判是否过期」用的是同一个时刻，
+     * 故本层只做搬运：在这里重算一遍（比如「{@code createTime} + 本层配置的分钟数」）就等于
+     * 开出第二个说了算的地方，两处必然漂移，表现是「页面倒计时还剩 3 分钟，支付却被判过期」。</p>
+     *
+     * <p>⚠ 可为 {@code null}：本列上线前创建的老单没有截止时刻（域的语义是<b>无超时</b>）。
+     * 页面遇到 {@code null} <b>不要</b>倒计时、也<b>不要</b>当成「已过期」。</p>
+     */
+    private LocalDateTime expireTime;
+
+    /**
      * 收货地址快照（下单当时的值：此后顾客改地址 / 删地址都不影响已下的单）
      */
     private Address address;

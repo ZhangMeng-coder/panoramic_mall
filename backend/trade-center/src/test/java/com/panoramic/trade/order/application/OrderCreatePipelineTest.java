@@ -6,7 +6,7 @@ import com.panoramic.trade.order.domain.OrderLine;
 import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
-import com.panoramic.trade.order.domain.OrderStatus;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -73,13 +73,13 @@ class OrderCreatePipelineTest {
     /** 只用来喂给流水线的最小订单（假步骤不碰它，故不需要 seal） */
     private static OrderModel anyOrder() {
         return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
-                "req-1", "fp-1", CREATE_TIME, List.of(new OrderLine(10L, 1)));
+                "req-1", "fp-1", CREATE_TIME, CREATE_TIME.plusMinutes(10), List.of(new OrderLine(10L, 1)));
     }
 
     private static OrderProperties props(String... steps) {
         OrderProperties properties = new OrderProperties();
         properties.setSteps(List.of(steps));
-        properties.setStatusFlow(List.of(OrderStatus.values()));
+        properties.setStatusFlow(OrderStatusChain.production());
         properties.setIdempotencyWindowSeconds(300);
         properties.setOrderNoMaxRetry(5);
         return properties;

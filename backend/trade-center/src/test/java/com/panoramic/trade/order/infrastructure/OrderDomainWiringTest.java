@@ -44,7 +44,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.EnumSet;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -183,7 +182,10 @@ class OrderDomainWiringTest {
     @DisplayName("配置被真实读入：steps / status-flow / 窗口 / 重试上限都与 application.yml 一致")
     void realConfigIsBound() {
         assertThat(properties.getSteps()).containsExactlyElementsOf(configuredSteps());
-        assertThat(properties.getStatusFlow()).containsExactlyElementsOf(configuredStatusFlow());
+        // ⚠ 本格比的是**配置自己**（绑进来的值 ↔ yml 原文）：主链是**有序**列表，故连顺序一起比
+        //    （顺序即先后，是本版唯一承载顺序的地方）；「机器读出来的主链 == 配置」在
+        //    statusFlowMatchesConfiguredChain 里比
+        assertThat(properties.getStatusFlow()).containsExactlyElementsOf(configuredStatusChain());
         assertThat(properties.getIdempotencyWindowSeconds())
                 .isEqualTo(configuredWindowSeconds());
         assertThat(properties.getOrderNoMaxRetry()).isEqualTo(configuredMaxRetry());
@@ -200,19 +202,46 @@ class OrderDomainWiringTest {
     }
 
     @Test
-    @DisplayName("② status-flow 与 OrderStatus 的全部常量集合相等（枚举两侧不漂移）")
-    void statusFlowCoversAllEnumConstants() {
-        Set<OrderStatus> configured = new HashSet<>(configuredStatusFlow());
-        Set<OrderStatus> allConstants = EnumSet.allOf(OrderStatus.class);
+    @DisplayName("② 装配出的状态机与 yml 那份主链逐项一致（顺序、入口、每一步的下一步都来自配置）")
+    void statusFlowMatchesConfiguredChain() {
+        List<OrderStatus> chain = configuredStatusChain();
 
-        assertThat(configured).containsExactlyInAnyOrderElementsOf(allConstants);
-        // 装配出来的状态机同样覆盖全部常量，且顺序就是配置里的顺序（顺序来自配置，不写死在代码里）
-        assertThat(statusFlow.statuses()).containsExactlyInAnyOrderElementsOf(allConstants);
-        assertThat(statusFlow.statuses()).containsExactlyElementsOf(configuredStatusFlow());
+        // ⚠ 这是**绑定的漂移守卫**：配置侧走「SnakeYAML 直读原文」，状态机侧走
+        //    「Boot 绑定 → OrderProperties → OrderStatusFlow」——两条不同的数据路径。
+        //    枚举名绑定失败、列表整个绑没了、yml 改成 kebab-case 的键，都会在这里红。
+        assertThat(statusFlow.chain()).containsExactlyElementsOf(chain);
+        // 入口 = 主链首项（它同时是轨迹的首项与 OrderModel#open 出来的状态）
+        assertThat(statusFlow.initialState()).isEqualTo(chain.get(0));
+
+        // 每一步的下一步都由主链给出：主链内相邻两项之间可推进，末项与两个结束过程的落点没有下一步
+        for (OrderStatus status : EnumSet.allOf(OrderStatus.class)) {
+            int index = chain.indexOf(status);
+            OrderStatus expectedNext = (index < 0 || index == chain.size() - 1) ? null : chain.get(index + 1);
+            assertThat(statusFlow.nextOf(status)).as("%s 的下一个状态", status).isEqualTo(expectedNext);
+        }
     }
 
     @Test
-    @DisplayName("③ 装配出的流水线执行顺序 === 配置里 steps 的顺序")
+    @DisplayName("③ 主链只由 yml 给出：两个结束过程的落点不许出现在配置里，来源状态在动作里")
+    void statusChainIsMainLineOnly() {
+        List<OrderStatus> chain = configuredStatusChain();
+
+        // ① yml 里不许出现两个结束过程的落点——写进来 OrderStatusFlow 装配期就炸，且它比「少写一个键」
+        //    更隐蔽：哪怕配的来源状态与动作里声明的一模一样也不允许（两处都写就成了第二份定义，
+        //    不一致时以谁为准都不对）。这里把这条口径钉在**配置文本**上，而不只是钉在行为上。
+        assertThat(chain).doesNotContainAnyElementsOf(ENDING_TARGETS);
+        assertThat(chain).containsExactlyInAnyOrderElementsOf(EnumSet.allOf(OrderStatus.class).stream()
+                .filter((status) -> !ENDING_TARGETS.contains(status))
+                .toList());
+        assertThat(chain.get(0)).isEqualTo(OrderStatus.PENDING_PAYMENT);
+
+        // ⚠ 这里**不再**断言那两个结束过程的来源状态（旧版用 predecessorsOf 断言过）：状态机不知道也不该
+        //    知道它们（它只认得「这个落点不在主链上」），来源写在 {@code OrderModel#markCancelled} /
+        //    {@code #markRefunded} 里——验它的是 OrderModelTest，不是本类这条「配置 ↔ 代码」的对账。
+    }
+
+    @Test
+    @DisplayName("④ 装配出的流水线执行顺序 === 配置里 steps 的顺序")
     void pipelineOrderMatchesConfiguration() {
         assertThat(pipeline.stepNames()).containsExactlyElementsOf(configuredSteps());
     }
@@ -411,6 +440,15 @@ class OrderDomainWiringTest {
                 if (value instanceof Map<?, ?> nested) {
                     flatten(name + ".", (Map<String, Object>) nested, sink);
                 } else if (value instanceof List<?> list) {
+                    // ⚠ 空列表**不能什么都不放**：Boot 的加载器把空列表节点（{@code []}）构造为一个空串标量，
+                    //    绑定器再把它转成空集合——故这里也要写成空串，否则键整个消失，与真实加载路径不同。
+                    //    ⚠ 当前 order 段里**没有**空列表节点（旧版 status-flow 的入口状态写成 {@code []} 时
+                    //    是唯一的触发点），这一支留着是为了与 Boot 的加载路径保持同形，别再往 order 段里
+                    //    加空列表而指望它俩仍然一致。
+                    if (list.isEmpty()) {
+                        sink.put(name, "");
+                        return;
+                    }
                     for (int i = 0; i < list.size(); i++) {
                         sink.put(name + "[" + i + "]", String.valueOf(list.get(i)));
                     }
@@ -452,11 +490,26 @@ class OrderDomainWiringTest {
         return (List<String>) orderSection().get("steps");
     }
 
+    /**
+     * 真实 yml 里声明的主链（**有序**：数组顺序即先后）
+     *
+     * <p>⚠ 每一项都是**枚举常量名原样**（{@code PENDING_PAYMENT}）：经
+     * {@code ConfigurationPropertyName} 的 {@code Form.ORIGINAL} 取值时，下划线在大写形式里是放行的。</p>
+     */
     @SuppressWarnings("unchecked")
-    private static List<OrderStatus> configuredStatusFlow() {
-        // yml 里写的是枚举常量名（kebab-case 的键，PascalCase 的值）
-        return ((List<String>) orderSection().get("status-flow")).stream().map(OrderStatus::valueOf).toList();
+    private static List<OrderStatus> configuredStatusChain() {
+        List<String> declared = (List<String>) orderSection().get("status-flow");
+        return declared.stream().map(OrderStatus::valueOf).toList();
     }
+
+    /**
+     * 两个**结束过程**的落点：它们不在主链上（yml 的 {@code status-flow} 里不该出现它们），
+     * 到达它们的前置状态写在 {@code OrderModel} 的动作方法里。
+     *
+     * <p>⚠ 这里照抄一份是为了当**期望值**（映射到断言上），不是第二份定义：定义只有
+     * {@code OrderStatusFlow} 里的 {@code ENDING_TARGETS} 一处，改了它而不改这里，本类就会红。</p>
+     */
+    private static final Set<OrderStatus> ENDING_TARGETS = Set.of(OrderStatus.CANCELLED, OrderStatus.REFUNDED);
 
     private static long configuredWindowSeconds() {
         return ((Number) orderSection().get("idempotency-window-seconds")).longValue();

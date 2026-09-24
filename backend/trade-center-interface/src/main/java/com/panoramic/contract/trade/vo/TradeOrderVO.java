@@ -89,6 +89,17 @@ public class TradeOrderVO {
     private LocalDateTime createTime;
 
     /**
+     * 支付截止时刻（= 下单时刻 + 域侧配置的支付时限，**下单时算好落库的快照**）
+     *
+     * <p>页面拿它做待支付倒计时（终点），支付接口拿它判「是否已过期」——**同一份时刻**，
+     * 故端 BFF 必须原样透传，不要在那一层按自己的配置再算一次（两处算必漂移）。</p>
+     *
+     * <p>⚠ 可为 {@code null}：本列上线前创建的老单没有截止时刻（语义是**无超时**），
+     * 前端遇到 null 不要倒计时、也不要把它当「已过期」。</p>
+     */
+    private LocalDateTime expireTime;
+
+    /**
      * 收货地址快照（下单当时的值；复用下单那份形状，见 {@link TradeOrderAddressDTO}）
      */
     private TradeOrderAddressDTO address;

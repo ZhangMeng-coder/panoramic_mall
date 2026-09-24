@@ -1,11 +1,13 @@
 package com.panoramic.trade.controller;
 
 import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
 import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
@@ -23,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 订单内部领域接口（trade-center 域下沉纯域）· **按能力七条**，不按端分侧。
+ * 订单内部领域接口（trade-center 域下沉纯域）· **按能力九条**，不按端分侧。
  *
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/trade/order/...}）调用，不向页面暴露公网路由；
  * 方法直接返回业务原类型（不包 {@code RespData}），错误经 {@code TradeDomainExceptionHandler}
@@ -32,7 +34,8 @@ import java.util.List;
  * <p><b>域内不做任何鉴权、不做权限判断、不校验 token</b>：数据作用域（{@code customerId} / {@code storeId}）
  * 由调用方填在**请求体 DTO 的字段**里（不进路径段，cross-cutting 第 22 条），域侧只做「传了就按它筛，
  * 没传就是不限定」。它是否等于「本人 / 本店」由端 BFF 从登录态取，域侧不校验（防线在 BFF）。
- * 读能力（分页 / 详情）的作用域字段**可选**（管理端本就全量视角），写能力（下单 / 支付 / 发货 / 收货 / 改地址）
+ * 读能力（分页 / 详情）的作用域字段**可选**（管理端本就全量视角），写能力
+ * （下单 / 支付 / 发货 / 收货 / 改地址 / 取消 / 仅退款）
  * 的**必填**——那份必填由 DTO 上的 {@code @NotNull} 守。</p>
  *
  * <p>⚠ <b>不分端、不判身份</b>：同一笔订单从顾客侧与商户侧都能读到（各自传各自的作用域收窄），
@@ -93,7 +96,7 @@ public class OrderController {
     }
 
     /**
-     * 发货（记录快递单号；重复发货 / 跳级 → 400）
+     * 发货（记录快递单号；重复发货 / 这笔单当前状态不允许发货 → 400）
      */
     @PostMapping("/{orderNo}/ship")
     public void shipOrder(@PathVariable("orderNo") String orderNo,
@@ -108,5 +111,24 @@ public class OrderController {
     public void receiveOrder(@PathVariable("orderNo") String orderNo,
                              @Validated @RequestBody TradeOrderReceiveDTO dto) {
         orderApplicationService.receiveOrder(orderNo, dto);
+    }
+
+    /**
+     * 取消订单（**仅待支付可取消**；回补库存）。
+     * ⚠ 它与超时关单任务共用同一份域侧口径，差异只在触发方
+     */
+    @PostMapping("/{orderNo}/cancel")
+    public void cancelOrder(@PathVariable("orderNo") String orderNo,
+                            @Validated @RequestBody TradeOrderCancelDTO dto) {
+        orderApplicationService.cancelOrder(orderNo, dto);
+    }
+
+    /**
+     * 仅退款（**仅「已支付、未发货」可退**，全额退、一步生效；回补库存）
+     */
+    @PostMapping("/{orderNo}/refund")
+    public void refundOrder(@PathVariable("orderNo") String orderNo,
+                            @Validated @RequestBody TradeOrderRefundDTO dto) {
+        orderApplicationService.refundOrder(orderNo, dto);
     }
 }

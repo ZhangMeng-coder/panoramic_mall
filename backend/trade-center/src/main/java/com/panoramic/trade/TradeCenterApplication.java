@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 交易域（下沉纯域）启动类
@@ -18,11 +19,17 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * 这是「各域只依赖自己的 {@code <域>-interface}」的**登记例外**，
  * 见 docs/contracts/cross-cutting.md 第 24 条；据此本服务也加载 {@code feign-circuitbreaker.yml}
  * （域间调用同样要熔断：store 不可达时下单必须整体失败，不得被拖死）。</p>
+ * <p><b>⚠ {@code @EnableScheduling} 是本域唯一需要的调度开关</b>：超时未支付自动关单
+ * （{@code OrderTimeoutCloseTask}）需要它才会真的被周期调用——少了这个注解，任务类照常注册成 bean、
+ * 启动不报任何错，但那个方法**永远不会被执行**（任务的取数、关单、日志一条都不会发生，
+ * 表现是「超时单一直挂着待支付」）。它落在这里而不是某个 {@code @Configuration} 上，是因为
+ * 「本服务要不要调度」属于启动级的装配决策，与本域内部的步骤链 / 仓库选型无关。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.panoramic")
 @MapperScan({"com.panoramic.trade.mapper", "com.panoramic.trade.order.infrastructure.mapper"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.panoramic.contract.store")
+@EnableScheduling
 public class TradeCenterApplication {
 
     public static void main(String[] args) {

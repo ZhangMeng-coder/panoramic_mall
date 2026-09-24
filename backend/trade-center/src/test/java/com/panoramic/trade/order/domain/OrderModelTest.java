@@ -2,6 +2,7 @@ package com.panoramic.trade.order.domain;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,11 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  */
 class OrderModelTest {
 
-    private static final OrderStatusFlow FLOW = new OrderStatusFlow(List.of(OrderStatus.values()));
+    /**
+     * 与 {@code application.yml} 同构的状态主链（本类只验模型行为，主链本身写在 {@link OrderStatusChain}；
+     * yml ↔ 代码的对账在 {@code OrderDomainWiringTest}）。
+     */
+    private static final OrderStatusFlow FLOW = new OrderStatusFlow(OrderStatusChain.production());
 
     private static final LocalDateTime CREATE_TIME = LocalDateTime.of(2026, 9, 21, 12, 0, 0);
 
@@ -36,7 +41,7 @@ class OrderModelTest {
 
     private static OrderModel openOrder(OrderLine... lines) {
         return OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT, ADDRESS,
-                "req-1", "fp-1", CREATE_TIME, List.of(lines));
+                "req-1", "fp-1", CREATE_TIME, CREATE_TIME.plusMinutes(10), List.of(lines));
     }
 
     private static SkuSnapshot snapshot(long skuId, String price) {
@@ -87,6 +92,29 @@ class OrderModelTest {
         assertThat(model.getRequestId()).isEqualTo("req-1");
         assertThat(model.getFingerprint()).isEqualTo("fp-1");
         assertThat(model.getCreateTime()).isEqualTo(CREATE_TIME);
+        assertThat(model.getExpireTime()).isEqualTo(CREATE_TIME.plusMinutes(10));
+    }
+
+    @Test
+    @DisplayName("支付截止时刻不晚于下单时刻 → IllegalStateException（时限配成 0/负数的落点，不是用户输入问题）")
+    void deadlineNotAfterCreateTimeRejected() {
+        assertThatThrownBy(() -> OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+                ADDRESS, "req-1", "fp-1", CREATE_TIME, CREATE_TIME, List.of(new OrderLine(10L, 1))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("不晚于下单时刻");
+        assertThatThrownBy(() -> OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+                ADDRESS, "req-1", "fp-1", CREATE_TIME, CREATE_TIME.minusMinutes(1), List.of(new OrderLine(10L, 1))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("不晚于下单时刻");
+    }
+
+    @Test
+    @DisplayName("新单缺支付截止时刻 → NPE（重建路径才允许 null：那是本列上线前的老单，语义是无超时）")
+    void missingDeadlineRejectedOnOpen() {
+        assertThatThrownBy(() -> OrderModel.open("202609211200000001", 11L, 7L, "示例店铺", OrderSource.DIRECT,
+                ADDRESS, "req-1", "fp-1", CREATE_TIME, null, List.of(new OrderLine(10L, 1))))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("支付截止时刻");
     }
 
     @Test
@@ -207,7 +235,7 @@ class OrderModelTest {
         assertThatThrownBy(() -> model.markPaid(FLOW, model.getTotalAmount()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("尚未封存");
-        assertThatThrownBy(() -> FLOW.transition(model, OrderStatus.PAID))
+        assertThatThrownBy(() -> FLOW.advance(model, OrderStatus.PAID))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("尚未封存");
         assertThat(model.getStatusTrail()).containsExactly(OrderStatus.PENDING_PAYMENT);
@@ -233,16 +261,17 @@ class OrderModelTest {
     }
 
     @Test
-    @DisplayName("跳级 / 重复 / 回退一律 ServiceException(400)，且失败不留痕（轨迹不动）")
+    @DisplayName("跳级 / 重复变更一律 ServiceException(400)，且失败不留痕（轨迹不动）")
     void illegalTransitionsAreRejectedWithoutTrace() {
         OrderModel model = completableOrder();
         model.seal();
 
-        Throwable skip = catchThrowable(() -> model.markShipped(FLOW, TRACKING_NO));
-        assertThat(skip).isInstanceOf(ServiceException.class);
-        assertThat(((ServiceException) skip).getCode()).isEqualTo(400);
+        // 未支付就想发货：主链上待支付的下一个是已支付，不是已发货
+        Throwable notAnEdge = catchThrowable(() -> model.markShipped(FLOW, TRACKING_NO));
+        assertThat(notAnEdge).isInstanceOf(ServiceException.class);
+        assertThat(((ServiceException) notAnEdge).getCode()).isEqualTo(400);
         // 提示语用的是 mallLabel（给顾客看的），故 SHIPPED 在这里是「已发货」而不是店主侧的「待收货」
-        assertThat(skip.getMessage()).contains("跳级").contains("待支付").contains("已发货");
+        assertThat(notAnEdge.getMessage()).contains("变更为").contains("待支付").contains("已发货");
 
         model.markPaid(FLOW, model.getTotalAmount());
 
@@ -250,21 +279,24 @@ class OrderModelTest {
         assertThat(repeat).isInstanceOf(ServiceException.class);
         assertThat(repeat.getMessage()).contains("重复变更");
 
-        Throwable back = catchThrowable(() -> model.transitionTo(OrderStatus.PENDING_PAYMENT, FLOW));
+        // 已支付的单回不到待支付（主链上待支付的下一个只会是已支付）
+        Throwable back = catchThrowable(() -> FLOW.advance(model, OrderStatus.PENDING_PAYMENT));
         assertThat(back).isInstanceOf(ServiceException.class);
-        assertThat(back.getMessage()).contains("回退").contains("已支付").contains("待支付");
+        assertThat(back.getMessage()).contains("变更为").contains("已支付").contains("待支付");
 
         assertThat(model.getStatus()).isEqualTo(OrderStatus.PAID);
         assertThat(model.getStatusTrail()).containsExactly(OrderStatus.PENDING_PAYMENT, OrderStatus.PAID);
     }
 
     @Test
-    @DisplayName("状态机为空 → IllegalStateException（装配错误，不是用户错）")
+    @DisplayName("状态机为空 → NPE（装配错误，不是用户错）")
     void nullFlowRejected() {
         OrderModel model = completableOrder();
         model.seal();
 
-        assertThatThrownBy(() -> model.transitionTo(OrderStatus.PAID, null))
+        assertThatThrownBy(() -> model.markPaid(null, model.getTotalAmount()))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> model.markReceived(null))
                 .isInstanceOf(NullPointerException.class);
     }
 

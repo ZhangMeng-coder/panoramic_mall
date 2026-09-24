@@ -1,5 +1,9 @@
 package com.panoramic.trade.order.application;
 
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
+import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
+import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.trade.order.application.config.OrderProperties;
 import com.panoramic.trade.order.application.step.GoodsCheckStep;
 import com.panoramic.trade.order.application.step.PriceComputeStep;
@@ -8,10 +12,12 @@ import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
+import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.support.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.support.InMemoryStockPort;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +46,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>⚠ 时间窗口的边界是**闭区间**（{@code createTime >= since}）：窗口长度那一刻算窗口内。
  * 边界必须有用例钉住，否则「临界 1 秒」的行为只能靠读代码猜。</p>
+ *
+ * <p>⚠ 第二级的判据是「窗口内**且仍未结束**的那一笔」：**已结束的单（已收货 / 已取消 / 已退款）
+ * 不参与复用**（`OrderStatus#isEnded`）。少了这一维的后果不是报错，而是顾客「取消 / 退款 / 收货后
+ * 重下同一批商品」拿回那笔既没重新扣库存、也付不了款的旧单——静默错，故与窗口边界同样必须有用例钉住。</p>
  */
 class OrderIdempotencyTest {
 
@@ -54,6 +64,8 @@ class OrderIdempotencyTest {
     private InMemoryStockPort stockPort;
     private InMemoryOrderRepository orderRepository;
     private OrderCreateCoordinator coordinator;
+    /** 用例入口：取消 / 退款 / 收货这些动作得走状态机真正的入口（见「已结束的单不复用」两条用例） */
+    private OrderApplicationService service;
 
     @BeforeEach
     void setUp() {
@@ -68,7 +80,7 @@ class OrderIdempotencyTest {
 
         OrderProperties properties = new OrderProperties();
         properties.setSteps(List.of(GoodsCheckStep.NAME, StockCheckStep.NAME, PriceComputeStep.NAME));
-        properties.setStatusFlow(List.of(OrderStatus.values()));
+        properties.setStatusFlow(OrderStatusChain.production());
         properties.setIdempotencyWindowSeconds(300);
         properties.setOrderNoMaxRetry(5);
         OrderCreatePipeline pipeline = new OrderCreatePipeline(List.of(
@@ -77,6 +89,10 @@ class OrderIdempotencyTest {
         AtomicInteger sequence = new AtomicInteger();
         coordinator = new OrderCreateCoordinator(orderRepository, goodsQueryPort, stockPort,
                 new DefaultOrderNoGenerator(clock, sequence::getAndIncrement), pipeline, properties, clock);
+
+        OrderStatusFlow statusFlow = new OrderStatusFlow(OrderStatusChain.production());
+        service = new OrderApplicationService(coordinator,
+                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock);
     }
 
     private OrderCreateCommand command(Long customerId, OrderSource source, String requestId,
@@ -258,6 +274,61 @@ class OrderIdempotencyTest {
         assertThat(outOfWindow.get(0)).isNotSameAs(first.get(0));
         assertThat(outOfWindow.get(0).getOrderNo()).isNotEqualTo(first.get(0).getOrderNo());
         assertThat(outOfWindow.get(0).getCreateTime()).isAfter(first.get(0).getCreateTime());
+        assertThat(orderRepository.count()).isEqualTo(2);
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 4);
+    }
+
+    @Test
+    @DisplayName("取消后再提交同指纹（窗口内）→ 不复用那笔已取消的单，而是新建一笔并重新扣库存")
+    void cancelledOrderIsNotReused() {
+        OrderModel cancelled = coordinator.create(command(11L, OrderSource.DIRECT, "req-1", line(SKU_A, 2))).get(0);
+        TradeOrderCancelDTO cancelDto = new TradeOrderCancelDTO();
+        cancelDto.setCustomerId(11L);
+        service.cancelOrder(cancelled.getOrderNo(), cancelDto);
+
+        assertThat(cancelled.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+        // 取消的既有口径：一律回补库存（故此刻库存是满的）
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK);
+
+        // 窗口内（299 秒 < 300 秒）重下同一批：那笔单已结束，指纹照样相同——不得被复用来顶掉新单
+        clock.advanceSeconds(299);
+        OrderModel second = coordinator.create(command(11L, OrderSource.DIRECT, "req-2", line(SKU_A, 2))).get(0);
+
+        assertThat(second).isNotSameAs(cancelled);
+        assertThat(second.getOrderNo()).isNotEqualTo(cancelled.getOrderNo());
+        assertThat(second.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+        assertThat(orderRepository.count()).isEqualTo(2);
+        // 复用了那笔已结束的单的话，这里会是「满格」——新单必须重新占住库存
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 2);
+    }
+
+    @Test
+    @DisplayName("确认收货后再提交同指纹（窗口内）→ 不复用那笔已完成的单，而是新建一笔并重新扣库存")
+    void receivedOrderIsNotReused() {
+        OrderModel received = coordinator.create(command(11L, OrderSource.DIRECT, "req-1", line(SKU_A, 2))).get(0);
+        TradeOrderPayDTO payDto = new TradeOrderPayDTO();
+        payDto.setCustomerId(11L);
+        payDto.setAmount(received.getTotalAmount());
+        service.payOrder(received.getOrderNo(), payDto);
+        TradeOrderShipDTO shipDto = new TradeOrderShipDTO();
+        shipDto.setStoreId(STORE_A);
+        shipDto.setTrackingNo("SF1234567890");
+        service.shipOrder(received.getOrderNo(), shipDto);
+        TradeOrderReceiveDTO receiveDto = new TradeOrderReceiveDTO();
+        receiveDto.setCustomerId(11L);
+        service.receiveOrder(received.getOrderNo(), receiveDto);
+
+        assertThat(received.getStatus()).isEqualTo(OrderStatus.RECEIVED);
+        // 收货不动库存（货已经发出去了）：此刻仍是扣过 2 件的样子
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 2);
+
+        // 窗口内重下同一批：那笔单已经走到头了，指纹照样相同——不得被复用来顶掉新单
+        clock.advanceSeconds(299);
+        OrderModel second = coordinator.create(command(11L, OrderSource.DIRECT, "req-2", line(SKU_A, 2))).get(0);
+
+        assertThat(second).isNotSameAs(received);
+        assertThat(second.getOrderNo()).isNotEqualTo(received.getOrderNo());
+        assertThat(second.getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(orderRepository.count()).isEqualTo(2);
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - 4);
     }

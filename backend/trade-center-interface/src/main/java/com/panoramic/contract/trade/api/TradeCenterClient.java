@@ -5,11 +5,13 @@ import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemUpdateDTO;
 import com.panoramic.contract.trade.dto.TradeCartSelectDTO;
 import com.panoramic.contract.trade.dto.TradeOrderAddressUpdateDTO;
+import com.panoramic.contract.trade.dto.TradeOrderCancelDTO;
 import com.panoramic.contract.trade.dto.TradeOrderCreateDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderPayDTO;
 import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
+import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
 import com.panoramic.contract.trade.vo.TradeCartItemVO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
@@ -51,7 +53,7 @@ import java.util.List;
  * （抄一份就是制造第二个会漂移的地方）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表某行的 {@code 待实现} 标记、在此声明该方法、域侧补上实现，
  * 三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前购物车 8 条 + 订单 7 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
+ * 当前购物车 8 条 + 订单 9 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
  */
 @FeignClient(name = "trade-center", contextId = "tradeCenterClient",
         path = "/internal/trade", configuration = TradeFeignConfiguration.class)
@@ -141,7 +143,9 @@ public interface TradeCenterClient {
      * 下单：一次提交按 {@code storeId} 拆成多笔（一单一店），**返回整批**，顺序 = {@code storeId} 升序
      *
      * <p>⚠ <b>幂等</b>：命中请求级键（{@code requestId}）或窗口内同指纹时，<b>原样返回首次那批</b>——
-     * 不重建、不二次扣库存、连商品都不再校验。故调用方拿到的一律是「这次提交对应的那一批」。</p>
+     * 不重建、不二次扣库存、连商品都不再校验。故调用方拿到的一律是「这次提交对应的那一批」。
+     * ⚠ 指纹复用的前提是那一笔**仍未结束**：同指纹最近的单若已收货 / 已取消 / 已退款，
+     * 它不参与复用（{@code OrderStatus#isEnded}）——这次提交会真的下出新的一笔。</p>
      *
      * @param dto 下单参数（**作用域** customerId 必填 / 来源 / 幂等键 / 地址快照 / 商品行）
      * @return 本次提交的整批订单（至少一笔）
@@ -205,7 +209,7 @@ public interface TradeCenterClient {
                   @RequestBody TradeOrderPayDTO dto);
 
     /**
-     * 发货（记录快递单号）；重复发货 / 跳级 → 400
+     * 发货（记录快递单号）；重复发货 / 这笔单当前状态不允许发货 → 400
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     快递单号（必填）+ **作用域** storeId（必填）
@@ -225,4 +229,35 @@ public interface TradeCenterClient {
     @PostMapping("/order/{orderNo}/receive")
     void receiveOrder(@PathVariable("orderNo") String orderNo,
                       @RequestBody TradeOrderReceiveDTO dto);
+
+    /**
+     * 取消订单：**仅待支付可取消**（{@code PENDING_PAYMENT → CANCELLED}），其余状态一律拒
+     *
+     * <p>⚠ 取消**一律回补库存**（下单即扣的库存在这里还回去）：回补按订单流水净额算、**幂等**，
+     * 重复调用的第二次数不到未还净额即 no-op。故「取消」这个动作对同一笔单被调用两次时，
+     * 第二次会先被状态机拒（400「重复变更」），根本走不到回补。</p>
+     *
+     * <p>⚠ 触发方有两个（都是这一条能力）：顾客主动取消、**超时未支付自动关单**（域内定时任务）。
+     * 两者的域侧口径完全一致——差异只在「谁触发、凭什么判定超时」，故没有第二个方法。</p>
+     *
+     * @param orderNo 业务可读单号（资源标识，走路径变量）
+     * @param dto     **作用域** customerId（必填）
+     * @throws com.panoramic.common.exception.ServiceException 非待支付状态（HTTP 400）、订单不属本人（404）
+     */
+    @PostMapping("/order/{orderNo}/cancel")
+    void cancelOrder(@PathVariable("orderNo") String orderNo,
+                     @RequestBody TradeOrderCancelDTO dto);
+
+    /**
+     * 仅退款：**仅「已支付、未发货」可退**（{@code PAID → REFUNDED}），全额退、一步生效、无需商户同意
+     *
+     * <p>⚠ 退款**一律回补库存**，口径与取消同一处（同一份实现，不各写一遍）。</p>
+     *
+     * @param orderNo 业务可读单号（资源标识，走路径变量）
+     * @param dto     **作用域** customerId（必填）
+     * @throws com.panoramic.common.exception.ServiceException 非「已支付未发货」（HTTP 400）、订单不属本人（404）
+     */
+    @PostMapping("/order/{orderNo}/refund")
+    void refundOrder(@PathVariable("orderNo") String orderNo,
+                     @RequestBody TradeOrderRefundDTO dto);
 }

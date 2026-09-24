@@ -8,13 +8,13 @@ import com.panoramic.trade.order.domain.OrderLine;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderNoGenerator;
 import com.panoramic.trade.order.domain.OrderSource;
-import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.support.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.support.InMemoryStockPort;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,7 +77,7 @@ class OrderNoGeneratorTest {
 
         properties = new OrderProperties();
         properties.setSteps(List.of(GoodsCheckStep.NAME, StockCheckStep.NAME, PriceComputeStep.NAME));
-        properties.setStatusFlow(List.of(OrderStatus.values()));
+        properties.setStatusFlow(OrderStatusChain.production());
         properties.setIdempotencyWindowSeconds(300);
         properties.setOrderNoMaxRetry(5);
     }
@@ -104,8 +104,9 @@ class OrderNoGeneratorTest {
      * 若这里另开一条「直接塞进内存」的测试专用入口，占号这件事在测试里成立、在生产上却可能不成立。</p>
      */
     private void seedOrderWithOrderNo(String orderNo) {
+        LocalDateTime created = LocalDateTime.now(clock);
         OrderModel seeded = OrderModel.open(orderNo, 11L, STORE_A, "一号店", OrderSource.CART, ADDRESS,
-                "req-seeded", "fp-seeded", LocalDateTime.now(clock), List.of(new OrderLine(SKU_B, 1)));
+                "req-seeded", "fp-seeded", created, created.plusMinutes(10), List.of(new OrderLine(SKU_B, 1)));
         SkuSnapshot snapshot = goodsQueryPort.mapBySkuIds(List.of(SKU_B)).get(SKU_B);
         seeded.applyGoodsSnapshot(SKU_B, snapshot);
         seeded.applyPrice(SKU_B, snapshot.price());

@@ -6,7 +6,9 @@
 --       末段另建 Seata AT 模式的回滚日志 undo_log（2026-09-22 T12）：业务代码不碰它、
 --       全域共用同一个库故全仓只需这一份，trade-center 与 store 都是它的读写方。
 --       列名与 common BaseEntity 字段对应（create_user/update_user/is_delete）。
---       可重复执行（CREATE TABLE IF NOT EXISTS），纯新增、不改任何存量行。
+--       可重复执行（CREATE TABLE IF NOT EXISTS）；前面几张表是纯新增、不改任何存量行，
+--       **尾部另有一段对存量表加列 / 加索引**（trade_order.expire_time 与 idx_status_expire，2026-09-23），
+--       那段才是动存量表结构的（且都是纯新增，不销数据）。
 -- 执行方式：mysql -uroot -p < schema.sql
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS panoramic_mall
@@ -34,7 +36,8 @@ CREATE TABLE IF NOT EXISTS trade_cart_item (
 -- 订单（trade-center 订单域，2026-09-21 阶段一新增）
 -- 说明：域内订单模型已建完，本批补「真实落库」——5 张表；商品 / 库存两个下游本轮仍是内存脚手架（见 todo 阶段一 T4）。
 --       两级幂等：trade_order_submission 的 (customer_id, request_id) 唯一键 = L1 请求级（先占键）；
---                 trade_order.fingerprint = L2 批次指纹（窗口内命中即复用既有单）。
+--                 trade_order.fingerprint = L2 批次指纹（窗口内命中**且那一笔仍未结束**才复用既有单；
+--                 已收货 / 已取消 / 已退款不参与复用——结束的单顶掉新单会让顾客「下单成功」却拿到一笔付不了的旧单）。
 --       子表只记 order_no（业务唯一键），不另存 order_id —— 同一身份不写两份。
 --       可重复执行（CREATE TABLE IF NOT EXISTS），纯新增、不改任何存量行。
 -- ============================================================
@@ -76,7 +79,7 @@ CREATE TABLE IF NOT EXISTS trade_order (
   source          VARCHAR(16)     NOT NULL COMMENT '下单来源：DIRECT（详情页直购）/ CART（购物车结算）',
   request_id      VARCHAR(64)     DEFAULT NULL COMMENT '首次创建本单的请求号（L2 复用单保留原值）',
   fingerprint     CHAR(16)        NOT NULL COMMENT '批次指纹 sha256 前 16 位（L2 幂等键，不含金额与时间）',
-  status          VARCHAR(24)     NOT NULL COMMENT '订单状态：PENDING_PAYMENT/PAID/SHIPPED/RECEIVED',
+  status          VARCHAR(24)     NOT NULL COMMENT '订单状态：PENDING_PAYMENT/PAID/SHIPPED/RECEIVED/CANCELLED/REFUNDED',
   total_quantity  INT             NOT NULL COMMENT '总件数（=Σ明细数量，封存时对账）',
   total_amount    DECIMAL(12,2)   NOT NULL COMMENT '订单总额（=Σ明细小计，封存时对账）',
   receiver_name   VARCHAR(32)     NOT NULL COMMENT '收件人（下单时地址快照）',
@@ -84,6 +87,7 @@ CREATE TABLE IF NOT EXISTS trade_order (
   receiver_region VARCHAR(128)    NOT NULL COMMENT '省市区（下单时地址快照）',
   receiver_detail VARCHAR(255)    NOT NULL COMMENT '详细地址（下单时地址快照）',
   ship_no         VARCHAR(64)     DEFAULT NULL COMMENT '快递单号（发货时录入）',
+  expire_time     DATETIME        DEFAULT NULL COMMENT '支付截止时刻（=下单时刻+payment-timeout-minutes 分钟）；NULL=无超时（本列上线前的历史行）',
   create_user     VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user     VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -123,7 +127,7 @@ CREATE TABLE IF NOT EXISTS trade_order_item (
 CREATE TABLE IF NOT EXISTS trade_order_status_log (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   order_no    VARCHAR(32)     NOT NULL COMMENT 'trade_order.order_no',
-  seq         INT             NOT NULL COMMENT '状态下标（status-flow 配置里的位置，从 0 起）',
+  seq         INT             NOT NULL COMMENT '轨迹序号（这笔单的第几次状态变更，从 0 起；不是配置里的状态下标）',
   status      VARCHAR(24)     NOT NULL COMMENT '变更后的状态',
   create_user VARCHAR(32)     DEFAULT NULL COMMENT '变更人（UserType:UserId）',
   create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '变更时刻',
@@ -148,3 +152,37 @@ CREATE TABLE IF NOT EXISTS undo_log (
   log_modified  DATETIME(6)  NOT NULL COMMENT '修改时间',
   UNIQUE KEY ux_undo_log (xid, branch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Seata AT 模式回滚日志';
+
+-- ============ 存量表加列（幂等，可重复执行） ============
+-- ⚠ 上面的 CREATE TABLE IF NOT EXISTS 对**已存在的表**是空操作，故对存量表加列必须另写一段：
+--    照本仓库的惯例（同 goods-center 的 db/schema.sql 尾部）用 information_schema 探一下再 ALTER，
+--    重复执行安全——列已存在时退化成一句 SELECT 1。
+
+-- 支付截止时刻（2026-09-23 订单超时关单）：
+--   下单时算好落库（= trade_order.create_time + panoramic.trade.order.payment-timeout-minutes 分钟），
+--   页面拿它做倒计时、支付时拿它判「是否已过期」、定时任务拿它捞超时未支付单。
+--   ⚠ DEFAULT NULL 而不是 NOT NULL：本列上线前创建的历史行没有截止时刻，语义是「无超时」；
+--     回填会把这些老单一次性判成已过期（它们多半还停在待支付），那是对存量数据的静默改写。
+SET @trade_order_has_expire := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trade_order'
+                                  AND COLUMN_NAME = 'expire_time');
+SET @trade_order_expire_ddl := IF(@trade_order_has_expire = 0,
+  'ALTER TABLE trade_order ADD COLUMN expire_time DATETIME DEFAULT NULL COMMENT ''支付截止时刻（=下单时刻+payment-timeout-minutes 分钟）；NULL=无超时（本列上线前的历史行）'' AFTER ship_no',
+  'SELECT 1');
+PREPARE trade_order_expire_stmt FROM @trade_order_expire_ddl;
+EXECUTE trade_order_expire_stmt;
+DEALLOCATE PREPARE trade_order_expire_stmt;
+
+-- 超时关单任务的扫描索引（2026-09-23）：`status + expire_time` 正是 findTimeoutPending 的
+--   where（仍停在待支付 + 截止时刻到点）与 order by（先到期的先关），单列索引都派不上用场。
+--   ⚠ 同上：CREATE TABLE IF NOT EXISTS 对已存在的表是空操作，故索引也走 information_schema 探测 + PREPARE，
+--     重复执行安全（索引已存在时退化成一句 SELECT 1）。
+SET @trade_order_has_expire_idx := (SELECT COUNT(*) FROM information_schema.STATISTICS
+                                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trade_order'
+                                      AND INDEX_NAME = 'idx_status_expire');
+SET @trade_order_expire_idx_ddl := IF(@trade_order_has_expire_idx = 0,
+  'ALTER TABLE trade_order ADD INDEX idx_status_expire (status, expire_time)',
+  'SELECT 1');
+PREPARE trade_order_expire_idx_stmt FROM @trade_order_expire_idx_ddl;
+EXECUTE trade_order_expire_idx_stmt;
+DEALLOCATE PREPARE trade_order_expire_idx_stmt;

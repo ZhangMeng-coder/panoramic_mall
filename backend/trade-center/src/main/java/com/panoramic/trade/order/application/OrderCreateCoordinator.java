@@ -85,6 +85,13 @@ public class OrderCreateCoordinator {
         this.pipeline = pipeline;
         this.properties = properties;
         this.clock = clock;
+        // 支付时限必须为正：配成 0 或负数会让每笔单的截止时刻不晚于下单时刻（开出来就已过期）。
+        // ⚠ 这一句放在装配期（构造器）而不是等第一笔单在聚合里炸：同 OrderStatusFlow 的覆盖断言一个道理
+        //    ——配置错是程序员错误，服务起不来最好，而不是变成线上第一单的 500
+        if (properties.getPaymentTimeoutMinutes() <= 0) {
+            throw new IllegalStateException("支付时限必须是正数（panoramic.trade.order.payment-timeout-minutes="
+                    + properties.getPaymentTimeoutMinutes() + "），否则每笔订单一开出来就是过期的");
+        }
     }
 
     /**
@@ -126,6 +133,10 @@ public class OrderCreateCoordinator {
         //    落库实现与内存实现的判定结果不一致。在同一处把基准落到秒，落库值、since、内存值才是同一个值。
         LocalDateTime createTime = LocalDateTime.now(clock).truncatedTo(ChronoUnit.SECONDS);
         LocalDateTime since = createTime.minusSeconds(properties.getIdempotencyWindowSeconds());
+        // 支付截止时刻：**下单时算好、随单落库**，此后不再重算（与地址 / 店铺名同为快照口径）。
+        // 它同时是页面的倒计时终点、支付接口的超时判据、超时关单任务的捞取条件。
+        // ⚠ 与 createTime 同源（都用这一次的基准），故精度也一致——截到秒的那条理由同上。
+        LocalDateTime expireTime = createTime.plusMinutes(properties.getPaymentTimeoutMinutes());
 
         List<OrderModel> result = new ArrayList<>(linesByStore.size());   // 返回顺序 = 分组顺序（storeId 升序）
         List<OrderModel> created = new ArrayList<>(linesByStore.size());  // 本次新建（失败要回补的就是它们）
@@ -137,6 +148,9 @@ public class OrderCreateCoordinator {
 
                 // ③ 第二级幂等：拆单后**每笔**再按指纹在窗口内判重（裁定 D6）。窗口外的同指纹是新单——
                 //    「同一顾客过一会儿又买同一批东西」是真实需求，不是重复提交。
+                //    ⚠ 窗口**不是唯一条件**：已结束的单（已收货 / 已取消 / 已退款）不参与复用，由仓库侧排除
+                //    （见 OrderRepository#findRecentByFingerprint）。否则顾客「取消 / 退款 / 收货后重下同一批商品」
+                //    会拿回那笔既没重新扣库存、也付不了款的旧单，而本层还会当成功继续往下走。
                 String fingerprint = OrderFingerprint.of(command.customerId(), command.source(), storeId, storeLines);
                 Optional<OrderModel> reused = orderRepository.findRecentByFingerprint(fingerprint, since);
                 if (reused.isPresent()) {
@@ -148,7 +162,7 @@ public class OrderCreateCoordinator {
                 orderNosInBatch.add(orderNo);
                 OrderModel order = OrderModel.open(orderNo, command.customerId(), storeId,
                         storeNameOf(storeLines, snapshots), command.source(), command.address(),
-                        requestId, fingerprint, createTime, storeLines);
+                        requestId, fingerprint, createTime, expireTime, storeLines);
                 // ⚠ 入列必须在跑流水线**之前**：stock-check 可能已经扣了几行才失败，
                 //    失败时这笔也得回补（它不在仓库里，但库存已经动了）
                 created.add(order);

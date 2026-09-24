@@ -155,8 +155,18 @@
 
 ⚠ 商品 / 库存的**真适配器**在 `infrastructure/feign`（`StoreFeignAdapterConfiguration` 条件装配，两个适配器类本身不是 `@Component`——否则开关就管不住它们）；阶段一的内存商品 / 库存脚手架（`infrastructure/mock`、`mock-store-data.json`）与从 main 移出的两个内存端口**已随 T4b 处理**，故 `infrastructure/inmemory` 如今只剩订单仓库的内存实现 `InMemoryOrderRepository`（供 `repository=memory` 那条**无数据源**的装配层单测）。开关是 `panoramic.trade.order.store-adapter=feign`（**只剩这一个取值**，带 `matchIfMissing`——键缺失也落到它上面；写错一个值则一个 bean 都不装配、启动即报「找不到 GoodsQueryPort / StockPort 的 bean」）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
 
-- **状态机**：四态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」）
-- **流转顺序由配置决定**（`panoramic.trade.order.status-flow`），域内**只允许「下标 +1」**：跳级 / 回退 / 未知状态一律业务错；配置缺任一枚举常量、或含重复项 → **装配即失败**。**不做取消、不做超时关单**（取消是唯一不按线性顺序走的状态，将来要做需给 `OrderStatusFlow` 加前驱集合）
+- **状态机**：六态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`，外加两个**结束过程的落点** `CANCELLED` / `REFUNDED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」；`RECEIVED` 是「已收货 / 完成」；两个结束过程的落点两侧同口径）
+- **流转 = 一条线性主链（来自配置）+ 两个结束过程（写死在动作里）**——判据分两处，各只有一条：
+  - **主链推进**（`markPaid` / `markShipped` / `markReceived` → `OrderStatusFlow#advance`）：判据 = 「目标必须是当前状态在 `panoramic.trade.order.status-flow` 里的**下一个**」。该配置的形状是**有序数组**（数组顺序即先后，首项必须是待支付），于是跳级 / 回退 / 原地重复三种情况都落在同一句 400 上。
+  - **结束过程**（取消 = 待支付 → 已取消、仅退款 = 已支付 → 已退款）：判据 = 「这笔单此刻必须停在**动作方法声明的那个状态**」（`OrderStatusFlow#endWith` 的 `from` 由 `markCancelled` / `markRefunded` 给出）。⚠ 那个前置状态**写在动作里**：它不是「流程上可选的分支」，而**就是那两个动作的定义**（「取消＝把这笔待支付的单作废」这句话里已经含着它），做成可配只多出一个能配错的地方；配置里**不许**出现这两个状态（出现即服务起不来）。
+  - ⚠ **分工的落点**：状态机只知道「这两个落点不在主链上」（`OrderStatusFlow#ENDING_TARGETS`，用于拒配置、认轨迹），**不知道它们从哪来**——这样「结束过程的前置状态」只写得出一遍。⚠ 旧口径（2026-09-23 那版的**图 / 前驱集合**）已作废：它把「从哪来」也配进配置，等于同一件事有两处说了算。
+  - 装配期**七条断言**（主链为空 / 元素为空值 / 主链里出现那两个落点 / 同一状态出现两次 / 首项不是待支付 / 「主链 + 两个落点」没覆盖 `OrderStatus` 全部常量 / 「已结束」的声明与「主链末项 + 两个落点」不一致）任一不满足 → **服务起不来**。⚠ 最后一条把 `OrderStatus#ENDED`（第二级幂等去重的判据）与状态机**锁死**：新加一个状态却忘了登记「它已结束」，后果是那笔单被当成在途单复用来顶掉新单（静默错）
+- **取消（`cancelOrder`，2026-09-23）**：**仅 `PENDING_PAYMENT` 允许**（`PENDING_PAYMENT → CANCELLED`；其余状态在 `endWith` 比对动作声明的来源后回 400）；触发方有两个——C 端顾客主动点「取消」、以及域内**超时未支付自动关单**任务，两者域侧口径完全一致（落在 `OrderCancelService#cancel` 一处），差别只在「谁触发、凭什么判超时」。⚠ **一律回补库存**：库存是下单那一刻扣的、货没发出去，不回补就是货架上凭空少一件且永久找不回。
+- **仅退款（`refundOrder`，2026-09-23）**：**仅 `PAID`（已付款、未发货）允许**（`PAID → REFUNDED`），**一步生效、无需商户同意**、C 端发起、**全额退（无金额入参）**，同样回补库存。⚠ 退款金额不做部分退、退货退款属后续期。
+  ⚠ 上面两条的**闸门就是动作里声明的那个来源状态**（取消 = 待支付、仅退款 = 已支付，见 `OrderModel#markCancelled` / `#markRefunded`），由 `OrderStatusFlow#endWith` 比对——**聚合里不另写 if 判断**、也**不另写**「该订单不可取消」之类的第二份文案，非法迁移复用 `OrderStatusFlow` 那一句 400。
+- **支付截止时刻与超时关单（2026-09-23）**：`trade_order.expire_time`（= 下单时刻 + `payment-timeout-minutes` 分钟）**下单时算好落库**，页面据此倒计时、支付时据此判「已过期」、关单任务据此捞单。⚠ 它是**快照**：改配置不回头改动已下的单（与地址 / 店铺名快照同一口径），且**历史行不回溯**（本列上线前的行 `expire_time` 为 `NULL`＝无超时，不重算、不回填）。
+  超时关单是域内**系统级动作**（`OrderTimeoutCloseTask` → `OrderTimeoutCloseService#close`），不经 Controller、也不带作用域（它不是某个顾客，合法视角就是全量）：按 `timeout-close-interval-ms` 扫一批 `status = 待支付 AND expire_time IS NOT NULL AND expire_time <= now()`（先到期的先关，单批上限 `timeout-close-batch-size`），**一笔一个事务**、单笔失败只记日志继续关下一笔（最典型的一笔是「刚被顾客付掉」→ 状态机拒）。
+  ⚠ **支付时只拒付、不在那里顺手关单**：`payOrder` 读到已过期的单即回 400「已过期」，关单留给任务（最晚晚一次扫描）。在支付事务里关单必然错——取消会随同一个事务**一起回滚**（库里仍是待支付、顾客却已收到「已过期」），等于白做一次跨服务回补。
 - **改收货地址（`updateOrderAddress`，2026-09-22）**：**仅 `PENDING_PAYMENT` 允许**（其余状态回 400，提示语可直接展示），改的是**这一笔订单的地址快照**——不动顾客地址簿、也不影响别的订单。
   ⚠ 它**不是状态流转**：状态原地不变、**不写状态轨迹**（轨迹的语义与 `seq` 连续性对账见上一条，混进与状态无关的行会让两种语义都不可断言），留痕靠审计字段；故它在聚合里是与 `markPaid` / `markShipped` 并列的另一个方法（`OrderModel#changeAddress`），落库也另走 `OrderRepository#updateAddress` 而**不是** `update`（后者是状态变更的落库，对只有一项轨迹的新单直接抛错）。
   ⚠ 落库是**条件更新**，条件 = 库里仍为待支付：拿模型上的状态盲写，会让「读的那一刻是待支付、读到写之间被支付抢先」的订单在付款后被改地址（正是这道闸门要防的事）；0 行时复用同一句 400（用库里的当前状态重跑那道闸门）
@@ -168,12 +178,12 @@
   - 一级的返回口径 = **提交关联** `trade_order_submission_order` 说的：一批里可能含复用笔（指纹命中），它们的 `requestId` 是**上一次提交**的值，按 requestId 查会少返回几笔（用户侧表现为「下单成功但少了一笔」）。⚠ 复用笔的 `requestId` 字段保持**它原本的值**（记的是「哪次提交创造了这笔单」），不被后来的提交改写；关联行则**无条件写**——本次提交的成员关系是新的
   - 一级的作用域是**顾客内**（`customerId + requestId`）：跨顾客不共享，否则 A 用过的 `requestId` 能把 A 的订单取给 B
   - ⚠ **键与订单必须同事务**：`occupy` 若自己单独提交，键就先落地——先到者随后失败时键残留，重放会回读到一个**空批次**。故事务边界在 `OrderCreateCoordinator#create`（`@Transactional`），**不在端口方法上**；已知代价是后到者最多阻塞到 `innodb_lock_wait_timeout`（默认 50s），这是「宁可慢也不重复下单」的取舍
-  - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`，闭区间），命中则复用该笔。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
+  - 二级 = **指纹** `sha256(customerId|source|storeId|排序后的 skuId:qty)`，逐笔在**窗口内**判定（`idempotency-window-seconds`，闭区间），命中则复用该笔。⚠ 判据是「窗口内**且仍未结束**的那一笔」：**已结束的单（已收货 / 已取消 / 已退款）不参与复用**（`OrderStatus#isEnded`，两处实现都从它派生，且与状态机在装配期锁死——判据是「主链末项 + 两个结束过程的落点」），否则顾客「取消 / 退款 / 收货后重下同一批商品」会拿回那笔**既没重新扣库存、也付不了款**的旧单（顾客侧看到的却是下单成功）。⚠ 复用笔属于**上一次提交**：它**不扣库存、不回补、不重复保存**——对它回补等于把上次真实下单占用的库存还回货架（超卖）
   - ⚠ 代价（`requestId` 的定义使然，不是缺陷）：同一 `requestId` 被**换内容**复用（客户端 bug）时，返回的是首次那批，新内容不会被下单
   - ⚠ **重放返回的是订单「当前」状态**：落库实现按关联回读（天然是最新真相），内存实现存的是**活引用**（只拷列表不拷元素）——代价是调用方改了返回值就等于改了凭证，**调用方不得修改返回的订单**
 - **失败回滚**：任一笔失败即整次提交回滚（库内写入随事务消失，**失败不留残单**），只剩「回补库存」要还——库存是**外部资源**（store 域，经 Feign 写入），不随本地事务回滚，必须显式归还。⚠ **只回补本次新建的笔**：复用笔的库存在上一次就扣过了
 - ⚠ **回补按单、幂等由净额算出来**（`StockPort#revertByOrder(orderNo)`）：实现按流水算出「这一单每个 SKU 还欠多少」，还完净额归 0，重复调用即无欠可还。**不得**改成按 `orderNo + skuId` 记「已回补」标记的去重——失败提交从不落库，同一秒的两次失败提交可能拿到同一个单号，那个标记会**静默吞掉第二次回补**（库存净亏、流水却显示 0）。⚠ 同样**不得**改成逐行回补：`goods-check` 失败或某行库存不足时那一行**从没扣过**，逐行回补会把库存冲多且不报错
-- **读取时对账**：库里读到的数据也要自证——枚举名可解析、明细小计 = 单价×数量、轨迹 `seq` 连续且是合法的「下标 +1」路径、落库的总件数 / 总金额与按行重算的一致。任一条不符即 `IllegalStateException`（**数据被写坏**，不是 400——报成 400 等于把「库里的数据坏了」说成「你的操作不对」）
+- **读取时对账**：库里读到的数据也要自证——枚举名可解析、明细小计 = 单价×数量、轨迹 `seq` 从 0 起连续且构成一条**合法路径**（初始状态起步、沿主链逐项对齐、至多一个结束过程的落点且必须在末项）、落库的总件数 / 总金额与按行重算的一致。任一条不符即 `IllegalStateException`（**数据被写坏**，不是 400——报成 400 等于把「库里的数据坏了」说成「你的操作不对」）
 - **Seata 全局事务（已接入，2026-09-22 T12）**：`@GlobalTransactional` 在 `OrderApplicationService#create`（**用例入口**）的方法上，**不在编排器方法上**——⚠ Seata 的 `GlobalTransactionScanner` 按 `BeanDefinition.getBeanClassName()` 挑要增强的 bean，**取不到类名即跳过**，而编排器由装配类（`OrderDomainConfiguration`）的 `@Bean` 方法产出、类名**恒为空**，挂在它那里会被**静默忽略**（不报错、不告警，事务根本不开；2026-09-22 复评发现后改的形状，落点由 `GlobalTransactionalPlacementTest` 守）。与编排器上的本地 `@Transactional` **并存**（本地事务仍管本地库那一半：先占键 + 订单落库；去掉它并不会被全局事务补上）。⚠ **一批全是复用笔时没有跨服务写**：全局事务里只剩本域自己那一个分支（AT 数据源代理由 `seata.yml` 的 `enable-auto-data-source-proxy` 开着），它不比本地事务多保护什么。真实库存写入方在 store 域、其扣减 / 回补是**分支事务**，回滚依据是 store 库里的 `undo_log`；客户端配置在 Nacos 共享配置 `seata.yml`（`trade-center` 与 `store` 是两个加载它的域，见 cross-cutting 第 12 / 24 条）。⚠ 本域**仍不加载 `auth.yml`**：seata 只是事务协调客户端，与认证链无关
 - **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
 

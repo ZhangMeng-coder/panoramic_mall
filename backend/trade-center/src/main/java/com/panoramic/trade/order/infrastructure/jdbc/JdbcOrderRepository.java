@@ -72,7 +72,8 @@ import java.util.stream.Collectors;
  * <p>库里读到的数据也可能是坏的（列串位、轨迹被截断、枚举名被改成不认识的值），这类错误不在这里挡住，
  * 就会一路带到页面上。故 {@link #assemble} 与 {@link #toOrderModel} 全程对账：
  * 枚举名能解析、明细小计与单价×数量一致（{@code OrderItem.rehydrate} 内）、轨迹 {@code seq} 连续且是
- * 合法的「下标 +1」路径（{@code OrderModel.rehydrate} 内）、落库的总件数/总金额与按行重算的一致。
+ * 一条合法路径（主链的一段前缀，或那段前缀再加一个结束过程收尾；{@code OrderModel.rehydrate} 内）、
+ * 落库的总件数/总金额与按行重算的一致。
  * ⚠ 这些一律抛 {@link IllegalStateException}（数据被写坏），**不是** {@code ServiceException(400)}——
  * 后者会被当作业务错误原样透传给页面，把「库里的数据坏了」说成「你的操作不对」。</p>
  *
@@ -167,17 +168,18 @@ public class JdbcOrderRepository implements OrderRepository {
                 .set(order.getShipNo() != null, TradeOrder::getShipNo, order.getShipNo())
                 .update();
         if (!updated) {
-            // 库里已经不在「来时状态」了。⚠ 提示语**不自己写**：拿库里的当前状态再跑一次状态机断言，
-            // 于是「重复提交」（库里已等于目标态）与「被别的动作抢先」都得到与**顺序调用**同一句 400
-            // （同一句提示只此一份，见 OrderStatusFlow#assertCanTransition）。
+            // 库里已经不在「来时状态」了。⚠ 提示语**不自己写**：拿库里的当前状态换算出与**顺序调用**同一句 400
+            // （同一句提示只此一份，见 OrderStatusFlow#cannotMove）。
+            // 为什么那一对一定不合法：主链上「进入目标状态的那一步」唯一（就是 expected），
+            // 结束过程的来源状态也唯一（写在动作里），而 0 行意味着库里的状态 ≠ expected ——
+            // 故「库里的状态 → 目标状态」按定义不合法，cannotMove 的措辞不会说错话。
+            // 于是「重复提交」（库里已等于目标态，from == to → 「重复变更」）与「被别的动作抢先」
+            // 都得到与顺序调用同一句提示。
             // 订单不存在也走这一支：currentStatus 会在那儿抛 IllegalStateException。
-            statusFlow.assertCanTransition(currentStatus(order.getOrderNo()), order.getStatus());
-            // 上面那句按定义必抛（0 行 = 库里既不等于来时状态、也就不是「下标 +1」那一格）。
-            // 保留兜底是为了不让「断言没抛」变成一次**静默的成功**——那正是本方法要防的东西。
-            throw new ServiceException(400, "订单 " + order.getOrderNo() + " 的状态已在别处变更，请刷新后重试");
+            throw OrderStatusFlow.cannotMove(currentStatus(order.getOrderNo()), order.getStatus());
         }
 
-        // 轨迹只补**缺失的尾巴**：按 seq 比对已有最大下标，重复调用即无新行可插（幂等）
+        // 轨迹只补**缺失的尾巴**：按 seq 比对库里已有的最大轨迹序号，重复调用即无新行可插（幂等）
         Integer maxSeq = statusLogService.list(Wrappers.<TradeOrderStatusLog>lambdaQuery()
                         .eq(TradeOrderStatusLog::getOrderNo, order.getOrderNo()))
                 .stream()
@@ -272,6 +274,8 @@ public class JdbcOrderRepository implements OrderRepository {
         row.setShipNo(order.getShipNo());
         // ⚠ 显式写下单时刻：L2 幂等窗口以这一列为基准，交给自动填充会变成「写库那一刻」
         row.setCreateTime(order.getCreateTime());
+        // 支付截止时刻同理显式写：它是**下单那一刻算好的快照**，不是「写库那一刻 + 时限」
+        row.setExpireTime(order.getExpireTime());
         orderService.save(row);
 
         for (OrderItem item : order.getItems()) {
@@ -288,7 +292,7 @@ public class JdbcOrderRepository implements OrderRepository {
             itemService.save(itemRow);
         }
 
-        // 新单的轨迹就是初始状态（seq 0），发生时刻 = 下单时刻；
+        // 新单的轨迹就是初始状态（轨迹序号 0），发生时刻 = 下单时刻；
         // 后续变更走 update(...)，那时插入的行取「变更时刻」
         insertStatusTrail(order.getOrderNo(), order.getStatusTrail(), 0, order.getCreateTime());
     }
@@ -296,22 +300,32 @@ public class JdbcOrderRepository implements OrderRepository {
     /**
      * 从 {@code fromSeq} 起补写状态轨迹（已存在的 seq 不重插）
      *
+     * <p>⚠ {@code seq} 是**轨迹序号**（0、1、2…），不是「状态在主链上的下标」——两者在**结束过程收尾**
+     * 的那些轨迹上正好对不上（{@code [待支付, 已取消]} 的末项 seq=1，而「已取消」在主链上根本没有下标）。
+     * 故这里不拿主链下标逐项对，而是调状态机那份**路径校验**（与读侧的 {@code OrderModel#rehydrate}
+     * 共用同一份判据）：要写下去的轨迹必须是主链的一段前缀、至多再加一个结束过程收尾。</p>
+     *
      * @param orderNo 订单号
      * @param trail   模型上的完整轨迹（下标即 seq）
-     * @param fromSeq 从哪个下标开始写（= 库里已有最大 seq + 1）
+     * @param fromSeq 从哪一位开始写（= 库里已有最大 seq + 1；等于 {@code trail.size()} 即**没有要补的尾巴**）
      * @param changedAt 这些行的**变更时刻**
-     * @throws IllegalStateException 轨迹里某个状态在状态机配置里的下标与 seq 对不上
-     *                               （轨迹与配置不是同一套口径，写下去就是一条假轨迹）
+     * @throws IllegalStateException 轨迹不是一条合法路径（从初始状态起、逐步沿主链，至多一个结束过程收尾），
+     *                               或库里的轨迹比模型还长（{@code fromSeq > trail.size()}，库被写坏）
      */
     private void insertStatusTrail(String orderNo, List<OrderStatus> trail, int fromSeq, LocalDateTime changedAt) {
-        List<OrderStatus> configured = statusFlow.statuses();
+        // 整条轨迹都要合法：只校验「本次要写的尾巴」会把「前缀早就被改坏」这种单放过去
+        statusFlow.assertLegalTrail(orderNo, trail);
+        // ⚠ 库里比模型长（起点越过末尾）不能当成「没有要补的」静默放过：那意味着库里有一条模型不知道的轨迹，
+        //    而下面那条条件更新只认状态列，会照写不误 → 状态列与轨迹就此分岔（列表按状态列、详情按轨迹）。
+        //    ⚠ 正常路径**到不了这里**：写库前先做条件更新（库里必须仍在「来时状态」），
+        //    库里多一条轨迹必然意味着状态也变了 → 那一步已经 400 出去了。
+        //    起点**等于**末尾（{@code fromSeq == trail.size()}）才是正常的「无新行可插」（重复调用即此情形）。
+        if (fromSeq > trail.size()) {
+            throw new IllegalStateException("订单 " + orderNo + " 的库内状态轨迹比模型长（库已有 "
+                    + fromSeq + " 项、模型只有 " + trail.size() + " 项）：数据被写坏，拒绝补写");
+        }
         for (int seq = fromSeq; seq < trail.size(); seq++) {
             OrderStatus status = trail.get(seq);
-            if (configured.indexOf(status) != seq) {
-                throw new IllegalStateException("订单 " + orderNo + " 的状态轨迹第 " + seq + " 项是 " + status.name()
-                        + "，它在状态机配置里的下标是 " + configured.indexOf(status)
-                        + "（轨迹与配置不是同一套顺序），不能落库");
-            }
             TradeOrderStatusLog log = new TradeOrderStatusLog();
             log.setOrderNo(orderNo);
             log.setSeq(seq);
@@ -358,6 +372,10 @@ public class JdbcOrderRepository implements OrderRepository {
         }
         TradeOrder row = orderService.getOne(Wrappers.<TradeOrder>lambdaQuery()
                 .eq(TradeOrder::getFingerprint, fingerprint)
+                // ⚠ 已结束（已收货 / 已取消 / 已退款）不参与复用：结束的单不代表还活着的购买意图，
+                //    复用它 = 顾客取消 / 退款 / 收货后重下那批商品拿回一笔付不了的旧单
+                //    （口径在 OrderRepository 的接口注释里）
+                .notIn(TradeOrder::getStatus, OrderStatus.endedNames())
                 // 闭区间：窗口起点那一刻算「窗口内」（口径在 OrderRepository 的接口注释里）
                 .ge(TradeOrder::getCreateTime, since)
                 // 同指纹可能有多笔（窗口外的正常需求），取最早的一笔 = 第一次那次提交记下的那笔；
@@ -372,6 +390,22 @@ public class JdbcOrderRepository implements OrderRepository {
     public boolean existsByOrderNo(String orderNo) {
         return orderNo != null && orderService.exists(Wrappers.<TradeOrder>lambdaQuery()
                 .eq(TradeOrder::getOrderNo, orderNo));
+    }
+
+    @Override
+    public List<OrderModel> findTimeoutPending(LocalDateTime now, int limit) {
+        // ⚠ 三个条件与 OrderModel#isTimedOut 是同一句话（见 OrderRepository#findTimeoutPending）：
+        //    仍停在待支付 + 截止时刻非空 + 截止时刻 <= now（闭区间，到点即过期）。
+        //    漏掉「非空」会把 expire_time 为 NULL 的历史老单一次性判成超时；漏掉闭区间会与域内判据分岔。
+        Page<TradeOrder> page = orderService.page(new Page<>(1, limit),
+                Wrappers.<TradeOrder>lambdaQuery()
+                        .eq(TradeOrder::getStatus, OrderStatus.PENDING_PAYMENT.name())
+                        .isNotNull(TradeOrder::getExpireTime)
+                        .le(TradeOrder::getExpireTime, now)
+                        // 先到期的先关；同一时刻按主键升序（顺序稳定、可断言）
+                        .orderByAsc(TradeOrder::getExpireTime)
+                        .orderByAsc(TradeOrder::getId));
+        return assemble(page.getRecords());
     }
 
     @Override
@@ -521,7 +555,7 @@ public class JdbcOrderRepository implements OrderRepository {
         OrderModel order = OrderModel.rehydrate(orderNo, row.getCustomerId(), row.getStoreId(), row.getStoreName(),
                 parseEnum(OrderSource.class, row.getSource(), orderNo, "trade_order.source"),
                 address, row.getRequestId(), row.getFingerprint(), row.getShipNo(), row.getCreateTime(),
-                items, trail, statusFlow);
+                row.getExpireTime(), items, trail, statusFlow);
 
         reconfirmTotals(order, row);
         return order;

@@ -13,7 +13,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 服务范围 = **顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料与收货地址**
 > （资料保存 / 地址增删改查 / 设默认 / **地址状态**）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）
 > + **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）
-> + **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / **改收货地址**）。
+> + **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / **改收货地址** / **取消订单** / **仅退款**）。
 > 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情）与
 > **customer-center**（顾客资料与收货地址）三个业务域（地址见 [customer-center.md](./customer-center.md)）、
 > **trade-center**（购物车与订单，见 [trade-center.md](./trade-center.md)）；
@@ -34,7 +34,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包，本模块用的是 **store** 那个（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-## 二、接口清单（31 条）
+## 二、接口清单（33 条）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
@@ -69,6 +69,13 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | POST | /orders/{orderNo}/pay | — | `String`, `MallOrderPayDTO` | `Void` | OrderController.java:84 | |
 | POST | /orders/{orderNo}/receive | — | `String` | `Void` | OrderController.java:94 | |
 | PUT | /orders/{orderNo}/address | — | `String`, `MallOrderAddressUpdateDTO` | `Void` | OrderController.java:100 | |
+| POST | /orders/{orderNo}/cancel | — | `String` | `Void` | OrderController.java:125 | |
+| POST | /orders/{orderNo}/refund | — | `String` | `Void` | OrderController.java:140 | |
+
+> ⚠ **新增 2 条：取消订单 / 仅退款**。两者都是 `POST` 命令语义 + 出参 `Void`（页面重拉详情 / 列表），
+> **入参只有路径里的 `orderNo`，没有本端 DTO**（与域侧一致——这正是「同一份形状不造第二个出口」）。
+> ⚠ 「从哪个状态可做、库存怎么还」属**业务规则**，闸门在**域内**（状态机），本层不重判、原样透传 `400`。
+> 详见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
 
 > 订单的域侧契约（作用域入参 / 出参类型）见 [trade-center.md](./trade-center.md) 第二节第 2 小节。
 
@@ -112,9 +119,9 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 地址状态读 | `GET /addresses/status` 只回**控制流用的派生态**（`hasAddress` + `defaultAddressId`），**不回地址列表本身**：列表是给人看的数据、缓存它会引入陈旧展示；派生态陈旧有兜底（下行）。⚠ 空结果是**合法状态不是 miss**（`hasAddress=false` 照常缓存），否则新顾客每次下单都要穿透打一次下游 |
 | 地址状态缓存 | 键 `{prefix}:{customerId}`（`panoramic.mall.address-status-redis-prefix`，默认 `panoramic:mall:addr-status`），TTL = `panoramic.mall.address-status-ttl-seconds`（默认 **1800**）。**四个写路径成功后主动失效**（新增 / 编辑 / 删除 / 设默认）——地址簿一变，「有没有地址 / 默认是哪条」就变了。⚠ **TTL 是「失效漏掉」的最终兜底而不是主手段**：陈旧的 `defaultAddressId` 会**直接导致下单 / 改地址失败**（域侧 404「地址不存在」），故页面必须按那条 404 回退到重选 |
 | 缓存的三条硬口径 | ⚠ ① **读失败不得写成缓存**：customer-center 不可用时的「读不到」**不是「没有地址」**，写进去就把一次故障固化成整个 TTL 的错结论（同 memory `bff-feign-cb-counts-4xx` 的教训：故障期写进去的错值会长期存活）——故回填只在**域读成功之后**；② **Redis 不可用不得让主流程失败**：命中查询 / 失效 / 回填三处各自 catch + `log.warn`，「读不到缓存」一律**当 miss** 落回下游；③ **失效失败不报错**：地址写已经成功，删键只是让派生态早一点刷新，TTL 兜底 |
-| 下单后的清车 | 下单**成功后**本层才清车，且**仅当 `source=CART`**（`cartItemIds` 非空时调 `POST /cart/items/remove`）——**两个条件都不能少、顺序也不能反**。⚠ **`DIRECT` 直购即便带了 `cartItemIds` 也不清**：那些行从未被下单，删掉是**静默丢顾客数据**（域内物理删除、不可逆）。⚠ 客户端须**只传本次结算的行 id**（CART 结算 3 行里的 1 行，就只传那 1 行的 id）——本层不做「`cartItemIds ⊆ items`」的交叉校验（要额外查一次购物车才做得到，代价不成比例），传多了删的是顾客自己的行、可重新加回。⚠ **清车失败只 `log.warn`、不让下单整体失败**（这次调用**没有页面出口**，故不套「购物车暂不可用」那类降级文案）：订单已建是**不可逆的主结果**，清车是**可重放的补偿**（顾客手动删、或再提交一次都行；指纹窗口内重复提交同一批商品会**复用原单**，不会重复下单）。反过来「先清车再下单」会让顾客的车空了什么也没买到——两个方向的错里，能自愈的那个才是该选的那个 |
+| 下单后的清车 | 下单**成功后**本层才清车，且**仅当 `source=CART`**（`cartItemIds` 非空时调 `POST /cart/items/remove`）——**两个条件都不能少、顺序也不能反**。⚠ **`DIRECT` 直购即便带了 `cartItemIds` 也不清**：那些行从未被下单，删掉是**静默丢顾客数据**（域内物理删除、不可逆）。⚠ 客户端须**只传本次结算的行 id**（CART 结算 3 行里的 1 行，就只传那 1 行的 id）——本层不做「`cartItemIds ⊆ items`」的交叉校验（要额外查一次购物车才做得到，代价不成比例），传多了删的是顾客自己的行、可重新加回。⚠ **清车失败只 `log.warn`、不让下单整体失败**（这次调用**没有页面出口**，故不套「购物车暂不可用」那类降级文案）：订单已建是**不可逆的主结果**，清车是**可重放的补偿**（顾客手动删、或再提交一次都行；指纹窗口内重复提交同一批商品会**复用原单**，不会重复下单；原单已结束（已收货 / 已取消 / 已退款）时除外——结束的单不参与复用，那种情况下会真下出新的一笔）。反过来「先清车再下单」会让顾客的车空了什么也没买到——两个方向的错里，能自愈的那个才是该选的那个 |
 | 下单出参 | 一次提交会按 `storeId` **拆成多笔**（一单一店），故出参是 `List<MallOrderVO>`，顺序 = `storeId` 升序（确定）。页面按「一笔一单」展示与支付 |
-| 重复提交 | `requestId` **必填**（客户端生成，**这是页面的义务、域内刻意不设校验**）；命中即**原样返回首次那批**——不重建、不二次扣库存、连商品都不再校验。⚠ **生成规格**：非空、**≤64 字符**（域列 `VARCHAR(64)`）、同一顾客名下唯一即可——随机 UUID 足够。⚠ **键的作用域是 `(customer_id, request_id)`**，故它只需**唯一性、不需保密性**，不是安全令牌（别人的 `requestId` 在本人的 `customer_id` 下不匹配）。⚠ **同一次提交重试应沿用同一个 `requestId`**：沿用走 L1 原样返回首批；换新的只剩 L2 指纹窗口兜底。⚠ **L2 是有限窗口、别当无时限保证**：指纹 = `sha256(customerId\|source\|storeId\|排序后的 skuId:qty)`，**不含 `requestId`、不含地址**；窗口 = `panoramic.trade.order.idempotency-window-seconds`（当前 **300 秒**）。故换新 id 重试时：**超过 300 秒、或 `source` / `storeId` / 任一 `skuId:qty` 变了，都会真下出第二单**（重试时别把 `DIRECT` 改成 `CART`）。两级幂等（请求级 + 指纹窗口）口径见 [trade-center.md](./trade-center.md) 与 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节 |
+| 重复提交 | `requestId` **必填**（客户端生成，**这是页面的义务、域内刻意不设校验**）；命中即**原样返回首次那批**——不重建、不二次扣库存、连商品都不再校验。⚠ **生成规格**：非空、**≤64 字符**（域列 `VARCHAR(64)`）、同一顾客名下唯一即可——随机 UUID 足够。⚠ **键的作用域是 `(customer_id, request_id)`**，故它只需**唯一性、不需保密性**，不是安全令牌（别人的 `requestId` 在本人的 `customer_id` 下不匹配）。⚠ **同一次提交重试应沿用同一个 `requestId`**：沿用走 L1 原样返回首批；换新的只剩 L2 指纹窗口兜底。⚠ **L2 是有限窗口、别当无时限保证**：指纹 = `sha256(customerId\|source\|storeId\|排序后的 skuId:qty)`，**不含 `requestId`、不含地址**；窗口 = `panoramic.trade.order.idempotency-window-seconds`（当前 **300 秒**）。故换新 id 重试时：**超过 300 秒、或 `source` / `storeId` / 任一 `skuId:qty` 变了，都会真下出第二单**（重试时别把 `DIRECT` 改成 `CART`）。⚠ 另有一维**不属于「窗口」而属于「那一笔是否已经结束」**：同指纹的最近一笔若已**收货 / 取消 / 退款**（`OrderStatus#isEnded`），它**不参与复用** → 同样真下出新的一笔（这是刻意的：结束的单既没重新扣库存、也付不了款，拿它顶掉新单会让顾客「下单成功」却拿到一笔死单）。两级幂等（请求级 + 指纹窗口）口径见 [trade-center.md](./trade-center.md) 与 [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节 |
 | 假支付 | `MallOrderPayDTO.amount` 必须**等于订单总额**才算支付成功。⚠ **校验落在域内**（金额是领域规则，本层只透传），不一致回 `400`「支付金额与订单总额不一致（应付 X 元，实付 Y 元）」 |
 | 订单状态文案 | 状态名与文案**由域下发**（`status` = 枚举名，`statusMallLabel` = 顾客可读文案）。⚠ **本层不重写文案**——两端各写一份必漂移；商户端 / 管理端读的是域 VO 上的另一个字段 `statusStoreAdminLabel`（**不在 `MallOrderVO` 上、C 端不下发**），如 `PAID` 在 C 端叫「已支付」、商户端叫「待发货」。⚠ 别写成 `mallLabel` / `storeAdminLabel`——那是枚举 `OrderStatus` **内部**的字段名，域 VO 上带 `status` 前缀 |
 | 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |

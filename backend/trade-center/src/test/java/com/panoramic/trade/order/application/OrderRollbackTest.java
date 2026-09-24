@@ -7,7 +7,6 @@ import com.panoramic.trade.order.application.step.PriceComputeStep;
 import com.panoramic.trade.order.application.step.StockCheckStep;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderSource;
-import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.domain.OrderAddress;
@@ -17,6 +16,7 @@ import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository
 import com.panoramic.trade.order.support.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.support.InMemoryStockPort;
 import com.panoramic.trade.order.support.StockOutboundRecord;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,7 +79,7 @@ class OrderRollbackTest {
 
         properties = new OrderProperties();
         properties.setSteps(List.of(GoodsCheckStep.NAME, StockCheckStep.NAME, PriceComputeStep.NAME));
-        properties.setStatusFlow(List.of(OrderStatus.values()));
+        properties.setStatusFlow(OrderStatusChain.production());
         properties.setIdempotencyWindowSeconds(300);
         properties.setOrderNoMaxRetry(5);
     }

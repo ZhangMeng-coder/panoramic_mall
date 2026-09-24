@@ -10,6 +10,7 @@ import com.panoramic.trade.order.domain.port.OrderRepository;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -133,6 +134,9 @@ public class InMemoryOrderRepository implements OrderRepository {
         }
         return orders.stream()
                 .filter(order -> fingerprint.equals(order.getFingerprint()))
+                // ⚠ 已结束（已收货 / 已取消 / 已退款）不参与复用（与落库实现逐字对齐，判据同在 OrderStatus 上）：
+                //    结束的单不代表还活着的购买意图，复用它 = 顾客取消 / 退款 / 收货后重下拿回一笔付不了的旧单
+                .filter(order -> !order.getStatus().isEnded())
                 // 闭区间：窗口起点那一刻算「窗口内」（口径定义在 OrderRepository 的接口注释里）
                 .filter(order -> !order.getCreateTime().isBefore(since))
                 .findFirst();
@@ -144,6 +148,20 @@ public class InMemoryOrderRepository implements OrderRepository {
             return false;
         }
         return orders.stream().anyMatch(order -> orderNo.equals(order.getOrderNo()));
+    }
+
+    @Override
+    public synchronized List<OrderModel> findTimeoutPending(LocalDateTime now, int limit) {
+        // ⚠ 条件与落库实现、与 OrderModel#isTimedOut 逐字对齐（替身少一个条件就会造出「只在内存实现上绿」
+        //    的用例）：待支付 + 截止时刻非空 + 截止时刻 <= now。排序同落库实现（先到期先关）：
+        //    落库侧的次级排序键是主键（= 插入顺序），而 {@code sorted} 是**稳定排序**、本列表又是插入顺序
+        //    ——同一个到期时刻的自然保持先后，与那边等价（写成按单号排反而会偏出一个不同的顺序）。
+        return orders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.PENDING_PAYMENT)
+                .filter(order -> order.isTimedOut(now))
+                .sorted(Comparator.comparing(OrderModel::getExpireTime))
+                .limit(limit)
+                .toList();
     }
 
     @Override

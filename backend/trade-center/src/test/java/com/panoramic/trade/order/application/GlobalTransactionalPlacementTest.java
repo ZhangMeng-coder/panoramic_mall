@@ -10,12 +10,14 @@ import org.springframework.context.annotation.ClassPathScanningCandidateComponen
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -45,25 +47,59 @@ class GlobalTransactionalPlacementTest {
     /** 扫描基点：只扫本域自己的包（生产启动类扫的是 {@code com.panoramic}，此处按域收窄） */
     private static final String BASE_PACKAGE = "com.panoramic.trade";
 
-    /** 全局事务的真落点（用例入口，组件扫描得到的 {@code @Service}） */
-    private static final String ENTRY_POINT_METHOD = "create";
+    /**
+     * 全局事务的落点（**全部入口**：组件扫描得到的类 → 该类上必须带 {@code @GlobalTransactional} 的方法）
+     *
+     * <p>⚠ 加了新的跨服务写入口就往这里加一行——它同时守住两件事：载体必须是扫描到的组件
+     * （否则 Seata 取不到类名、注解静默失效），以及那个方法上确实有注解。</p>
+     */
+    private static final Map<Class<?>, List<String>> GLOBAL_ENTRY_POINTS = Map.of(
+            // 下单扣库存 / 取消与仅退款回补库存
+            OrderApplicationService.class, List.of("create", "cancelOrder", "refundOrder"),
+            // 超时自动关单：同样回补库存，但它不是页面能力（不经 Controller、不带作用域），故在自己的入口上
+            OrderTimeoutCloseService.class, List.of("close"));
 
     @Test
-    @DisplayName("下单用例入口带 @GlobalTransactional，且它的载体确实是「会被扫成组件」的类")
+    @DisplayName("四个跨服务写入口带 @GlobalTransactional，且它们的载体都是「会被扫成组件」的类")
     void entryPointCarriesGlobalTransactional() {
         Set<String> scanned = scannedClassNames(Component.class);
 
         // 扫描本身必须有效：否则下面两条断言会因为集合为空而变成「永真」，哨兵静默失效
         assertThat(scanned).as("组件扫描一个类都没扫到，本哨兵已失效，先修扫描").isNotEmpty();
 
-        // Seata 看的是 BeanDefinition#getBeanClassName()：载体不在扫描结果里，注解就永远看不到
-        assertThat(scanned)
-                .as("用例入口必须是组件扫描得到的类（否则 Seata 取不到它的类名）")
-                .contains(OrderApplicationService.class.getName());
-        assertThat(annotatedMethodNames(OrderApplicationService.class))
-                .as("下单用例入口必须带 @GlobalTransactional —— 全局事务的真落点在 %s#%s",
-                        OrderApplicationService.class.getSimpleName(), ENTRY_POINT_METHOD)
-                .contains(ENTRY_POINT_METHOD);
+        for (Map.Entry<Class<?>, List<String>> entry : GLOBAL_ENTRY_POINTS.entrySet()) {
+            Class<?> carrier = entry.getKey();
+            // Seata 看的是 BeanDefinition#getBeanClassName()：载体不在扫描结果里，注解就永远看不到
+            assertThat(scanned)
+                    .as("全局事务的载体必须是组件扫描得到的类（否则 Seata 取不到它的类名）：%s",
+                            carrier.getSimpleName())
+                    .contains(carrier.getName());
+            assertThat(annotatedMethodNames(carrier))
+                    .as("%s 上这几个入口各自都要开一个全局事务（扣库存 / 回补库存都是跨服务写）",
+                            carrier.getSimpleName())
+                    .containsAll(entry.getValue());
+        }
+    }
+
+    @Test
+    @DisplayName("协作 bean 上只有本地事务：OrderCancelService 的取消 / 仅退款带 @Transactional、不带 @GlobalTransactional")
+    void collaboratingBeanKeepsLocalTransactionOnly() {
+        assertThat(scannedClassNames(Component.class))
+                .as("OrderCancelService 也必须是组件扫描得到的类（它自己要被代理成事务 bean）")
+                .contains(OrderCancelService.class.getName());
+
+        // ⚠ 两条断言守的方向相反，缺一个就有一种坏法：
+        //    去掉 @Transactional → 库里「状态列 + 状态轨迹」两处写不再同生共死（同一笔单在两个页面显示两个状态）；
+        //    加上 @GlobalTransactional → 一个动作入口出现两个全局事务开点，且它与本地注解同方法，
+        //    增强顺序取决于代理叠加方式（本地事务先开后开、全局事务在不在同一个连接上都不确定）——
+        //    本项目不跑起来验证，这种形状一律不许出现。
+        assertThat(localTransactionalMethodNames(OrderCancelService.class))
+                .as("OrderCancelService 的取消 / 仅退款必须带本地 @Transactional")
+                .containsExactlyInAnyOrder("cancel", "refund");
+        assertThat(annotatedMethodNames(OrderCancelService.class))
+                .as("一个动作入口只能有一个全局事务开点（在 GLOBAL_ENTRY_POINTS 登记的那几个方法上），"
+                        + "协作 bean 上不许再挂")
+                .isEmpty();
     }
 
     @Test
@@ -93,7 +129,7 @@ class GlobalTransactionalPlacementTest {
         assertThat(offenders)
                 .as("这些 bean 由 @Bean 方法产出（BeanDefinition#getBeanClassName() 恒为空）→ "
                         + "Seata 的 GlobalTransactionScanner 会跳过它们、注解形同不存在。"
-                        + "把注解移到组件扫描得到的类上（下单路径 = OrderApplicationService#create）")
+                        + "把注解移到组件扫描得到的类上（跨服务写的入口清单见本类的 GLOBAL_ENTRY_POINTS）")
                 .isEmpty();
     }
 
@@ -133,6 +169,22 @@ class GlobalTransactionalPlacementTest {
         List<String> names = new ArrayList<>();
         for (Method method : clazz.getDeclaredMethods()) {
             if (method.isAnnotationPresent(GlobalTransactional.class)) {
+                names.add(method.getName());
+            }
+        }
+        return names;
+    }
+
+    /**
+     * 该类**自己声明**的、带 Spring {@code @Transactional} 的方法名
+     *
+     * <p>⚠ 与 {@link #annotatedMethodNames} 同口径（{@code getDeclaredMethods}）：只认这个类上写的那一个，
+     * 不把父类 / 接口上的算进来——「本地事务在这个协作 bean 上」正是要断言的落点本身。</p>
+     */
+    private static List<String> localTransactionalMethodNames(Class<?> clazz) {
+        List<String> names = new ArrayList<>();
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(Transactional.class)) {
                 names.add(method.getName());
             }
         }

@@ -17,6 +17,7 @@ import com.panoramic.trade.order.infrastructure.DefaultOrderNoGenerator;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.support.InMemoryGoodsQueryPort;
 import com.panoramic.trade.order.support.InMemoryStockPort;
+import com.panoramic.trade.order.support.OrderStatusChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -74,7 +75,7 @@ class OrderCreateCoordinatorTest {
     private static OrderProperties defaultProperties() {
         OrderProperties props = new OrderProperties();
         props.setSteps(List.of(GoodsCheckStep.NAME, StockCheckStep.NAME, PriceComputeStep.NAME));
-        props.setStatusFlow(List.of(OrderStatus.values()));
+        props.setStatusFlow(OrderStatusChain.production());
         props.setIdempotencyWindowSeconds(300);
         props.setOrderNoMaxRetry(5);
         return props;
@@ -83,6 +84,20 @@ class OrderCreateCoordinatorTest {
     /** 收货地址：本类用例都不关心地址内容，取一份合法值即可 */
     private static final OrderAddress ADDRESS =
             new OrderAddress("张三", "13800000000", "浙江省杭州市西湖区", "文一西路 969 号 1 幢 101 室");
+
+    @Test
+    @DisplayName("支付时限配成 0 或负数 → 装配期就炸（不是等第一笔单开出来才在聚合里抛）")
+    void nonPositivePaymentTimeoutRejectedAtWiring() {
+        properties.setPaymentTimeoutMinutes(0);
+        assertThatThrownBy(() -> coordinatorUsing(goodsQueryPort))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("支付时限必须是正数");
+
+        properties.setPaymentTimeoutMinutes(-1);
+        assertThatThrownBy(() -> coordinatorUsing(goodsQueryPort))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("payment-timeout-minutes=-1");
+    }
 
     private static OrderCreateCommand command(OrderSource source, String requestId, OrderCreateCommand.Line... lines) {
         return new OrderCreateCommand(11L, source, ADDRESS, requestId, List.of(lines));
@@ -226,6 +241,8 @@ class OrderCreateCoordinatorTest {
         assertThat(order.getCustomerId()).isEqualTo(11L);
         assertThat(order.getRequestId()).isEqualTo("req-1");
         assertThat(order.getCreateTime()).isEqualTo(LocalDateTime.now(clock));
+        // 支付截止时刻 = 下单时刻 + 配置的支付时限（默认 10 分钟）；与下单时刻同源、精度也一致
+        assertThat(order.getExpireTime()).isEqualTo(LocalDateTime.now(clock).plusMinutes(10));
         assertThat(order.getOrderNo()).hasSize(18);
         assertThat(order.getFingerprint())
                 .isEqualTo(OrderFingerprint.of(11L, OrderSource.DIRECT, 7L, List.of(new OrderLine(10L, 2))));

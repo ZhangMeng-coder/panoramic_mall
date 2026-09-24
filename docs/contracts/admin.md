@@ -124,7 +124,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | OrderController.java:54 |  |
 
 > ⚠ **管理端对订单只读**——只有这两个查询端点，**没有任何写动作**（改状态 / 改单 / 删单都不做）。
-> 订单的状态流转入口只在两端：C 端 `pay` / `receive`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。
+> 订单的状态流转入口只在两端：C 端 `pay` / `receive` / `cancel` / `refund`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。
 
 > ⚠ 平台侧**没有锚点**（管理端是全量视角）：筛选（`storeId` / `customerId` / `orderNo` / `status`）走
 > `OrderPageQueryDTO`（**admin 本地**编排查询对象，与 `ShopGoodsPageQueryDTO` 同款做法）；

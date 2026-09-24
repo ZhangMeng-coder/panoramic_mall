@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * C 端订单接口（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址，共 6 条）。
+ * C 端订单接口（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址 / 取消订单 / 仅退款，共 8 条）。
  *
  * <p><b>形状</b>：本类只碰 {@link OrderBffService}，<b>不注入</b>任何 Feign 客户端，
  * 页面类型 ↔ 域契约类型的映射收在该 service 内。出参一律包 {@code RespData}（含 {@code void} 的写路径）。</p>
@@ -39,8 +39,8 @@ import java.util.List;
  * <b>不得</b>加进任何免鉴权白名单。</p>
  *
  * <p><b>错误形状</b>：下游业务 4xx 原样透传——「订单不存在 / 不属本人」404、「商品不可购买 / 库存不足 /
- * 数量越界 / 地址非法 / 支付金额与订单总额不一致 / 非法状态迁移」400、「地址不存在」404 如实回页面；
- * 只有下游故障才降级为 500「订单暂不可用，请稍后重试」（取地址那一步降级文案是「地址服务暂不可用」）。</p>
+ * 数量越界 / 地址非法 / 支付金额与订单总额不一致 / 该订单已过期 / 非法状态迁移」400、「地址不存在」404
+ * 如实回页面；只有下游故障才降级为 500「订单暂不可用，请稍后重试」（取地址那一步降级文案是「地址服务暂不可用」）。</p>
  *
  * <p>⚠ <b>下单是两步</b>：先建单、成功后才清车（{@code cartItemIds} 非空时）。
  * 清车失败<b>不会</b>让本接口失败——详情与理由见 {@link OrderBffService}。</p>
@@ -109,6 +109,36 @@ public class OrderController {
     @PostMapping("/{orderNo}/receive")
     public RespData<Void> receive(@PathVariable("orderNo") String orderNo) {
         orderBffService.receive(UserContext.getUserId(), orderNo);
+        return RespData.success();
+    }
+
+    /**
+     * 取消订单（**仅待支付可取消**，闸门在域内 → 其余状态 400 原样透传）
+     *
+     * <p>⚠ <b>没有请求体</b>：这个动作的载荷只有「哪一笔单」，而作用域 customerId 取自登录态、
+     * 单号在路径里——所以本端不立 DTO。<b>不要</b>为「以后可能加取消原因」先塞一个空 DTO 进来：
+     * 那是一个没有任何字段的壳，等于给一个不存在的载荷预留位置。</p>
+     *
+     * <p>⚠ 域侧取消会<b>回补库存</b>；出参 {@code Void}，页面拿返回值重拉详情 / 列表。</p>
+     */
+    @PostMapping("/{orderNo}/cancel")
+    public RespData<Void> cancel(@PathVariable("orderNo") String orderNo) {
+        orderBffService.cancel(UserContext.getUserId(), orderNo);
+        return RespData.success();
+    }
+
+    /**
+     * 仅退款（**仅「已支付、未发货」可退**，闸门在域内 → 其余状态 400 原样透传）
+     *
+     * <p>⚠ 与{@link #cancel} 是<b>两个动作</b>：前者是「没付过钱的单不买了」，后者是「付过的钱退回去」。
+     * 域侧是两个状态、两条迁移边，故页面也是两个按钮——<b>不要</b>在后端合并成一个「取消/退款」入口
+     * （合并就得在本层猜状态，而状态是域的事实）。</p>
+     *
+     * <p>⚠ 同样<b>没有请求体</b>（理由见{@link #cancel}）；全额退、不传金额，金额由域侧取聚合里冻结的订单总额。</p>
+     */
+    @PostMapping("/{orderNo}/refund")
+    public RespData<Void> refund(@PathVariable("orderNo") String orderNo) {
+        orderBffService.refund(UserContext.getUserId(), orderNo);
         return RespData.success();
     }
 }

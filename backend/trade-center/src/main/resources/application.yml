@@ -37,7 +37,7 @@ spring:
 # trade-center 为下沉纯域（交易域）：不向页面暴露公网路由，只被端 BFF 经内部 Feign（/internal/trade/**）调用
 # —— 购物车 ← mall-bff；订单 ← 三端 BFF（mall-bff 顾客侧 / store-bff 商户侧 / admin 管理端），
 #    各端订单编排尚未创建（页面契约见 docs/contracts/{mall-bff,store-bff,admin}.md）。
-#    订单 6 条接口**按能力通用、不分侧**（cross-cutting 第 22 条）：三端调的是同一个端点，
+#    订单 9 条接口**按能力通用、不分侧**（cross-cutting 第 22 条）：三端调的是同一个端点，
 #    差别只在传不传作用域（读侧可选、写侧必填）。
 # 服务端**启用 Feign 客户端扫描**（只扫 store 域：com.panoramic.contract.store，见 TradeCenterApplication）——它是被调方，
 # 同时**也是调用方**：下单流水线的 goods-check / stock-check 要问 store 域要商品快照并扣减库存（域间协作，cross-cutting 第 24 条）。
@@ -75,13 +75,30 @@ panoramic:
         - goods-check
         - stock-check
         - price-compute
-      # 订单状态流转顺序：只允许「下标 +1」的推进；必须覆盖 OrderStatus 全部常量，缺一个即启动失败
+      # 订单状态流转**主链**（有序数组：数组顺序即先后，相邻两项之间的边就是「推进一步」）。
+      # ⚠ 这里只写主链，**别把 CANCELLED / REFUNDED 写进来**：未支付→已取消、已支付→已退款这两个结束过程
+      #    写死在动作方法里（OrderModel#markCancelled / #markRefunded —— 那是那两个动作的定义本身，
+      #    不是可配流程），写进来即启动失败（两处都写就成了第二份定义）。
+      # ⚠ 必须列出除那两个状态外的全部常量、且首项必须是 PENDING_PAYMENT（开单即待支付写在 OrderModel#open 里，
+      #    不来自配置），缺一个或首项不对即启动失败。
       status-flow:
         - PENDING_PAYMENT
         - PAID
         - SHIPPED
         - RECEIVED
-      # 幂等窗口（秒）：同指纹在该窗口内视为重复提交
+      # 幂等窗口（秒）：同指纹在该窗口内视为重复提交。
+      # ⚠ 窗口不是唯一条件——窗口内那一笔还得**仍未结束**（已收货 / 已取消 / 已退款不参与复用，见 OrderRepository 的接口注释）
+
       idempotency-window-seconds: 300
       # 订单号冲突时的重试上限
       order-no-max-retry: 5
+      # 支付时限（分钟）：下单时按它算支付截止时刻（create_time + 本值）落 trade_order.expire_time。
+      # ⚠ 只在下单那一刻读：截止时刻是算好落库的快照，改本值不影响已下的单（读侧读库里的列、不重算）。
+      payment-timeout-minutes: 10
+      # 超时关单任务的扫描节奏（毫秒，两次扫描之间的间隔；@Scheduled 的 fixedDelay，上一轮跑完才计时）。
+      # ⚠ 它不是业务口径，只决定「最晚晚多久关掉」——口径是上面的支付时限。默认 60s = 最坏晚 1 分钟。
+      # ⚠ 由 OrderTimeoutCloseTask 的 @Scheduled 直接读本键（注解只能吃一个字符串表达式），
+      #    故它不在 OrderProperties 里；单批上限才走配置类（timeout-close-batch-size，有装配期断言）。
+      timeout-close-interval-ms: 60000
+      # 超时关单任务的单批上限（一次扫描最多关几笔；积压时先关一批、下一轮再关剩下的，任务幂等故不会漏）。
+      timeout-close-batch-size: 200
