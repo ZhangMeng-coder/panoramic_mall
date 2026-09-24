@@ -10,13 +10,19 @@ import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.SkuSnapshot;
 import com.panoramic.trade.order.domain.port.StockPort;
+import com.panoramic.trade.order.domain.port.OrderRepository;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
 import com.panoramic.trade.order.support.InMemoryStockPort;
 import com.panoramic.trade.order.support.OrderStatusChain;
 import com.panoramic.trade.order.support.StockOutboundRecord;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -41,7 +47,9 @@ import static org.assertj.core.api.Assertions.tuple;
  *       漏了这一条，任务上线的第一轮就会把库里所有老单一并关掉；</li>
  *   <li><b>关单是完整动作</b>：状态到「已取消」**且**库存回补（只做一半就是少卖或超卖）；</li>
  *   <li><b>单笔失败继续下一笔</b>：一批里最可能失败的恰恰是「刚被顾客付掉」的那笔，
- *       若它中断整批，只要有顾客在付款，超时单就永远关不干净。</li>
+ *       若它中断整批，只要有顾客在付款，超时单就永远关不干净；
+ *       ⚠ 且失败还要**分两桶**（域侧拒 = warn 不带堆栈 / 系统错 = error 带堆栈，末尾汇总同级别）
+ *       ——混成一桶时，「一轮全被顾客抢先付款」与「一轮全挂」在日志上长得一模一样。</li>
  * </ol>
  *
  * <p>⚠ 不启 Spring（{@code @Scheduled} 不参与本类）：直接调任务方法就是「一轮扫描」。
@@ -67,6 +75,10 @@ class OrderTimeoutCloseTaskTest {
     private InMemoryOrderRepository orderRepository;
     private OrderStatusFlow statusFlow;
     private OrderProperties properties;
+
+    /** 本任务的 logger（`@Slf4j` 生成的那个）—— 两类失败只在日志上分得开，故断言日志 */
+    private static final Logger TASK_LOGGER =
+            (Logger) LoggerFactory.getLogger(OrderTimeoutCloseTask.class);
 
     @BeforeEach
     void setUp() {
@@ -141,6 +153,7 @@ class OrderTimeoutCloseTaskTest {
 
         // 让「先到期」那一笔的回补炸掉：模拟库存在 store 域写失败（跨服务写失败的那一类）
         StockPort failingRevert = new FailingRevertStockPort(stockPort, failing.getOrderNo());
+        ListAppender<ILoggingEvent> logs = captureLogs();
 
         Throwable thrown = catchThrowable(() -> task(failingRevert).closeTimeoutOrders());
 
@@ -148,6 +161,41 @@ class OrderTimeoutCloseTaskTest {
         assertThat(thrown).isNull();
         assertThat(next.getStatus()).isEqualTo(OrderStatus.CANCELLED);
         assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - QUANTITY);   // 只有失败那笔没还
+
+        // ⚠ 系统错必须与「域侧拒」分得开：error 级、**带堆栈**（域侧拒那条不带），末尾汇总也升到 error
+        List<ILoggingEvent> errors = eventsAt(logs, Level.ERROR);
+        assertThat(errors).extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message).contains("超时关单失败（系统错"))
+                .anySatisfy(message -> assertThat(message).contains("失败 1 笔"));
+        assertThat(errors).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNotNull());
+        assertThat(eventsAt(logs, Level.WARN)).isEmpty();   // 这一批没有「域侧拒」，不该有 warn
+    }
+
+    @Test
+    @DisplayName("捞到之后、关单之前顾客把钱付了 → 域侧拒（400）记 warn 且不带堆栈，单与库存都不动")
+    void orderPaidBetweenScanAndCloseIsSkipped() {
+        OrderModel order = save(pendingOrder("202609211200000009", NOW.minusMinutes(30)));
+        // 模拟真实竞态：先取数（那一刻它还是超时待支付），随后顾客把钱付掉，任务才轮到关它
+        List<OrderModel> scanned = List.copyOf(
+                orderRepository.findTimeoutPending(NOW, properties.getTimeoutCloseBatchSize()));
+        order.markPaid(statusFlow, order.getTotalAmount());
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        ListAppender<ILoggingEvent> logs = captureLogs();
+
+        task(new StaleScanRepository(scanned), stockPort).closeTimeoutOrders();
+
+        // 这单不该被关：状态与轨迹停在付款那一刻，库存也没被还回去
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+        assertThat(order.getStatusTrail()).containsExactly(OrderStatus.PENDING_PAYMENT, OrderStatus.PAID);
+        assertThat(stockPort.available(SKU_A)).isEqualTo(STOCK - QUANTITY);
+        // ⚠ 判据只在日志上：域侧拒 → warn（**不带堆栈**，那是噪音）、汇总记「跳过」而不是「失败」
+        List<ILoggingEvent> warnings = eventsAt(logs, Level.WARN);
+        assertThat(warnings).extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message).contains("超时关单跳过（域侧拒绝）"));
+        assertThat(warnings).allSatisfy(event -> assertThat(event.getThrowableProxy()).isNull());
+        assertThat(eventsAt(logs, Level.INFO)).extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message).contains("跳过 1 笔"));
+        assertThat(eventsAt(logs, Level.ERROR)).isEmpty();   // 域侧拒不是故障，不该出现 error
     }
 
     @Test
@@ -185,9 +233,26 @@ class OrderTimeoutCloseTaskTest {
     // ── 夹具 ────────────────────────────────────────────────────────────────────
 
     private OrderTimeoutCloseTask task(StockPort stock) {
-        return new OrderTimeoutCloseTask(orderRepository,
-                new OrderTimeoutCloseService(orderRepository, new OrderCancelService(orderRepository, stock, statusFlow)),
+        return task(orderRepository, stock);
+    }
+
+    /** 换仓储时的入口：任务与关单服务必须拿**同一个**仓储（两处不一致就不是同一条读路径） */
+    private OrderTimeoutCloseTask task(OrderRepository repository, StockPort stock) {
+        return new OrderTimeoutCloseTask(repository,
+                new OrderTimeoutCloseService(repository, new OrderCancelService(repository, stock, statusFlow)),
                 properties, clock);
+    }
+
+    /** 把内存 appender 挂到本任务的 logger 上，返回它以便断言（用例之间互不影响：各自挂各自读） */
+    private static ListAppender<ILoggingEvent> captureLogs() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        TASK_LOGGER.addAppender(appender);
+        return appender;
+    }
+
+    private static List<ILoggingEvent> eventsAt(ListAppender<ILoggingEvent> appender, Level level) {
+        return appender.list.stream().filter(event -> event.getLevel() == level).toList();
     }
 
     /**
@@ -261,6 +326,26 @@ class OrderTimeoutCloseTaskTest {
         @Override
         public int available(Long skuId) {
             return delegate.available(skuId);
+        }
+    }
+
+    /**
+     * 「取数快照停在关单之前」的仓储：{@code findTimeoutPending} 永远返回预先捕获的那一批，其余全委托。
+     *
+     * <p>用来演「捞到之后、关单之前顾客把钱付了」这条真实竞态——内存实现存的是**活引用**，
+     * 顾客付款改的就是同一个对象，故只有把取数结果先钉住，才重现得出「任务拿到的还是旧批次」。</p>
+     */
+    private static final class StaleScanRepository extends InMemoryOrderRepository {
+
+        private final List<OrderModel> staleBatch;
+
+        private StaleScanRepository(List<OrderModel> staleBatch) {
+            this.staleBatch = staleBatch;
+        }
+
+        @Override
+        public List<OrderModel> findTimeoutPending(LocalDateTime now, int limit) {
+            return staleBatch;
         }
     }
 }
