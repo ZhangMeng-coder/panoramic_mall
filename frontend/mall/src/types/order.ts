@@ -1,5 +1,5 @@
 /* ============================================================================
-   订单 —— 与契约 docs/contracts/mall-bff.md 的 `/orders` 五行一致。
+   订单 —— 与契约 docs/contracts/mall-bff.md 的 `/orders` 七行一致。
    字段定义以后端 `MallOrderVO` / `MallOrderCreateDTO` / `MallOrderPageQueryDTO` /
    `MallOrderPayDTO`（mall-bff 的 vo / dto 包）为准，这里只是前端侧的镜像。
    ========================================================================== */
@@ -61,6 +61,17 @@ export interface OrderVO {
   shipNo: string | null
   /** 下单时间（后端 `LocalDateTime`，ISO 串；展示走 `formatDateTime`） */
   createTime: string
+  /**
+   * 支付截止时刻（后端 `LocalDateTime`，ISO 串）——**原样取域下发的**，页面**不得**自己
+   * 「下单时间 + 10 分钟」再算一遍（那会开出第二个说了算的地方，倒计时与服务端判定必然漂移）。
+   *
+   * ⚠ 它同时也是**服务端判定「是否已过期」用的那一份时刻**（支付接口超时即回 400「该订单已过期」），
+   * 故页面倒计时到 0 只表示「该重新拉一次详情了」——订单**是否已被自动取消**由服务端说了算。
+   *
+   * ⚠ 可为 `null`：本列上线前创建的老单没有截止时刻（语义是**无超时**）。
+   * 遇 `null` **不要**倒计时、也**不要**当成「已过期」。
+   */
+  expireTime: string | null
   /** 收货地址快照；后端形态上可为 `null`（映射处显式判空），页面据此不渲染地址块 */
   address: OrderAddress | null
   /** 订单明细（至少一行；顺序 = 下单时的 `skuId` 升序） */
@@ -68,13 +79,18 @@ export interface OrderVO {
 }
 
 /**
- * 订单状态枚举名里**本端要判行为**的两个（其余状态不需要分支）。
+ * 订单状态枚举名里**本端要判行为**的三个（其余状态不需要分支）。
  *
  * ⚠ 这里判的是**枚举名**而不是 `statusMallLabel`：文案是给人读的措辞（领域可改、端侧还可能再翻），
  * 拿它当分支条件，改一个错别字就会静默改掉按钮；枚举名是契约里稳定的那一个。
- * ⚠ 但**展示**一律用域下发的 `statusMallLabel`，不要用这两个常量去写文案。
+ * ⚠ 但**展示**一律用域下发的 `statusMallLabel`，不要用这几个常量去写文案。
+ *
+ * ⚠ 三者的用处各是一个**动作的闸门**（闸门 = 域侧动作方法里声明的来源状态：取消只有待支付、仅退款只有已支付；页面只是不摆注定失败的按钮）：
+ * `PENDING_PAYMENT` → 去支付 / 改地址 / 取消订单、`PAID` → 仅退款、`SHIPPED` → 确认收货。
+ * 具体边界见 `backend/trade-center/README.md` 第 7 节（业务规则）与订单详情页的文件头。
  */
 export const ORDER_STATUS_PENDING_PAYMENT = 'PENDING_PAYMENT'
+export const ORDER_STATUS_PAID = 'PAID'
 export const ORDER_STATUS_SHIPPED = 'SHIPPED'
 
 /** 下单商品行（对应 `MallOrderCreateDTO.Item`）；同款多行由域内合并，前端不必先去重 */

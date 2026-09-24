@@ -315,6 +315,22 @@
   font-size: var(--t-xs);
 }
 
+/* 待支付倒计时：贴在下单时间旁边的小字，数字走等宽并加重（它是这一行里唯一会变的信息） */
+.order-card__countdown {
+  color: var(--n600);
+  font-size: var(--t-xs);
+}
+
+.order-card__countdown b {
+  color: var(--brand);
+  font-weight: var(--w-semibold);
+}
+
+/* 已过期：主色收掉（不再是催促，而是一句既成事实） */
+.order-card__countdown--over {
+  color: var(--n500);
+}
+
 /* 行内操作：压在整卡链接**上面**（否则点按钮会先命中那层透明链接跳走） */
 .order-card__ops {
   position: relative;
@@ -437,6 +453,24 @@
 .order-detail__status-sub {
   color: var(--n600);
   font-size: var(--t-sm);
+}
+
+/* 待支付倒计时：与「下单时间」同排（它是这一屏的第二主信息，别塞进折叠区）。
+   ⚠ 走秒的数字用等宽（tnum）——否则每跳一秒整行都在抖 */
+.order-detail__countdown {
+  color: var(--n700);
+  font-size: var(--t-sm);
+}
+
+.order-detail__countdown b {
+  color: var(--brand);
+  font-size: var(--t-lg);
+  font-weight: var(--w-bold);
+}
+
+/* 已过期：主色换成灰（它不再是「快去做」的催促，而是一句既成事实的提示） */
+.order-detail__countdown--over {
+  color: var(--n500);
 }
 
 .order-detail__panel {

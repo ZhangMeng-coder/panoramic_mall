@@ -56,5 +56,28 @@ export const orderApi = {
    */
   updateAddress(orderNo: string, payload: OrderAddressUpdatePayload): Promise<void> {
     return request.put<void>(`/mall/orders/${orderNo}/address`, payload)
+  },
+
+  /**
+   * 取消订单（**仅「待支付」可取消**，闸门在域内 → 其余状态 400 原样透传，
+   * 文案如「订单状态不能从「已支付」变更为「已取消」」）。
+   *
+   * ⚠ **无请求体**：这个动作的载荷只有「哪一笔单」（单号在路径里、顾客身份在登录态里），
+   * 域侧 DTO 也只承载数据权限锚点、由服务端从登录态填——页面不要传任何 body。
+   * ⚠ 域侧取消**一律回补库存**；出参 `void`，成功后**重新拉详情 / 列表**（状态由域下发）。
+   * ⚠ 与{@link refund} **不是**同一个动作：取消是「没付过钱的单不买了」，仅退款是「付过的钱退回去」。
+   */
+  cancel(orderNo: string): Promise<void> {
+    return request.post<void>(`/mall/orders/${orderNo}/cancel`)
+  },
+
+  /**
+   * 仅退款（**仅「已支付、未发货」可退**，闸门在域内 → 其余状态 400 原样透传）。
+   *
+   * ⚠ 一步生效、无需商户同意、**全额退**——不传金额，退款额恒等于订单总额（服务端取的那一份）。
+   * 同样**无请求体**；出参 `void`，成功后**重新拉详情 / 列表**。
+   */
+  refund(orderNo: string): Promise<void> {
+    return request.post<void>(`/mall/orders/${orderNo}/refund`)
   }
 }
