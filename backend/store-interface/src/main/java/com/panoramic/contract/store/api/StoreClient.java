@@ -3,6 +3,11 @@ package com.panoramic.contract.store.api;
 import com.panoramic.contract.store.dto.ShopAuditDTO;
 import com.panoramic.contract.store.dto.ShopPageQueryDTO;
 import com.panoramic.contract.store.dto.ShopSaveDTO;
+import com.panoramic.contract.store.dto.StoreGoodsEvaluationOrderQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsEvaluationPageQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsEvaluationReplyDTO;
+import com.panoramic.contract.store.dto.StoreGoodsEvaluationStatQueryDTO;
+import com.panoramic.contract.store.dto.StoreGoodsEvaluationSubmitDTO;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
@@ -21,6 +26,8 @@ import com.panoramic.contract.store.dto.StoreStockDeductDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.ShopVO;
+import com.panoramic.contract.store.vo.StoreGoodsEvaluationPageItemVO;
+import com.panoramic.contract.store.vo.StoreGoodsEvaluationStatVO;
 import com.panoramic.contract.store.vo.StoreGoodsSkuSnapshotVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
@@ -235,6 +242,55 @@ public interface StoreClient {
      */
     @PostMapping("/goods/spu/{id}/unlock")
     void unlockStoreGoods(@PathVariable("id") Long id);
+
+    // ---- 商品评价（写：评价人提交 / 商家回复；读：分页 / 星级分布 / 按单查已评价商品）----
+    // 评价数据（含评分统计）全在 store 域：store_goods_evaluation + 两张表的 score 冗余列。
+    // ⚠「订单已完成」的门禁**不在这里**，是 mall-bff 的前置业务校验（域内不依赖 trade 域，
+    //   见 cross-cutting 第 24 条）；域内防线只有 (order_no, spu_id) 唯一键与评分取值 1~5。
+    // ⚠ 提交与回复都**不需要**调用方给出店铺 id：提交时域内按 spuId 反查店铺（且**不过滤逻辑删除**），
+    //   回复时店铺 id 由 store-bff 自登录态带入 DTO（它才是该评价的归属锚点）。
+
+    /**
+     * 提交商品评价（一笔订单里的一个商品一条；同 SPU 多 SKU 合成一条 + SKU 快照）。
+     * <p>⚠ 幂等由域内的 {@code (order_no, spu_id)} 唯一键保证：重复提交同单同商品 →
+     * <b>HTTP 400「该商品已评价」</b>（不静默改写、不吞掉）。</p>
+     * <p>写入成功后<b>同一事务内</b>重算并回写该商品与所属店铺的评分冗余列。</p>
+     */
+    @PostMapping("/goods/evaluation")
+    void submitEvaluation(@RequestBody StoreGoodsEvaluationSubmitDTO dto);
+
+    /**
+     * 评价分页（时间倒序；跨店通用——C 端传 {@code spuId}、商户端传 {@code storeId}
+     * 并可再按 {@code spuId} 与 {@code scores} 收窄）。
+     * <p>⚠ 用 {@code POST + @RequestBody}：{@code scores} 是集合（同 {@link #pageStoreGoodsCrossShop}）。</p>
+     * <p>⚠ 出参带 {@code customerId} 而不带昵称头像，两端 BFF 各自加工成私有页面类型。</p>
+     */
+    @PostMapping("/goods/evaluation/page")
+    PageResult<StoreGoodsEvaluationPageItemVO> pageEvaluations(@RequestBody StoreGoodsEvaluationPageQueryDTO dto);
+
+    /**
+     * 评价星级分布（固定 1~5 五行、无评价的星级补 0，外加总条数；跨店通用，条件同上）。
+     * <p>⚠ C 端要的是<b>分布</b>（不要星级筛选），商户端要的是<b>筛选</b>（不要分布）——
+     * 但域侧不为端分侧，两个能力都通用地提供。</p>
+     */
+    @GetMapping("/goods/evaluation/stat")
+    StoreGoodsEvaluationStatVO evaluationStat(@SpringQueryMap StoreGoodsEvaluationStatQueryDTO query);
+
+    /**
+     * 查某订单里<b>已评价过</b>的商品 SPU id 集合（订单详情页标「已评价 / 待评价」用）。
+     * <p>订单号是路径变量、顾客锚点在 DTO（cross-cutting 第 23 条）。未评价过任何商品 → 空列表。</p>
+     */
+    @GetMapping("/goods/evaluation/order/{orderNo}/spu-ids")
+    List<Long> listEvaluatedSpuIds(@PathVariable("orderNo") String orderNo,
+                                   @SpringQueryMap StoreGoodsEvaluationOrderQueryDTO query);
+
+    /**
+     * 商家回复评价（一条评价至多一条回复；回复后不能改、不能删，评价人也不能再回）。
+     * <p>⚠ {@code dto.storeId} 是归属锚点（只能回复本店评价），由 store-bff 自登录态带入。
+     * 以「回复列为空」为条件更新，<b>影响行数是唯一判据</b>：已回复过 → HTTP 400「该评价已回复」。</p>
+     */
+    @PostMapping("/goods/evaluation/{id}/reply")
+    void replyEvaluation(@PathVariable("id") Long id, @RequestBody StoreGoodsEvaluationReplyDTO dto);
 
     // ---- 交易协作（调用方是 trade-center 的订单流水线适配器，**不是端 BFF**）----
     // ⚠ 本节是 store 域**唯一**被域间调用的能力（cross-cutting 第 24 条）：trade-center → store 是全仓

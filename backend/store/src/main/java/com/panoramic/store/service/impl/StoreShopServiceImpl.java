@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -198,6 +199,19 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
                     return vo;
                 })
                 .collect(Collectors.toList());
+    }
+
+    // ---- 评价协作（跨实体只走 owner service：评价服务调本方法，本域不把店铺 Mapper 递出去）----
+
+    @Override
+    public void updateScore(Long storeId, BigDecimal score) {
+        // 店铺评分类推导量的唯一写入口（调用方是评价服务，由它重算本店全部评价的算术平均后传入）。
+        // ⚠ 必须显式 set：updateById 跳过 null 列，「无评价 → 清回 NULL」会静默不落库。
+        // 店铺自身的写路径（saveDraft / submit / adminAudit）都不得显式设置该列。
+        lambdaUpdate()
+                .set(StoreShop::getScore, score)
+                .eq(StoreShop::getId, storeId)
+                .update();
     }
 
     // ---- 店铺字段/留痕辅助（状态机与审核留痕清理逻辑从旧实现平移，去掉账号回填）----

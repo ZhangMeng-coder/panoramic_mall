@@ -3,6 +3,7 @@ package com.panoramic.contract.store.vo;
 import com.panoramic.contract.store.dto.SpecConfigItem;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -109,6 +110,12 @@ public class StoreGoodsSpuDetailVO {
      * 上次关联/同步时中台 SPU 的版本戳（null = 未关联中台）
      */
     private Long centerVersion;
+
+    /**
+     * 商品评分（该 SPU 全部评价的算术平均，保留 1 位小数）。
+     * <p>⚠ <b>可空 = 尚无评价</b>（不是 0 分）：调用方展示时必须区分两者，前端渲染成「暂无评分」。</p>
+     */
+    private BigDecimal score;
 
     /**
      * SKU 列表

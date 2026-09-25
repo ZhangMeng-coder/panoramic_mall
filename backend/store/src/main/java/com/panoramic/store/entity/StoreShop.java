@@ -7,6 +7,7 @@ import com.panoramic.common.vo.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -109,4 +110,12 @@ public class StoreShop extends BaseEntity {
      * 审核备注（驳回原因）
      */
     private String auditRemark;
+
+    /**
+     * 店铺评分（冗余列）：本店全部商品评价的算术平均（每笔等权），保留 1 位小数；<b>null = 尚无评价</b>。
+     * <p>推导量，由 {@code StoreShopServiceImpl#updateScore} 唯一写入（调用方是评价服务，写入评价时
+     * 在同一事务内重算），店铺自身的写路径（保存草稿 / 提交 / 审核）不得显式赋值。
+     * C 端商品详情页展示它。</p>
+     */
+    private BigDecimal score;
 }

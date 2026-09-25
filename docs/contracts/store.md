@@ -13,7 +13,7 @@ typeDirs: backend/store-interface/src/main/java
 > **不暴露公网路由**，只被 store-bff、admin BFF 与 mall-bff 经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 24 个接口**（有作用域维度 11 + 无作用域维度 10 + 交易协作 3）。
+**共 29 个接口**（有作用域维度 13 + 无作用域维度 13 + 交易协作 3）。
 ⚠ 条数**不按端分侧**统计：同一能力只有一条路径，端别差异只体现在「传不传作用域」上（见第三节）。
 
 ## 一、前缀怎么拼上的
@@ -49,6 +49,29 @@ typeDirs: backend/store-interface/src/main/java
 | tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | List<StoreGoodsSkuSnapshotVO> | `StoreClient#tradeSkuSnapshotBatch` | `GoodsTradeController#tradeSkuSnapshotBatch` | GoodsQueryAdapter(trade-center) |  |
 | deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | boolean | `StoreClient#deductStock` | `GoodsTradeController#deductStock` | StockAdapter(trade-center) |  |
 | revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | void | `StoreClient#revertStockByOrder` | `GoodsTradeController#revertStockByOrder` | StockAdapter(trade-center) |  |
+| submitEvaluation | POST | /goods/evaluation | `StoreGoodsEvaluationSubmitDTO` | `void` | `StoreClient#submitEvaluation` | `EvaluationController#submitEvaluation` | EvaluationBffService(mall-bff) |  |
+| pageEvaluations | POST | /goods/evaluation/page | `StoreGoodsEvaluationPageQueryDTO` | `PageResult<StoreGoodsEvaluationPageItemVO>` | `StoreClient#pageEvaluations` | `EvaluationController#pageEvaluations` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
+| evaluationStat | GET | /goods/evaluation/stat | `StoreGoodsEvaluationStatQueryDTO` | `StoreGoodsEvaluationStatVO` | `StoreClient#evaluationStat` | `EvaluationController#evaluationStat` | EvaluationBffService(mall-bff) |  |
+| listEvaluatedSpuIds | GET | /goods/evaluation/order/{orderNo}/spu-ids | `String`, `StoreGoodsEvaluationOrderQueryDTO` | `List<Long>` | `StoreClient#listEvaluatedSpuIds` | `EvaluationController#listEvaluatedSpuIds` | EvaluationBffService(mall-bff) |  |
+| replyEvaluation | POST | /goods/evaluation/{id}/reply | `Long`, `StoreGoodsEvaluationReplyDTO` | `void` | `StoreClient#replyEvaluation` | `EvaluationController#replyEvaluation` | StoreEvaluationBffService(store-bff) |  |
+
+> ⚠ **评价组 5 条**（商品评价 `store_goods_evaluation`，2026-09-24 落契约）—— 评价是商品的**二级资源**，
+> 路径挂在 `/goods/evaluation/**`，与 `/goods/stock/**` 同层（两者同属「独立表、独立能力，只是以商品为维度」）。
+> 形状与作用域口径：
+> - **写评价** `submitEvaluation`：入参带 **`customerId`（评价人，必填）**，由 mall-bff 从登录态取；
+>   **`store_id` 不由调用方传**——域内按 `spuId` 反查（不采信外部值，故「与 spu 不一致」这种输入状态不存在）。
+>   ⚠ **订单门禁（只有已完成订单能评）不在域内**：域不持订单，判状态就要新增 `store → trade` 的域间边
+>   （违反 [cross-cutting.md](./cross-cutting.md) 第 24 条「唯一跨域边」）。门禁落在 **mall-bff 的编排**里，
+>   见 [mall-bff.md](./mall-bff.md)；域侧只守自己的不变量（**同单同 SPU 至多一条**，由唯一键承担）。
+> - **评价分页** `pageEvaluations` / **星级统计** `evaluationStat`：**跨店通用**（同 `pageStoreGoodsCrossShop`）——
+>   `spuId` / `storeId` / 星级集合（`scores`）全是**可选筛选**，传了就筛、不传就是不限定，域内不判端。
+>   分页用 `POST + @RequestBody`（`scores` 是集合，走 body 规避 `@SpringQueryMap` 的集合序列化口径，与跨店分页同因）；
+>   统计无集合字段，用 `GET + @SpringQueryMap`（与 `pageShops` 同形）。
+> - **按订单查已评价 SPU** `listEvaluatedSpuIds`：路径变量 `orderNo` 是**资源标识**、不并入 DTO（第 23 条），
+>   作用域 `customerId` 可空。出参只回 `spuId` 集合（调用方拿去判「这一行能不能点评价」），不回评价内容。
+> - **回复评价** `replyEvaluation`：`storeId` **必填**（写侧没有「合法全量视角」）；「一条评价至多一个回复」
+>   由**条件更新（`reply_content is null`）+ 影响行数**承担，不是先读后写。
+> ⚠ 评价**不新增任何域间调用边**（store 域不调 trade 取订单）：第 24 条与第 12 条 Nacos 矩阵**均不变**。
 
 > ⚠ **「入参」列不再有位置约定**（cross-cutting 第 23 条）：除路径变量外最多只有一个 DTO，
 > 作用域是**该 DTO 的字段**，不是位置裸参——`storeGoodsDetail` 的 `Long, StoreGoodsSpuDetailQueryDTO`
@@ -65,8 +88,8 @@ typeDirs: backend/store-interface/src/main/java
 
 | 组 | 条数 | 方法 | 作用域 |
 |---|:--:|---|---|
-| **有作用域维度**（作用域必填，无全量视角） | 11 | saveShop, submitShop, pageStoreGoods, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock | `storeId` 进 DTO，**必填**（`@NotNull(groups = StoreScopeGroup.class)`） |
-| **无作用域维度**（该能力存在合法全量视角） | 10 | getShop, pageShops, auditShop, listShopOptions, storeGoodsDetail, pageStoreGoodsCrossShop, crossShopFacets, batchSpuDetail, lockStoreGoods, unlockStoreGoods | 无字段，或**可空**（`storeGoodsDetail`：传了就按它筛，没传就是不限定） |
+| **有作用域维度**（作用域必填，无全量视角） | 13 | saveShop, submitShop, pageStoreGoods, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock, submitEvaluation, replyEvaluation | 锚点（店主的 `storeId` / 评价人的 `customerId`）进 DTO，**必填**。⚠ 校验组分两档，见下 |
+| **无作用域维度**（该能力存在合法全量视角） | 13 | getShop, pageShops, auditShop, listShopOptions, storeGoodsDetail, pageStoreGoodsCrossShop, crossShopFacets, batchSpuDetail, lockStoreGoods, unlockStoreGoods, pageEvaluations, evaluationStat, listEvaluatedSpuIds | 无字段，或**可空**（`storeGoodsDetail` 与评价三条：传了就按它筛，没传就是不限定） |
 | **交易协作**（域间调用，非端 BFF） | 3 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder | 无锚点（按资源 id 操作：skuId / orderNo）；调用方是**域**不是端，见 [cross-cutting.md](./cross-cutting.md) 第 24 条（`trade-center` → `store` 是唯一的跨域调用边） |
 
 **作用域值只能来自调用方的登录态**（端 BFF 取 `LoginUser.getId()`，**禁止**从前端入参透传）：
@@ -84,6 +107,12 @@ typeDirs: backend/store-interface/src/main/java
 作用域字段，由本层从登录态**无条件覆盖**（页面传了也不采用）；`storeId` 的 `@NotNull` 因此只挂在
 `StoreScopeGroup` 组上（域入口 `@Validated({Default.class, StoreScopeGroup.class})`，页面入口只跑默认组），
 见 [store-bff.md](./store-bff.md) 第四节与 `StoreScopeGroup` 的类注释。
+
+⚠ **必填校验分两档，别一律照 `StoreScopeGroup` 抄**：上一条的机制只为「域 DTO 同时是页面入参类型」而存在。
+评价两条写（`submitEvaluation` / `replyEvaluation`）的 DTO **不是任何端的页面入参类型**（两端评价页面的入参
+都是各自 BFF 私有的页面 DTO），没有「页面不该提供作用域」这件事需要分组表达，故它们的必填锚点直接挂
+**默认组 `@NotNull`**（`@Validated` 也不带 `StoreScopeGroup`）。两档的差别是**入参是不是页面类型**，
+不是「哪个字段更重要」——新加能力时先问这一句再决定挂哪档。
 
 **无作用域维度的能力也不分端**：`pageStoreGoodsCrossShop` / `crossShopFacets` 由 admin BFF（「店铺商品管理」，
 不设限定条件 = 全量）与 mall-bff（C 端浏览，固定传 `shopStatus=2` + `shelfStatus=1` + `lockStatus=0`）共用，
@@ -118,8 +147,8 @@ typeDirs: backend/store-interface/src/main/java
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsSkuBatchQueryDTO, StoreStockDeductDTO |
-| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO, StoreGoodsSkuSnapshotVO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsSkuBatchQueryDTO, StoreStockDeductDTO；评价：StoreGoodsEvaluationSubmitDTO, StoreGoodsEvaluationPageQueryDTO, StoreGoodsEvaluationStatQueryDTO, StoreGoodsEvaluationOrderQueryDTO, StoreGoodsEvaluationReplyDTO |
+| `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO, StoreGoodsSkuSnapshotVO；评价：StoreGoodsEvaluationSkuVO, StoreGoodsEvaluationPageItemVO, StoreGoodsEvaluationStatVO, StoreGoodsEvaluationScoreCountVO |
 
 > `dto` 包里另有校验组 `StoreScopeGroup`（**不是数据形状**，只标记「作用域字段只在域入口必填」，故不在上表）。
 > ⚠ `dto` 包里另有 `SpecAttr` / `SpecConfigItem`（**跨域共享形状**，不在上表清单里），`contract.goods.dto`
@@ -127,6 +156,16 @@ typeDirs: backend/store-interface/src/main/java
 
 > 商品详情只有**一个**域出参类型：`StoreGoodsSpuPlatformDetailVO`（= 基础字段的 `StoreGoodsSpuDetailVO`
 > + `storeName` / `categoryPath`），店主侧与管理端/C 端共用它，**靠调用方裁剪**而不是靠类型分侧。
+
+> ⚠ **平均评分（`score`）加在既有 VO 上，不新造类型**：商品评分 `BigDecimal score`（`DECIMAL(2,1)`，
+> 可空 = 无评价）落在 `StoreGoodsSpuDetailVO`（继承它的 `StoreGoodsSpuPlatformDetailVO` 一并带上）
+> 与 `StoreGoodsSpuCrossShopPageItemVO`；店铺评分落 `ShopVO`。三点口径：
+> ① **不需要端 BFF 分侧裁剪**——对外展示名就叫「评分」，C 端与商户端口径一致（与 `lock*` / `goodsSpuId`
+> 那类「域返回了不等于可以下发」的字段**不同**，别按那一类处理）；
+> ② **可空要一路保持可空**：`NULL` = 该商品 / 该店还没有评价，前端**不渲染**（不是显示 `0`）——
+> 所以列可空、回写走 `lambdaUpdate().set(...)`（`updateById` 会跳过 null 列，写不回 NULL）；
+> ③ ⚠ **同名不同义**：评价行自己的 `score` 是**本次评分**（1–5 整数），这三个 VO 上的 `score` 是**平均评分**。
+> 口径与算法见 [backend/store/README.md](../../backend/store/README.md)。
 
 ## 六、Feign 客户端配套类
 

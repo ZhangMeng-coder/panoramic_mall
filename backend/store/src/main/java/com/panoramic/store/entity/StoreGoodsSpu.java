@@ -136,4 +136,12 @@ public class StoreGoodsSpu extends BaseEntity {
      * 不接受外部直接赋值。用于 C 端列表展示「¥xx.xx 起」与价格排序。</p>
      */
     private BigDecimal minPrice;
+
+    /**
+     * 商品评分（冗余列）：该 SPU 全部评价的算术平均，保留 1 位小数；<b>null = 尚无评价</b>。
+     * <p>推导量，由 {@code StoreGoodsSpuServiceImpl#updateScore} 唯一写入（调用方是评价服务，
+     * 写入评价时在同一事务内重算），商品自身的写路径不得显式赋值。
+     * 对外展示名就叫「评分」（商品列表 / 商品详情）。</p>
+     */
+    private BigDecimal score;
 }

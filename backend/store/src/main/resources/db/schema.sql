@@ -1,6 +1,7 @@
 -- ============================================================
 -- 全景商城 store 业务域（下沉纯域）建表脚本（MySQL 8）
--- 说明：store 域持 store_shop（店铺）+ store_goods_spu/store_goods_sku（店铺在售商品）；
+-- 说明：store 域持 store_shop（店铺）+ store_goods_spu/store_goods_sku（店铺在售商品）
+--       + store_goods_sku_stock/_log（SKU 库存与变动流水）+ store_goods_evaluation（商品评价）；
 --       店主账号表 store_user 已随 BFF 化下沉到 store-bff（店主端 BFF），见 store-bff 模块 schema。
 --       列名与 common BaseEntity 字段对应（create_user/update_user/is_delete）。
 --       可重复执行（CREATE TABLE IF NOT EXISTS）。
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS store_shop (
   audit_by      BIGINT UNSIGNED DEFAULT NULL        COMMENT '审核人ID（平台管理员，仅记录）',
   audit_time    DATETIME        DEFAULT NULL        COMMENT '审核时间',
   audit_remark  VARCHAR(255)    DEFAULT NULL        COMMENT '审核备注（驳回原因）',
+  score         DECIMAL(2,1)    DEFAULT NULL        COMMENT '店铺评分（推导量：本店全部评价的算术平均，1位小数；NULL=尚无评价）',
   create_user   VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user   VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -72,6 +74,7 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   lock_user      VARCHAR(32)     DEFAULT NULL            COMMENT '锁定人（UserType:UserId，如 admin:1）',
   lock_time      DATETIME        DEFAULT NULL            COMMENT '锁定时间',
   min_price      DECIMAL(10,2)   DEFAULT NULL            COMMENT '在售SKU最低价（推导量，由SKU联动维护）',
+  score          DECIMAL(2,1)    DEFAULT NULL            COMMENT '商品评分（推导量：全部评价的算术平均，1位小数；NULL=尚无评价）',
   create_user    VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user    VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -138,6 +141,26 @@ UPDATE store_goods_spu s
                        WHERE k.spu_id = s.id AND k.is_delete = 0 AND k.shelf_status = 1)
  WHERE s.is_delete = 0;
 
+-- 3.4 幂等加列：为已存在的 store_goods_spu 表补充商品评分列（可重复执行）。
+--     新建库走上面的 CREATE TABLE 即已含该列，本块只对「早于评价功能建表」的存量库生效。
+SET @spu_has_score := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_goods_spu' AND COLUMN_NAME = 'score');
+SET @spu_score_ddl := IF(@spu_has_score = 0,
+  'ALTER TABLE store_goods_spu
+     ADD COLUMN score DECIMAL(2,1) DEFAULT NULL COMMENT ''商品评分（推导量：全部评价的算术平均，1位小数；NULL=尚无评价）'' AFTER min_price',
+  'SELECT 1');
+PREPARE spu_score_stmt FROM @spu_score_ddl; EXECUTE spu_score_stmt; DEALLOCATE PREPARE spu_score_stmt;
+
+-- 3.5 幂等加列：为已存在的 store_shop 表补充店铺评分列（可重复执行）。
+--     同上，只对存量库生效；新建库已含。⚠ 存量库加列后不回填：没有评价就是 NULL（无评价 ≠ 0 分）。
+SET @shop_has_score := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_shop' AND COLUMN_NAME = 'score');
+SET @shop_score_ddl := IF(@shop_has_score = 0,
+  'ALTER TABLE store_shop
+     ADD COLUMN score DECIMAL(2,1) DEFAULT NULL COMMENT ''店铺评分（推导量：本店全部评价的算术平均，1位小数；NULL=尚无评价）'' AFTER audit_remark',
+  'SELECT 1');
+PREPARE shop_score_stmt FROM @shop_score_ddl; EXECUTE shop_score_stmt; DEALLOCATE PREPARE shop_score_stmt;
+
 -- 4. SKU 库存表（与 store_goods_sku 1:1，**独立成表**）
 --   独立成表的理由：库存若加成 store_goods_sku 的一列，改库存的 UPDATE 会锁住该 SKU 行，
 --   而商品编辑 / 上下架 / 平台锁定 / refreshDerived 都在改同一行 —— 补货会与商品运维互相阻塞。
@@ -192,3 +215,38 @@ CREATE TABLE IF NOT EXISTS store_goods_sku_stock_log (
   UNIQUE KEY uk_order_sku_kind (order_no, sku_id, kind),
   KEY idx_sku_id (sku_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SKU 库存变动流水（出库 / 回补）';
+
+-- 6. 商品评价表（评价 + 评分统计的唯一来源）
+--   评价挂在**商品 SPU** 上：`order_no + spu_id` 唯一（一笔订单里的一个商品一条评价）。
+--   同一订单里同一 SPU 下的多个 SKU **合成一条**评价，下单时的 SKU 行组存 `sku_snapshot`（JSON 数组）。
+--   `store_id` 是**冗余列**（可由 spu_id 反查）：店铺评分的聚合与商户端「我店铺的评价」筛选都按它做。
+--   ⚠ 归属反查**不过滤逻辑删除**：商品下架/锁定/软删后，历史订单照常可评价（见 StoreGoodsSpuMapper）。
+--   商家回复**就地一列**（reply_content + reply_time）：一条评价至多一条回复，故不另立回复表，
+--   也没有「改回复 / 删回复」入口；回复不改变评分。
+--   商品评分（store_goods_spu.score）与店铺评分（store_shop.score）两个冗余列由本表的写入触发重算，
+--   **重算而非增量累加**，「无评价 = NULL」而非 0。
+--   ⚠ 「订单已完成」的门禁在 mall-bff，不在本域（域内不依赖 trade 域，cross-cutting 第 24 条）；
+--   本表的防线只有 `uk_order_no_spu` 唯一键。
+--   ⚠ 只增：本期没有删除/修改评价的入口（历史事实不修正）。
+CREATE TABLE IF NOT EXISTS store_goods_evaluation (
+  id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  order_no      VARCHAR(32)     NOT NULL COMMENT '订单号（评价归属的完成态订单）',
+  spu_id        BIGINT UNSIGNED NOT NULL COMMENT '被评价的店铺商品 SPU id',
+  store_id      BIGINT UNSIGNED NOT NULL COMMENT '所属店铺 id（=店主账号 id；由 spu_id 反查落库，冗余列）',
+  customer_id   BIGINT UNSIGNED NOT NULL COMMENT '评价人（= mall_user.id）',
+  score         TINYINT         NOT NULL COMMENT '评分：1~5 星（整星）',
+  content       VARCHAR(500)    DEFAULT NULL COMMENT '评价文字（可空；纯文本）',
+  sku_snapshot  JSON            DEFAULT NULL COMMENT 'SKU 快照（该 SPU 在本单里的全部 SKU 行组：规格/单价/数量）',
+  reply_content VARCHAR(500)    DEFAULT NULL COMMENT '商家回复内容（NULL = 未回复）',
+  reply_time    DATETIME        DEFAULT NULL COMMENT '商家回复时间（NULL = 未回复）',
+  create_user   VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
+  create_time   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（= 评价时间）',
+  update_user   VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
+  update_time   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  is_delete     TINYINT         NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 正常，1 已删除',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_order_no_spu (order_no, spu_id),
+  KEY idx_spu_time (spu_id, create_time),
+  KEY idx_store_time (store_id, create_time),
+  KEY idx_order_no (order_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品评价（含商家回复；商品/店铺评分的唯一来源）';

@@ -2,6 +2,7 @@ package com.panoramic.contract.store.vo;
 
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -66,6 +67,12 @@ public class ShopVO {
      * 营业执照照片 URL
      */
     private String licenseImg;
+
+    /**
+     * 店铺评分（本店全部评价的算术平均，保留 1 位小数）。
+     * <p>⚠ <b>可空 = 尚无评价</b>（不是 0 分），前端渲染成「暂无评分」。C 端商品详情页展示它。</p>
+     */
+    private BigDecimal score;
 
     /**
      * 审核状态：0草稿，1待审核，2已通过，3已驳回

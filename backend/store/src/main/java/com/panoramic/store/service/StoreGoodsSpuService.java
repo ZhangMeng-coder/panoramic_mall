@@ -20,8 +20,10 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.store.entity.StoreGoodsSpu;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 店铺在售商品（SPU）服务（store 域下沉纯域）。
@@ -217,6 +219,39 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @param id 店铺商品 id
      */
     void unlock(Long id);
+
+    // ---- 评价协作（跨实体只走 owner service：评价服务调这三个方法，本域不把 SPU 的 Mapper 递出去）----
+
+    /**
+     * 按商品 id 取<b>所属店铺 id</b>（提交评价时确定归属用）。
+     * <p>⚠ <b>不过滤逻辑删除</b>：商品软删后，历史订单照常可以评价——这条链路上「商品还在不在售」
+     * 与「能不能评价」是两回事。故本方法用显式 SQL 绕过 MP 的逻辑删除注入（普通 {@code getById}
+     * 会因 {@code is_delete = 1} 查不到而误判「商品不存在」）。</p>
+     *
+     * @param spuId 店铺商品 id
+     * @return 所属店铺 id（= 店主账号 id）
+     * @throws com.panoramic.common.exception.ServiceException 该 id 无对应行时（商品不存在）
+     */
+    Long getStoreIdOfSpuOrThrow(Long spuId);
+
+    /**
+     * 商品 id 集合批量查商品名（评价列表回填 {@code spuName} 用，避免 N+1）。
+     *
+     * @param spuIds 店铺商品 id 集合
+     * @return id -> 商品名；<b>查不到的 id 不出现在结果里</b>（商品已软删），调用方得 null 自行兜底展示
+     */
+    Map<Long, String> nameMap(Collection<Long> spuIds);
+
+    /**
+     * 回写商品评分（{@code score} 是<b>推导量</b>：该 SPU 全部评价的算术平均）。
+     * <p>⚠ 本方法是该列在 SPU 侧的唯一写入口（调用方是评价服务，由它重算后传入）；
+     * 商品自身的任何写路径都不得显式设置它。{@code score} 传 null = 清回「暂无评分」，
+     * 故实现必须是 {@code lambdaUpdate().set(...)}（{@code updateById} 跳过 null 列，清不掉）。</p>
+     *
+     * @param spuId 店铺商品 id
+     * @param score 平均分（保留 1 位小数）；null = 无评价
+     */
+    void updateScore(Long spuId, BigDecimal score);
 
     // ---- 交易协作（域间调用，cross-cutting 第 24 条：无作用域锚点、按资源 id 操作、域内不判身份）----
 

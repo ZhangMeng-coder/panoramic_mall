@@ -9,6 +9,7 @@ import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.store.entity.StoreShop;
 
+import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -102,4 +103,17 @@ public interface StoreShopService extends IService<StoreShop> {
      * @return 店铺 id + 名称列表
      */
     List<ShopOptionVO> options();
+
+    // ---- 评价协作（跨实体只走 owner service：评价服务调本方法，不持店铺 Mapper）----
+
+    /**
+     * 回写店铺评分（{@code score} 是<b>推导量</b>：本店全部商品评价的算术平均，每笔等权）。
+     * <p>⚠ 本方法是该列的唯一写入口（调用方是评价服务，由它重算后传入）；店铺自身的任何写路径
+     * （保存草稿 / 提交 / 审核）都不得显式设置它。{@code score} 传 null = 清回「暂无评分」，
+     * 故实现必须是 {@code lambdaUpdate().set(...)}（{@code updateById} 跳过 null 列，清不掉）。</p>
+     *
+     * @param storeId 店铺 id（= 店主账号 id）
+     * @param score   平均分（保留 1 位小数）；null = 无评价
+     */
+    void updateScore(Long storeId, BigDecimal score);
 }

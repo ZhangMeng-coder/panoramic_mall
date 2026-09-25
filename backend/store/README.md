@@ -2,7 +2,7 @@
 
 全景商城**店铺业务域**（Servlet 技术栈，2026-09-07 由原 `store-center` 拆分而来），端口 **8083**。
 
-本域持**店铺资料 `store_shop`（含审核状态机）** 与 **店铺在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock` / `store_goods_sku_stock_log`**，不带店主登录、不带页面编排。
+本域持**店铺资料 `store_shop`（含审核状态机）**、**店铺在售商品 `store_goods_spu` / `store_goods_sku` / `store_goods_sku_stock` / `store_goods_sku_stock_log`** 与**商品评价 `store_goods_evaluation`（含评分统计）**，不带店主登录、不带页面编排。
 
 ## 一、架构位置
 
@@ -28,14 +28,15 @@
 
 | 表 | 归属 | 说明 |
 |---|---|---|
-| `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段） |
-| `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
+| `store_shop` | **store（本域）** | 店铺（主键 = 店主账号 id + 资质字段 + 审核状态/留痕字段 + 评分冗余列 `score`） |
+| `store_goods_spu` | **store（本域）** | 店铺在售商品 SPU（中台关联 `goods_spu_id` + 版本戳快照 `center_version` + `shelf_status` + `min_price` + 评分冗余列 `score` + 平台锁定 `lock_status/lock_reason/lock_user/lock_time`） |
 | `store_goods_sku` | **store（本域）** | 店铺在售商品 SKU（规格组合 + 编码 + 图片 + `price`；**无库存列**） |
 | `store_goods_sku_stock` | **store（本域）** | SKU 库存（`stock` / `warn_stock`；`locked_stock` **已废弃并删列**（2026-09-21 废弃、2026-09-22 删列，不参与口径、不再写入）；与 `store_goods_sku` 1:1、**独立成表**，使库存写锁不落 SKU / SPU 行）；归属链 `sku_id → sku.spu_id → spu.store_id`，不冗余 `store_id` / `spu_id` |
 | `store_goods_sku_stock_log` | **store（本域）** | SKU 库存变动流水（`sku_id` / `order_no` / `kind` = `OUT` 出库 · `REVERT` 回补 / `change_quantity` 恒正 / `occurred_at`）；**只增不改**（不提供 update / delete 入口）；唯一键 `(order_no, sku_id, kind)` 是回补幂等的落库兜底 |
+| `store_goods_evaluation` | **store（本域）** | 商品评价（`order_no + spu_id` 唯一 + 评价人 `customer_id` + `score` 1~5 + 文字 + `sku_snapshot` JSON + 商家回复 `reply_content`/`reply_time`；`store_id` 是冗余列）；**只增**（无修改/删除入口），**也是两处评分冗余列的唯一来源** |
 | `store_user` | store-bff | 店主账号（见 store-bff schema，**不在本域**） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补锁定列的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；含为存量库补列（锁定 / 最低价 / 两处评分）的幂等守卫块）。⚠ 建库只有一个入口：历次结构变更的**最终形状**都已写进该文件，不再保留中间迁移脚本。
 
 实体沿用 common `BaseEntity`（逻辑删除 + 审计字段自动填充，取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。⚠ 例外：`audit_by` 是**审核人留痕列**（平台管理员 id），维持 `BIGINT UNSIGNED` 不变。
 
@@ -47,7 +48,7 @@
 - **store_id 通用数据权限（D5）**：作用域是**入参 DTO 里的一个字段**（§22/§23）——**传了就只作用于「store_id == 传入值」的行，没传就是不限定**（域内不判身份、不按端分流；原 `assertOwner` / `requirePlatformAdmin` 已删）。
   - **同一个能力只有一条路径**：端别差异只在「传不传作用域」，值**只能取自调用方登录态**（`LoginUser.getId()`），域侧只管「传了就筛」。
   - 在售商品（`store_goods_*`）传作用域时以「id + store_id」双条件取行（`StoreGoodsSpuServiceImpl#getOwnedOrThrow`）：他人商品与不存在的商品**同样报「商品不存在」**，不泄露存在性；SKU 不持 `store_id`，先校验其 SPU 归属再操作。
-  - **新增方法按什么决定作用域字段**：看**作用对象表是否带 `store_id` 列** + 该能力**是否存在合法全量视角**——只能限定「本店」的（店铺保存、在售商品写、库存）作用域**必填**（`@NotNull(groups = StoreScopeGroup.class)` + 域入口 `@Validated({Default.class, StoreScopeGroup.class})`，缺了即 HTTP 400）；存在全量视角的（详情、跨店分页、锁定）作用域**可空或没有**，由各调用方自设。
+  - **新增方法按什么决定作用域字段**：看**作用对象表是否带 `store_id` 列** + 该能力**是否存在合法全量视角**——只能限定「本店」的（店铺保存、在售商品写、库存、评价回复）作用域**必填**（`@NotNull(groups = StoreScopeGroup.class)` + 域入口 `@Validated({Default.class, StoreScopeGroup.class})`，缺了即 HTTP 400）；存在全量视角的（详情、跨店分页、锁定、评价三条读）作用域**可空或没有**，由各调用方自设。⚠ 评价提交是**第四类**：锚点是**评价人 `customerId`** 而非店铺（店铺归属域内按 `spuId` 反查），见 §5。
   - `audit_by` 直取 `X-User-Id` 仅留痕（不与平台账号联查，D6）。
 
 ### 2. 店铺审核状态机
@@ -112,14 +113,24 @@
 - **锁定人**：`UserContext` 直取，按审计同格式存 `UserType:UserId`。这是**业务列而非审计列**（D7），故在 service 内显式写入；**店铺端不展示锁定人**，仅管理端展示
 - **权限**：平台侧由 admin BFF 的 `@PreAuthorize store:goods:lock` 把关；**域内不做任何权限判断**
 
-### 5. 边界（本域不做什么）
+### 5. 商品评价与评分（R15–R17）
+
+评价挂在**商品 SPU** 上：**一笔订单里的一个商品一条评价**（唯一键 `(order_no, spu_id)`）。同一订单里同一 SPU 下的多个 SKU **合成一条**——因为顾客对「这件商品」的整体体验打分，不是对每个规格打分；下单时的 SKU 行组存进 `sku_snapshot`（规格 / 单价 / 数量），属**历史事实**，商品改价、SKU 被删都不改写它。
+
+- **R15 写入与唯一性**：`submitEvaluation` 的入参是「订单号 + 商品 + 评价人 + 1~5 星 + 文字 + 快照」；**店铺归属由域内按 `spuId` 反查**（调用方传不了，故不存在「store_id 与 spu_id 不一致」这种输入）。重复提交同单同商品 → **400「该商品已评价」**（先查唯一键，再以撞键翻译兜住并发窗口，不静默改写）；**商品软删/下架/锁定后历史订单照常可评价**（反查刻意绕过逻辑删除）。
+- **R16 评分口径**（`score` 两列的唯一写入口是 `StoreGoodsEvaluationServiceImpl#refreshScores`）：**商品评分** = 该 SPU 全部评价的算术平均；**店铺评分** = 该店全部评价的算术平均（每笔等权，不按商品加权）；均保留 1 位小数，**无评价 = NULL**（不是 0 分，前端渲染「暂无评分」）。写入评价时在**同一事务内**重算两处并回写（**重算而非增量累加**）；两个回写都走 `lambdaUpdate().set(...)`（`updateById` 跳过 null 列，清不回 NULL）。⚠ 它**不在 `refreshDerived` 里**——触发源是评价变动而不是 SKU 变动；店铺自身的三个写路径（保存草稿 / 提交 / 审核）都不得显式设置该列。
+- **R17 商家回复**：**一条评价至多一条回复**（`reply_content` + `reply_time` 就在评价行上，**不另立回复表**，也没有「改回复 / 删回复」入口）；幂等由**条件更新（`reply_content is null`）+ 影响行数**承担，不是先读后写（先读只为把「已回复」与「评价不存在」分成两种话术）。归属校验按「id + storeId」双条件，**他人评价与不存在的评价同样报「评价不存在」**，不泄露存在性。**回复不改评分**（评分只由星级决定）。
+- **不在域内的两条门禁**：① **「只有已完成订单能评」**由 **mall-bff 前置业务校验**（域不持订单，判状态就要新增 `store → trade` 的域间边，违反 cross-cutting 第 24 条）；② 审核状态与「评价人是不是本人」同样由端 BFF 收口。域侧只守自己的不变量（同单同商品唯一 + 星级 1~5）。
+- **读能力跨店通用**：分页（时间倒序，`create_time` + `id` 双键保证全序）与星级分布（**固定 1~5 五行、缺的补 0**，避免前端按「实际出现的星级」画柱而错位）都按 `spuId` / `storeId` 可选筛选；分页出参带 `customerId` 与 `spuName`（**商品已软删时为 null**，兜底文案由端 BFF 定），昵称头像由端 BFF 批量补（域不持顾客资料）。
+
+### 6. 边界（本域不做什么）
 
 - **不做任何鉴权、不做任何权限判断、不校验 token**；唯一授权点是调用方端 BFF 的 `@PreAuthorize`（交易协作那三条的调用方是 **trade-center 这条域间边**，同样不鉴权、无 `@PreAuthorize` 可挂——防线仍是「域端口只在内网可达」）；**不装配认证链**（不打 Redis、不查登录态，`application.yml` 不声明 auth 白名单）
 - **不做审核门禁、不做版本比对、不解析分类路径**——三者都是调用方 BFF 的编排职责
 - **不持店主账号、不持分类表**
 - **跨店通用侧（`/goods/cross-shop/spu/page` 与 `/goods/facets`）无数据权限锚点**：限定条件（含 `shopStatus` / `shelfStatus` / `lockStatus`）**全由调用方自设**，域内不判身份、不做端别分流、**不含任何 C 端隐含约束**（C 端固定三个条件的口径在 mall-bff）；两者走 `POST + @RequestBody`（入参含集合，规避 `@SpringQueryMap` 序列化口径问题）。见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 17–19 条
 
-### 6. 信任与防线
+### 7. 信任与防线
 
 入口只有两道：
 

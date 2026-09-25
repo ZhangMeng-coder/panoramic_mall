@@ -78,7 +78,9 @@ import java.util.stream.Collectors;
  * <p><b>推导量不变量</b>：SPU 的 {@code shelf_status} 与 {@code min_price} 从不直接接受入参，
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
- * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。</p>
+ * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。
+ * ⚠ 第三个推导列是 {@code score}（该 SPU 全部评价的算术平均），它<b>不在</b> {@link #refreshDerived} 里：
+ * 触发源是评价变动（不是 SKU 变动），由评价服务重算后经 {@link #updateScore} 回写。</p>
  * <p><b>域间协作的方法</b>：{@link #platformSkuSnapshotBySkuIds} 供 <b>trade-center</b> 的订单流水线取
  * SKU 快照（cross-cutting 第 24 条）——按资源 id 操作、无作用域锚点，同样不判身份；查不到的 id 跳过不抛。</p>
  * <p><b>域内不做鉴权/审核判断</b>：店铺 {@code status == 2} 的门禁由端 BFF 前置（R9），
@@ -626,6 +628,40 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
                 .set(StoreGoodsSpu::getLockUser, null)
                 .set(StoreGoodsSpu::getLockTime, null));
         // 不动 SKU 与 shelf_status：解锁后保持下架，由店主手动重新上架（D2）
+    }
+
+    // ---- 评价协作（跨实体只走 owner service：评价服务调下面三个方法，本域不把 SPU 的 Mapper 递出去）----
+
+    @Override
+    public Long getStoreIdOfSpuOrThrow(Long spuId) {
+        // ⚠ 必须走自定义 SQL 绕过逻辑删除注入：商品软删后，历史订单照常可以评价，
+        // 用 getById 会因 is_delete = 1 查不到而误判「商品不存在」
+        Long storeId = baseMapper.selectStoreIdIgnoreDelete(spuId);
+        if (storeId == null) {
+            throw new ServiceException("商品不存在");
+        }
+        return storeId;
+    }
+
+    @Override
+    public Map<Long, String> nameMap(Collection<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        // 只读批量回填：listByIds 已过滤逻辑删除，已软删的商品天然不在结果里（调用方得 null 自行兜底展示）
+        return listByIds(spuIds).stream()
+                .collect(Collectors.toMap(StoreGoodsSpu::getId, StoreGoodsSpu::getName, (a, b) -> a));
+    }
+
+    @Override
+    public void updateScore(Long spuId, BigDecimal score) {
+        // 评分类推导量的唯一写入口（调用方是评价服务，由它重算后传入；商品自身的写路径都不得赋值）。
+        // ⚠ 必须显式 set：updateById 跳过 null 列，「无评价 → 清回 NULL」会静默不落库。
+        // 商品已被软删时本语句命中 0 行——无害（评价照常落库，只是没有行可回写）。
+        lambdaUpdate()
+                .set(StoreGoodsSpu::getScore, score)
+                .eq(StoreGoodsSpu::getId, spuId)
+                .update();
     }
 
     // ---- 联动与规则辅助 ----

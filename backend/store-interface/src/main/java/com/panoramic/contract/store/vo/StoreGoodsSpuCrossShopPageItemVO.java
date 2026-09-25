@@ -84,6 +84,12 @@ public class StoreGoodsSpuCrossShopPageItemVO {
     private BigDecimal minPrice;
 
     /**
+     * 商品评分（该 SPU 全部评价的算术平均，保留 1 位小数）。
+     * <p>⚠ <b>可空 = 尚无评价</b>（不是 0 分），前端渲染成「暂无评分」。</p>
+     */
+    private BigDecimal score;
+
+    /**
      * 锁定状态：0 未锁定，1 已锁定
      */
     private Integer lockStatus;
