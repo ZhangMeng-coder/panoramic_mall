@@ -1,6 +1,6 @@
 # 全景商城（Panoramic Mall）
 
-基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理 + 订单管理）**，**商城前台工程**（`frontend/mall`，账号、C 端商品浏览、购物车与订单已接入 mall-bff，首页热门商品列表仍静态）、**商城前台 BFF（mall-bff，C 端顾客账号 + 商品浏览 / 购物车 / 订单编排）**与**交易域（trade-center，购物车 + 订单）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store / customer-center / trade-center）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用——**唯一的域间调用边**是 trade-center 下单流水线经 Feign 调 store 域（见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 24 条）。
+基于微服务架构的电商项目，规划由**前端商城（C 端）**、**后端管理（B 端）**与**微服务后端**三部分组成。当前已完成后端基础设施、**登录与 RBAC 权限体系**、**商品中台**全链路，**商城店铺端（店铺管理 + 在售商品管理 + 订单管理 + 本店评价与回复）**，**商城前台工程**（`frontend/mall`，账号、C 端商品浏览（含评分与评价）、购物车与订单（含评价商品）已接入 mall-bff，首页热门商品列表仍静态）、**商城前台 BFF（mall-bff，C 端顾客账号 + 商品浏览 / 评价 / 购物车 / 订单编排）**与**交易域（trade-center，购物车 + 订单）**。后端已按 **BFF + 下沉域**分层收口：页面只经网关访问端 BFF（admin / store-bff / mall-bff），业务域（goods-center / store / customer-center / trade-center）不开放公网路由，仅由端 BFF 经注册中心内部 Feign 调用——**唯一的域间调用边**是 trade-center 下单流水线经 Feign 调 store 域（见 [docs/contracts/cross-cutting.md](docs/contracts/cross-cutting.md) 第 24 条）。
 
 ## 系统架构
 
@@ -37,16 +37,16 @@
 | ├── [common-auth/](backend/common-auth/) | 鉴权装配层（非服务）：JWT + Redis 登录态 + 安全过滤链；**只被端 BFF 依赖**，业务域拿不到（故不鉴权） | [README](backend/common-auth/README.md) |
 | ├── [gateway/](backend/gateway/) | API 网关（8080）：路由转发、前缀剥离、鉴权透传、端 BFF 白名单 | [README](backend/gateway/README.md) |
 | ├── [goods-center/](backend/goods-center/) | 商品域（8081，下沉纯域）：标准商品中台 | [README](backend/goods-center/README.md) |
-| ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* | [README](backend/store/README.md) |
+| ├── [store/](backend/store/) | 店铺域（8083，下沉纯域）：店铺 store_shop + 审核状态机 + 在售商品 store_goods_* + 商品评价 store_goods_evaluation（商品 / 店铺评分冗余列由域内刷新） | [README](backend/store/README.md) |
 | ├── [customer-center/](backend/customer-center/) | 顾客域（8086，下沉纯域）：顾客资料 customer_profile + 收货地址 customer_address | [README](backend/customer-center/README.md) |
 | ├── [trade-center/](backend/trade-center/) | 交易域（8087，下沉纯域）：购物车 trade_cart_item + 订单 trade_order_*（DDD 三层，按能力通用、不分端） | [README](backend/trade-center/README.md) |
-| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 + 本店订单（分页 / 详情 / 发货） | [README](backend/store-bff/README.md) |
+| ├── [store-bff/](backend/store-bff/) | 店铺端 BFF（8084）：店主账号 store_user + 店铺资料/在售商品编排 + 本店订单（分页 / 详情 / 发货）+ 本店评价（分页 / 星级筛选 / 回复） | [README](backend/store-bff/README.md) |
 | ├── [mall-bff/](backend/mall-bff/) | 商城前台 BFF（8085）：C 端顾客账号 mall_user（手机号 + 模拟短信验证码，签发 type=user）+ C 端商品浏览 / 购物车 / 订单编排（内部 Feign → goods-center 分类树 / store 商品分页与筛选聚合 / customer-center 顾客资料与收货地址 / trade-center 购物车与订单） | [README](backend/mall-bff/README.md) |
 | ├── [admin/](backend/admin/) | 平台管理（8082，端 BFF）：登录 + 用户/角色/权限 + 店铺审核 + 店铺商品管理 + 订单管理（平台只读） | [README](backend/admin/README.md) |
 | [frontend/](frontend/) | 前端（按项目拆分；三端统一 Vue 3 + Vite + TypeScript + axios） | [README](frontend/README.md) |
 | ├── [admin/](frontend/admin/) | 后端管理后台（5173）：分类/品牌/SPU、用户/角色/权限、店铺审核与店铺商品管理、订单管理（只读） | [README](frontend/admin/README.md) |
-| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 + 订单管理（列表 / 详情 / 发货） | [README](frontend/store/README.md) |
-| └── [mall/](frontend/mall/) | 商城前台（5175）：账号 + 商品浏览（搜索 / 分类 / 详情）+ 购物车 + 我的订单（列表 / 详情 / 支付）+ 顾客资料与收货地址，均接 mall-bff；首页热门商品列表仍静态 | [README](frontend/mall/README.md) |
+| ├── [store/](frontend/store/) | 商城店铺端（5174）：店主注册登录 + 店铺信息 + 在售商品管理 + 订单管理（列表 / 详情 / 发货）+ 评价管理（列表 / 星级筛选 / 回复） | [README](frontend/store/README.md) |
+| └── [mall/](frontend/mall/) | 商城前台（5175）：账号 + 商品浏览（搜索 / 分类 / 详情含评分与评价区）+ 购物车 + 我的订单（列表 / 详情 / 支付 / 评价商品）+ 顾客资料与收货地址，均接 mall-bff；首页热门商品列表仍静态 | [README](frontend/mall/README.md) |
 | [docs/contracts/](docs/contracts/) | **对外契约清单**（跨前后端）：页面级 / 内部 Feign / 跨服务隐式三层契约 + 静态漂移检查器 | [README](docs/contracts/README.md) |
 
 ## 技术栈

@@ -44,6 +44,10 @@ docs/superpowers/
 # 与上者同为机器本地 scratch，故同样不入库。
 .scratch/
 
+# 本机部署工具脚本（`frontend/upload.ps1`：三端 dist 打包 scp 到 ECS nginx）。
+# 属机器本地工具、写死本机 ECS host，不入库。
+frontend/upload.ps1
+
 # hookify 本地规则（机器本地配置，按 hookify 约定不入库；同 .claude/settings.local.json）
 .claude/*.local.md
 .claude/*.local.json
