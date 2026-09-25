@@ -15,13 +15,15 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
  * 还需消费 goods-center（com.panoramic.contract.goods，在 goods-center-interface 里）；
  * 商户侧订单（分页 / 详情 / 发货）消费 trade-center（com.panoramic.contract.trade，
  * 在 trade-center-interface 里）。
+ * 本店评价列表还需补评价人的昵称 / 头像，故再消费 customer-center（com.panoramic.contract.customer，
+ * 在 customer-center-interface 里）。
  * 与 admin（平台端）互不调用、互不互通（D2/D6）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.panoramic")
 @MapperScan("com.panoramic.storebff.mapper")
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = {"com.panoramic.contract.store", "com.panoramic.contract.goods",
-        "com.panoramic.contract.trade"})
+        "com.panoramic.contract.trade", "com.panoramic.contract.customer"})
 public class StoreBffApplication {
 
     public static void main(String[] args) {
