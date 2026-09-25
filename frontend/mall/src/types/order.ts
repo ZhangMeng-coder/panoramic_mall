@@ -22,6 +22,16 @@ export interface OrderItem {
   quantity: number
   /** 小计（= 单价 × 数量，**下单当时算好落库的值**，不由页面乘） */
   subtotal: number
+  /**
+   * 本单里**这个商品（SPU）**是否已评价。⚠ 判据是 **SPU 不是 SKU**：评价按商品一条，
+   * 故同单里同一 `spuId` 的多行**同值**（前端按 `spuId` 归组，取任一行的即可）。
+   *
+   * ⚠ **三态**：`true` 已评价 / `false` 未评价 / **`null` = 不知道**——
+   * 「已评价」是后端从 store 域取的**增强读**，取不到就整批不下发（静默降级），
+   * 此时入口**照常可点**、由服务端兜（重复提交会被域侧唯一键拒成 400）。
+   * ⚠ 只在订单**详情**下发（列表不判这个）。
+   */
+  evaluated: boolean | null
 }
 
 /** 收货地址快照（对应后端 `MallOrderVO.Address`）——下单当时的值，此后改 / 删地址都不影响已下的单 */
@@ -79,19 +89,21 @@ export interface OrderVO {
 }
 
 /**
- * 订单状态枚举名里**本端要判行为**的三个（其余状态不需要分支）。
+ * 订单状态枚举名里**本端要判行为**的四个（其余状态不需要分支）。
  *
  * ⚠ 这里判的是**枚举名**而不是 `statusMallLabel`：文案是给人读的措辞（领域可改、端侧还可能再翻），
  * 拿它当分支条件，改一个错别字就会静默改掉按钮；枚举名是契约里稳定的那一个。
  * ⚠ 但**展示**一律用域下发的 `statusMallLabel`，不要用这几个常量去写文案。
  *
- * ⚠ 三者的用处各是一个**动作的闸门**（闸门 = 域侧动作方法里声明的来源状态：取消只有待支付、仅退款只有已支付；页面只是不摆注定失败的按钮）：
- * `PENDING_PAYMENT` → 去支付 / 改地址 / 取消订单、`PAID` → 仅退款、`SHIPPED` → 确认收货。
+ * ⚠ 四者的用处各是一个**动作的闸门**（闸门 = 域侧动作方法里声明的来源状态：取消只有待支付、仅退款只有已支付；页面只是不摆注定失败的按钮）：
+ * `PENDING_PAYMENT` → 去支付 / 改地址 / 取消订单、`PAID` → 仅退款、`SHIPPED` → 确认收货、
+ * `RECEIVED` → 评价商品（**唯一的评价门禁**，见订单详情页文件头 ⑪）。
  * 具体边界见 `backend/trade-center/README.md` 第 7 节（业务规则）与订单详情页的文件头。
  */
 export const ORDER_STATUS_PENDING_PAYMENT = 'PENDING_PAYMENT'
 export const ORDER_STATUS_PAID = 'PAID'
 export const ORDER_STATUS_SHIPPED = 'SHIPPED'
+export const ORDER_STATUS_RECEIVED = 'RECEIVED'
 
 /** 下单商品行（对应 `MallOrderCreateDTO.Item`）；同款多行由域内合并，前端不必先去重 */
 export interface OrderCreateItem {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { GoodsListItem } from '../types/catalog'
+import StarRating from './StarRating.vue'
 import { grad } from '../utils/gradient'
 
 /**
@@ -8,6 +9,9 @@ import { grad } from '../utils/gradient'
  * ⚠ **刻意不复用首页 ⑥ 的 `GoodsCard`**：那张卡是 5 列栅格 + 角标 / 原价 / 销量位的
  * 视觉基准，类名 `.goods__*` 也按 5 列调过；共用类名会让两处互相串样式。
  * 本组件自成一个类名前缀 `cat-card__*`，样式写在 styles/catalog.css。
+ *
+ * ⚠ **评分只摆给有评价的商品**（`score` 为 `null` 时那一行整块不渲染）：
+ * 「没人评过」不是「0 分」，摆一个 0 分或「暂无评分」都比不摆更容易被误读。
  */
 const props = defineProps<{ goods: GoodsListItem }>()
 
@@ -65,6 +69,12 @@ const imgSrc = computed(() => (imgFailed.value ? '' : (props.goods.mainImage ?? 
           }}<span class="cat-card__price-suffix"> 起</span>
         </template>
         <span v-else class="cat-card__price-tbd">价格待定</span>
+      </div>
+
+      <!-- 商品评分：`null` 即无人评价 → 整行不渲染（见文件头）。数字取后端下发的原值 -->
+      <div v-if="goods.score !== null" class="cat-card__score">
+        <StarRating :score="goods.score" />
+        <span class="cat-card__score-num tnum">{{ goods.score }}</span>
       </div>
 
       <div class="cat-card__store">{{ goods.storeName }}</div>

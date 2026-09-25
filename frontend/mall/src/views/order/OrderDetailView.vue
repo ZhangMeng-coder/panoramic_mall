@@ -5,6 +5,8 @@ import TopBar from '../../components/TopBar.vue'
 import SiteFooter from '../../components/SiteFooter.vue'
 import AddressPicker from '../../components/AddressPicker.vue'
 import ModalShell from '../../components/ModalShell.vue'
+import StarRating from '../../components/StarRating.vue'
+import { evaluationApi } from '../../api/evaluation'
 import { orderApi } from '../../api/order'
 import { countdownText, remainingMs, useNowTick } from '../../composables/useCountdown'
 import { showToast } from '../../composables/useToast'
@@ -12,6 +14,7 @@ import type { OrderVO } from '../../types/order'
 import {
   ORDER_STATUS_PAID,
   ORDER_STATUS_PENDING_PAYMENT,
+  ORDER_STATUS_RECEIVED,
   ORDER_STATUS_SHIPPED
 } from '../../types/order'
 import { formatDateTime, trimNum } from '../../utils/format'
@@ -53,6 +56,17 @@ import { grad } from '../../utils/gradient'
  *    ⚠ 它们是**两个动作**，不是同一个：取消是「没付过钱的单不买了」，仅退款是「付过的钱退回去」——
  *    域侧是两个状态、两条迁移边，故这里也是两个按钮（合并就得在本层猜状态，而状态是域的事实）。
  *    ⚠ 倒计时归零后掐掉的是**支付**入口，**不是取消**入口：域侧取消不看超时，仍是「待支付 → 已取消」。
+ * ⑪ **商品评价入口只摆给「已收货」**（`RECEIVED`）——这是**唯一的评价门禁**，判据是**枚举名**（同 ②），
+ *    闸门在**服务端**（它经 trade-center 校验订单属本人且已收货，不满足回 400 中文提示），
+ *    这里判一次只为不摆出注定失败的按钮。
+ *    ⚠ **按商品（SPU）评，不按明细行**：同单里同一 SPU 的多个 SKU 行是**一条**评价
+ *    （`evaluated` 在该 SPU 的所有行上同值），故入口按 `spuId` 归组后给一次。
+ *    ⚠ `evaluated` **三态**（见 `types/order.ts`）：`null` = 后端没取到该标记（store 域不可用的
+ *    **静默降级**）→ **入口照常给**，重复提交由服务端拒（域侧 `(order_no, spu_id)` 唯一键回 400）——
+ *    页面**不猜**，猜错就会藏掉一个本来能用的入口。
+ *    ⚠ 提交面板**行内展开**（同 ④ 的支付面板；本端模态层只装选地址那一个）；提交成功后**重拉详情**，
+ *    已评价态由服务端下发（本页另外记一份「刚提交成功」只用于重拉回来之前那一小段，见 `justEvaluated`）。
+ *    ⚠ 评价内容**最长 500 字**（与后端约束镜像，超了在这里就被拦下，不必等一个 400）。
  */
 
 const route = useRoute()
@@ -297,6 +311,108 @@ async function submitAddress(addressId: number): Promise<void> {
   }
 }
 
+/* ---- 商品评价（见文件头 ⑪）---- */
+
+/** 评价内容上限（与后端 `MallEvaluationSubmitDTO` 的 `@Size(max = 500)` 镜像；`maxlength` 也用它） */
+const EVAL_CONTENT_MAX = 500
+
+/** 已收货 = 评价入口的唯一闸门（判的是**枚举名**，不是文案，见文件头 ②） */
+const isReceived = computed(() => order.value?.status === ORDER_STATUS_RECEIVED)
+
+/** 评价目标行（页面形状，不外移）：**按 SPU 归组**，一个商品一行 */
+interface EvalTarget {
+  spuId: number
+  /** 商品名（下单当时的快照）——同 SPU 多行的名字相同，取第一行的即可 */
+  goodsName: string
+  /** 服务端下发的已评价态；**`null` = 不知道**（静默降级，见 `types/order.ts`） */
+  evaluated: boolean | null
+}
+
+/**
+ * 评价目标：按 `spuId` 归组后的商品列表（同 SPU 的多个 SKU 行合成一条 —— 评价是按商品一条）。
+ * ⚠ 取**第一行**的 `evaluated`：同 SPU 各行该值由后端保证同值，逐行判会得到同一个答案。
+ */
+const evalTargets = computed<EvalTarget[]>(() => {
+  const seen = new Set<number>()
+  const rows: EvalTarget[] = []
+  for (const line of order.value?.items ?? []) {
+    if (seen.has(line.spuId)) continue
+    seen.add(line.spuId)
+    rows.push({ spuId: line.spuId, goodsName: line.goodsName, evaluated: line.evaluated })
+  }
+  return rows
+})
+
+/** 提交面板当前评的是哪个商品（`null` = 面板收起）；评分默认 5 星 */
+const evalOpenSpuId = ref<number | null>(null)
+const evalScore = ref(5)
+const evalContent = ref('')
+const evalSubmitting = ref(false)
+
+/**
+ * 本页**刚提交成功**的商品（只用于「重拉回来之前」那一小段：提交成功后重拉要走一个往返，
+ * 期间若后端把 `evaluated` 静默降级成 `null`，入口就会又冒出来）。
+ * ⚠ 它**不是权威态**，只是本页刚刚亲历的事实；服务端下发的 `evaluated === true` 优先。
+ */
+const justEvaluated = ref<number[]>([])
+
+/** 面板标题用的那一行（点了「评价」之后按 spuId 找回来） */
+const evalOpenTarget = computed(
+  () => evalTargets.value.find((t) => t.spuId === evalOpenSpuId.value) ?? null
+)
+
+/** 是否已评价：服务端说「是」或本页刚提交过（`false` / `null` 都按「还没评」处理，见文件头 ⑪） */
+function isEvaluated(target: EvalTarget): boolean {
+  return target.evaluated === true || justEvaluated.value.includes(target.spuId)
+}
+
+/** 开评价面板（换一个商品就是换一个 spuId，评分与文字一并重置，免得带上一条的内容） */
+function openEval(spuId: number): void {
+  if (evalSubmitting.value) return
+  evalOpenSpuId.value = spuId
+  evalScore.value = 5
+  evalContent.value = ''
+}
+
+/** 关面板（提交在途不关，与支付面板同一口径） */
+function closeEval(): void {
+  if (evalSubmitting.value) return
+  evalOpenSpuId.value = null
+}
+
+/**
+ * 提交评价。成功后**重拉详情**（已评价标记由服务端下发，见文件头 ⑪）。
+ *
+ * ⚠ 失败**不关面板**：订单未完成 / 该商品已评价的中文 msg 由拦截器弹出，
+ * 顾客可以改一改重试；关掉它只会让人再点一次入口。
+ */
+async function submitEval(): Promise<void> {
+  const spuId = evalOpenSpuId.value
+  const o = order.value
+  if (spuId === null || !o || evalSubmitting.value) return
+
+  evalSubmitting.value = true
+  try {
+    await evaluationApi.submit({
+      orderNo: o.orderNo,
+      spuId,
+      score: evalScore.value,
+      // 空内容不下发空串：不写字就是没有（后端也只做长度校验，不做非空要求）
+      content: evalContent.value.trim() || undefined
+    })
+    if (!justEvaluated.value.includes(spuId)) {
+      justEvaluated.value = [...justEvaluated.value, spuId]
+    }
+    showToast('评价已提交', 'success')
+    evalOpenSpuId.value = null
+    await load(o.orderNo)
+  } catch {
+    // 拦截器已弹后端 msg
+  } finally {
+    evalSubmitting.value = false
+  }
+}
+
 /* ---- 展示辅助 ---- */
 
 /** 规格文案，如「颜色：曜石黑 / 容量：256G」；无规格时是空对象 → 空串，模板不渲染这一行 */
@@ -355,6 +471,10 @@ watch(
     confirmingReceive.value = false
     addressOpen.value = false
     confirming.value = null
+    // 评价面板与「刚提交成功」的本地记录都是**这一笔单**的态，换单必须清（见文件头 ⑪）
+    evalOpenSpuId.value = null
+    evalContent.value = ''
+    justEvaluated.value = []
     // ⚠ 必须清：不然换到另一笔也过期的单时，`expired` 的 watch 会被上一次的「已拉过」挡住
     expiredReloaded.value = false
     failedImgs.value = []
@@ -596,6 +716,81 @@ watch(
             </button>
           </template>
         </div>
+
+        <!-- 商品评价：**只摆给「已收货」**（见文件头 ⑪）。一个商品一行——评价按 SPU 一条，
+             同单里同一 SPU 的多个 SKU 行合成一条，故这里的行数可能少于上面商品行数 -->
+        <div v-if="isReceived && evalTargets.length" class="order-detail__panel">
+          <h2 class="order-detail__block-title">商品评价</h2>
+
+          <ul class="order-eval">
+            <li v-for="t in evalTargets" :key="t.spuId" class="order-eval__row">
+              <span class="order-eval__name clamp-2">{{ t.goodsName }}</span>
+              <!-- 已评价：`evaluated === true` 或本页刚提交过（见 isEvaluated） -->
+              <span v-if="isEvaluated(t)" class="order-eval__done">已评价</span>
+              <!-- `evaluated` 为 null（后端没取到该标记）时**照常给入口**，重复提交由服务端拒 -->
+              <button
+                v-else
+                class="order-eval__open"
+                type="button"
+                @click="openEval(t.spuId)"
+              >
+                评价
+              </button>
+            </li>
+          </ul>
+
+          <p class="order-eval__hint">同一商品只能评价一次，提交后不可修改</p>
+        </div>
+
+        <!-- 评价提交面板：行内展开（见文件头 ⑪ / ④）。
+             ⚠ 评的是**商品**，规格 / 单价 / 数量由服务端从本单明细归组，页面不传 -->
+        <section v-if="evalOpenTarget" class="order-eval-panel">
+          <h2 class="order-eval-panel__title">评价商品</h2>
+          <p class="order-eval-panel__goods">{{ evalOpenTarget.goodsName }}</p>
+
+          <div class="order-eval-panel__score">
+            <span class="order-eval-panel__score-label">评分</span>
+            <StarRating
+              :score="evalScore"
+              interactive
+              :disabled="evalSubmitting"
+              @pick="evalScore = $event"
+            />
+            <span class="order-eval-panel__score-num tnum">{{ evalScore }} 星</span>
+          </div>
+
+          <form class="order-eval-panel__form" autocomplete="off" @submit.prevent="submitEval">
+            <div class="field">
+              <label class="field__label" for="evalContent">评价内容（选填）</label>
+              <div class="field__box order-eval-panel__box">
+                <textarea
+                  id="evalContent"
+                  v-model="evalContent"
+                  class="field__input order-eval-panel__text"
+                  rows="4"
+                  :maxlength="EVAL_CONTENT_MAX"
+                  :disabled="evalSubmitting"
+                  placeholder="说说这件商品怎么样"
+                ></textarea>
+              </div>
+              <p class="field__hint">最多 {{ EVAL_CONTENT_MAX }} 字</p>
+            </div>
+
+            <div class="order-eval-panel__ops">
+              <button class="order-eval-panel__submit" type="submit" :disabled="evalSubmitting">
+                {{ evalSubmitting ? '提交中…' : '提交评价' }}
+              </button>
+              <button
+                class="order-eval-panel__cancel"
+                type="button"
+                :disabled="evalSubmitting"
+                @click="closeEval"
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        </section>
 
         <!-- 支付面板：行内展开（见文件头 ④）。金额必须与订单总额一致，比对在域内 -->
         <section v-if="payOpen" class="order-pay">

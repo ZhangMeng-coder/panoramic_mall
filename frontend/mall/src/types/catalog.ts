@@ -30,6 +30,11 @@ export interface GoodsListItem {
   categoryName: string | null
   brandId: number | null
   brandName: string | null
+  /**
+   * 商品评分（**平均值**，1 ~ 5，两位小数）。⚠ **可空**：`null` = **还没有人评价** ——
+   * 不渲染评分（不显示 0、不显示占位）：「没人评过」与「评了 0 分」不是一回事。
+   */
+  score: number | null
 }
 
 /** 筛选维度的可选项 */
@@ -116,4 +121,15 @@ export interface GoodsDetail {
   brandName: string | null
   /** 上架 SKU。契约保证非空（SPU 上架 ⟺ 至少一个 SKU 上架），价格区间由它算出（后端不另下发 min/max） */
   skus: GoodsDetailSku[]
+  /**
+   * **商品**评分（平均值，1 ~ 5）。⚠ **可空**：`null` = 无人评价 → 不渲染评分
+   * （与列表卡的 `score` 同一个值、同一个口径）。
+   */
+  score: number | null
+  /**
+   * **店铺**评分（平均值，1 ~ 5）——详情页同时展示商品评分与店铺评分，故这里要多一个。
+   * ⚠ **可空**，语义同上。⚠ 后端**没有**为它新增一次跨域调用（取自判可见性时那次 `getShop` 的返回），
+   * 故它与商品评分可能来自**两次不同时刻**的读数——页面原样展示即可，不在这里比对。
+   */
+  shopScore: number | null
 }

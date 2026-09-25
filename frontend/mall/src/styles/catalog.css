@@ -817,3 +817,311 @@
   color: var(--n500);
   font-size: var(--t-sm);
 }
+
+/* ============================================================================
+   星级 / 评分 / 评价区
+   ----------------------------------------------------------------------------
+   ⚠ `.stars*` 是**跨页复用**的组件样式（`components/StarRating.vue` 用在商品列表卡、
+   商品详情评分带与评价区、订单详情的评价面板三处），落在本文件与 `.pager*` 同一先例：
+   跨页组件的样式跟**主要使用页**的样式文件走，不另开一个文件（同 AddressPicker → order.css）。
+   ========================================================================== */
+
+/* ---- 星级：五颗字面星，亮起的用辅色（券 / 角标同一个强调色）---- */
+.stars {
+  display: inline-flex;
+  gap: 1px;
+  line-height: 1;
+  letter-spacing: 1px;
+  vertical-align: middle; /* 它总是与同行的名字 / 数字并排，不独占一行 */
+}
+
+.stars__item {
+  color: var(--n300); /* 未点亮：暖灰。⚠ 不是「禁用灰」——只读态下它没有禁用语义 */
+  font-size: var(--t-sm);
+  font-style: normal;
+}
+
+.stars__item.is-on {
+  color: var(--brand-accent);
+}
+
+/* 可点选择（订单详情的评价面板）：星星加大、给足点击区 */
+.stars--pick {
+  gap: var(--s-1);
+}
+
+.stars--pick .stars__item {
+  padding: 0 var(--s-1);
+  font-size: var(--t-xl);
+  transition:
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+
+.stars--pick .stars__item:hover:not(:disabled) {
+  transform: scale(1.12);
+}
+
+.stars--pick .stars__item:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---- 列表卡上的评分行（星 + 数字；`score` 为空时整行不渲染）---- */
+.cat-card__score {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  margin-top: var(--s-1);
+}
+
+.cat-card__score-num {
+  color: var(--brand-accent);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+}
+
+/* ---- 详情页评分带：商品评分 + 店铺评分（名称下方一条）---- */
+.detail__scores {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-top: var(--s-2);
+  font-size: var(--t-sm);
+}
+
+.detail__score {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.detail__score-num {
+  color: var(--brand-accent);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.detail__score-count {
+  color: var(--n500);
+}
+
+/* 店铺评分：一条竖线与商品评分隔开——两个不同的读数，别让眼睛读成一个 */
+.detail__shop-score {
+  padding-left: var(--s-4);
+  color: var(--n600);
+  border-left: 1px solid var(--n200);
+}
+
+.detail__shop-score b {
+  color: var(--n900);
+  font-weight: var(--w-semibold);
+}
+
+/* ---- 评价区（分布 + 列表 + 分页）：与商品详情正文同一种卡片 ---- */
+.eval {
+  margin-top: var(--s-6);
+  padding: var(--s-6);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-xl);
+}
+
+.eval__title {
+  padding-left: var(--s-3);
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  line-height: 1.2;
+  border-left: 3px solid var(--brand);
+}
+
+/* 分布：左边大字平均分、右边五条柱（**5 星在上**，由页面重排；域侧给的是 1 → 5 升序） */
+.eval__summary {
+  display: flex;
+  gap: var(--s-8);
+  align-items: center;
+  margin-top: var(--s-4);
+  padding: var(--s-4) var(--s-5);
+  background: var(--n50);
+  border-radius: var(--r-lg);
+}
+
+.eval__avg {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  min-width: 120px;
+}
+
+.eval__avg-num {
+  color: var(--brand);
+  font-size: var(--t-2xl);
+  font-weight: var(--w-bold);
+  line-height: 1.1;
+}
+
+.eval__avg-label {
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+.eval__avg-total {
+  margin-top: var(--s-1);
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+.eval__dist {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.eval__dist-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: var(--t-sm);
+}
+
+.eval__dist-star {
+  flex: none;
+  width: 44px;
+  color: var(--n600);
+}
+
+.eval__dist-bar {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  background: var(--n200);
+  border-radius: var(--r-pill);
+}
+
+.eval__dist-fill {
+  display: block;
+  height: 100%;
+  background: var(--brand-accent);
+  border-radius: var(--r-pill);
+}
+
+.eval__dist-count {
+  flex: none;
+  width: 48px;
+  color: var(--n600);
+  text-align: right;
+}
+
+/* 加载中 / 错误 / 空：一处文案一块，不留半截骨架（同列表页的 .catalog__state） */
+.eval__state {
+  margin-top: var(--s-5);
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+.eval__retry {
+  margin-left: var(--s-2);
+  color: var(--brand);
+  font-size: var(--t-sm);
+}
+
+.eval__retry:hover {
+  text-decoration: underline;
+}
+
+.eval__list {
+  margin-top: var(--s-3);
+}
+
+/* 条目之间用**最浅**的一档线：一页十条，线重了整块会变吵 */
+.eval__list > .eval-item + .eval-item {
+  border-top: 1px solid var(--n100);
+}
+
+.eval-item {
+  padding: var(--s-4) 0;
+}
+
+.eval-item__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.eval-item__avatar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.eval-item__avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.eval-item__avatar-ph {
+  color: var(--n700); /* 占位底是亮渐变（同图位占位），深字压得住 */
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+
+.eval-item__name {
+  color: var(--n700);
+  font-size: var(--t-sm);
+}
+
+.eval-item__time {
+  margin-left: auto; /* 时间推到行尾：它是这一行的次要信息 */
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+/* 评价文字：**纯文本插值**渲染（不许 v-html，见 GoodsDetailView 文件头 ④） */
+.eval-item__text {
+  margin-top: var(--s-2);
+  color: var(--n800);
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.eval-item__snapshot {
+  margin-top: var(--s-1);
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+/* 商家回复：柔色底块——它是商家说的话，与顾客写的正文分开摆 */
+.eval-item__reply {
+  margin-top: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  background: var(--brand-soft);
+  border-radius: var(--r-md);
+}
+
+.eval-item__reply-head {
+  color: var(--brand);
+  font-size: var(--t-xs);
+  font-weight: var(--w-medium);
+}
+
+.eval-item__reply-head span {
+  margin-left: var(--s-2);
+  color: var(--n500);
+  font-weight: var(--w-regular);
+}
+
+.eval-item__reply-text {
+  margin-top: var(--s-1);
+  color: var(--n700);
+  line-height: 1.7;
+  word-break: break-word;
+}

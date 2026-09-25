@@ -1029,3 +1029,176 @@
   color: var(--n400);
   cursor: not-allowed;
 }
+
+/* ============================================================================
+   商品评价（订单详情页专用）
+   ----------------------------------------------------------------------------
+   ⚠ 它与上面那块 `.order-line`（商品明细）**不是一回事**：明细按 **SKU 行**摊开，
+   而评价按 **SPU** 一条（同单里同一 SPU 的多个 SKU 行只评一次），故这里自成一块列表，
+   **不塞进明细行里**——塞进去在同 SPU 多行时会给出两个入口，两个入口点开的是同一条评价。
+   ========================================================================== */
+
+.order-eval {
+  margin-top: var(--s-3);
+}
+
+.order-eval__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+}
+
+.order-eval__row + .order-eval__row {
+  border-top: 1px solid var(--n100);
+}
+
+.order-eval__name {
+  flex: 1;
+  color: var(--n800);
+  font-size: var(--t-base);
+}
+
+/* 已评价：灰字、不做成按钮——它没有可点的动作（回复只在商户端） */
+.order-eval__done {
+  flex: none;
+  color: var(--n500);
+  font-size: var(--t-sm);
+}
+
+/* 评价入口：柔色底的次级动作（照 .addr-pick__retry），别用主按钮抢「支付 / 收货」的位置 */
+.order-eval__open {
+  flex: none;
+  height: 32px;
+  padding: 0 var(--s-5);
+  border-radius: var(--r-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: var(--t-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.order-eval__open:hover {
+  background: var(--brand-soft-2);
+}
+
+.order-eval__hint {
+  margin-top: var(--s-2);
+  color: var(--n500);
+  font-size: var(--t-xs);
+}
+
+/* ---- 评价提交面板：行内展开（盒子形状同 .order-pay）---- */
+.order-eval-panel {
+  margin-top: var(--s-5);
+  padding: var(--s-5);
+  background: var(--n0);
+  border: 1px solid var(--n200);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-sm);
+}
+
+.order-eval-panel__title {
+  color: var(--n900);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+}
+
+.order-eval-panel__goods {
+  margin-top: var(--s-2);
+  color: var(--n600);
+  font-size: var(--t-sm);
+}
+
+/* 评分行：文字标签 + 五颗可点的星 + 当前取值（取值给数字，免得读屏用户只能靠星数猜） */
+.order-eval-panel__score {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+}
+
+.order-eval-panel__score-label {
+  color: var(--n700);
+  font-size: var(--t-sm);
+}
+
+.order-eval-panel__score-num {
+  color: var(--brand-accent);
+  font-size: var(--t-sm);
+  font-weight: var(--w-medium);
+}
+
+.order-eval-panel__form {
+  max-width: 560px;
+  margin-top: var(--s-4);
+}
+
+/* 多行输入的盒子：`.field__box` 是**单行**的固定 46px 高 + 垂直居中，
+   多行要放开高度并改成顶对齐（否则四行文本会溢出边框） */
+.order-eval-panel__box {
+  height: auto;
+  align-items: flex-start;
+  padding: var(--s-3) var(--s-4);
+}
+
+/* 多行输入：`.field__input` 是单行输入的形状（`height: 100%` + 无内边距），这里放开 */
+.order-eval-panel__text {
+  height: auto;
+  min-height: 96px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+/* 两个按钮一行：提交吃掉剩余宽度、取消是行内轻按钮（同 .order-pay__ops） */
+.order-eval-panel__ops {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.order-eval-panel__submit {
+  flex: 1;
+  height: 44px;
+  border-radius: var(--r-pill);
+  background: var(--brand-grad);
+  color: var(--n0);
+  font-size: var(--t-md);
+  font-weight: var(--w-semibold);
+  letter-spacing: 2px;
+  transition: background var(--dur) var(--ease);
+}
+
+.order-eval-panel__submit:hover:not(:disabled) {
+  background: var(--brand-grad-hover);
+}
+
+.order-eval-panel__submit:active:not(:disabled) {
+  background: var(--brand-grad-active);
+}
+
+.order-eval-panel__submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.order-eval-panel__cancel {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--n600);
+  font-size: var(--t-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.order-eval-panel__cancel:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+.order-eval-panel__cancel:disabled {
+  color: var(--n400);
+  cursor: not-allowed;
+}
