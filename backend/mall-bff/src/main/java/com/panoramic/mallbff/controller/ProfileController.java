@@ -35,7 +35,9 @@ public class ProfileController {
      */
     @PutMapping
     public RespData<Void> save(@Valid @RequestBody ProfileSaveDTO dto) {
-        customerProfileBffService.saveProfile(UserContext.getUserId(), toSaveDTO(dto));
+        // ⚠ 账号即手机号：手机号就是登录态快照的 username（本端不另查库，同 AuthService#toCurrentUser）
+        String phone = UserContext.getLoginUser() == null ? null : UserContext.getLoginUser().getUsername();
+        customerProfileBffService.saveProfile(UserContext.getUserId(), toSaveDTO(dto, phone));
         return RespData.success();
     }
 
@@ -43,10 +45,17 @@ public class ProfileController {
      * 页面 DTO → 域 DTO：<b>四个字段逐个全量映射</b>，不做任何 null 过滤。
      * <p>⚠ 一个都不能漏、也不许写成「非 null 才 set」：域侧写的是整份覆盖，
      * 漏映射一个字段等于静默把它清空（见 docs/contracts/mall-bff.md 的「资料写口径」）。</p>
+     * <p>⚠ <b>昵称是唯一的例外</b>：留空时用默认昵称规则「用户」+ 手机号后 4 位补齐
+     * （{@link CustomerProfileBffService#withDefaultNickname}，规则本体的唯一实现处）——
+     * 放它写成 NULL，顾客「清空昵称」就又造出一个无昵称用户，评价区只能显示占位名。</p>
+     *
+     * @param dto   页面资料
+     * @param phone 手机号（= 登录账号，取自登录态快照；仅默认昵称规则用）
+     * @return 域资料写参
      */
-    private CustomerProfileSaveDTO toSaveDTO(ProfileSaveDTO dto) {
+    private CustomerProfileSaveDTO toSaveDTO(ProfileSaveDTO dto, String phone) {
         CustomerProfileSaveDTO target = new CustomerProfileSaveDTO();
-        target.setNickname(dto.getNickname());
+        target.setNickname(CustomerProfileBffService.withDefaultNickname(dto.getNickname(), phone));
         target.setAvatar(dto.getAvatar());
         target.setGender(dto.getGender());
         target.setBirthday(dto.getBirthday());

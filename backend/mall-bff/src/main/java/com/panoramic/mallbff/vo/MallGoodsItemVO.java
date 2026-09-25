@@ -64,4 +64,12 @@ public class MallGoodsItemVO {
      * 品牌名称快照
      */
     private String brandName;
+
+    /**
+     * 商品评分（该商品全部评价的算术平均，保留 1 位小数）
+     * <p>⚠ <b>可为 {@code null}</b>：{@code null} = <b>尚无评价</b>（不是 0 分）——前端遇到
+     * {@code null} <b>不渲染评分</b>，不要显示 0、也不要占位。评分口径本体在
+     * [store.md](/docs/contracts/store.md)（域侧计算并落在 {@code store_goods_spu.score}）。
+     */
+    private BigDecimal score;
 }

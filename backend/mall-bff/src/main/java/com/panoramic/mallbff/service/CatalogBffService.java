@@ -27,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -178,11 +179,16 @@ public class CatalogBffService {
      * @return C 端详情（见 {@link MallGoodsDetailVO}）
      */
     public MallGoodsDetailVO detail(Long id) {
-        StoreGoodsSpuPlatformDetailVO raw = visibleDetailOrNull(id);
+        // ⚠ 店铺备忘录在这里持有，唯一目的是**顺手**把店铺评分带出来（见下行）：
+        //    可见性判定本来就要调一次 getShop(storeId)，再为评分调第二次就是白花一次跨域往返。
+        Map<Long, ShopVO> shopMemo = new HashMap<>();
+        StoreGoodsSpuPlatformDetailVO raw = visibleDetailOrNull(id, shopMemo);
         if (raw == null) {
             throw notVisible();
         }
-        return toMallDetail(raw);
+        ShopVO shop = raw.getStoreId() == null ? null : shopMemo.get(raw.getStoreId());
+        // 店铺刚被判过「已审核通过」，故这里的 shop 必然非空；仍按「取不到 ⇒ 不下发评分」兜底（可空即不渲染）
+        return toMallDetail(raw, shop == null ? null : shop.getScore());
     }
 
     /**
@@ -200,11 +206,23 @@ public class CatalogBffService {
      * @return 可见的域详情；不可见 / 不存在为 null
      */
     public StoreGoodsSpuPlatformDetailVO visibleDetailOrNull(Long id) {
+        return visibleDetailOrNull(id, new HashMap<>());
+    }
+
+    /**
+     * 同 {@link #visibleDetailOrNull(Long)}，但把判定途中查到的<b>店铺</b>记进调用方的备忘录：
+     * {@link #detail} 靠它顺手取店铺评分，从而<b>不为评分多调一次</b> {@code getShop}。
+     *
+     * @param id       店铺商品 id（可空）
+     * @param shopMemo 店铺备忘录（店铺详情，值可为 null = 查不到）
+     * @return 可见的域详情；不可见 / 不存在为 null
+     */
+    private StoreGoodsSpuPlatformDetailVO visibleDetailOrNull(Long id, Map<Long, ShopVO> shopMemo) {
         if (id == null) {
             return null;
         }
         StoreGoodsSpuPlatformDetailVO raw = crossShopDetailOrNull(id);
-        return raw != null && isVisible(raw, new HashMap<>()) ? raw : null;
+        return raw != null && isVisible(raw, shopMemo) ? raw : null;
     }
 
     /**
@@ -225,10 +243,10 @@ public class CatalogBffService {
         if (details == null || details.isEmpty()) {
             return Collections.emptySet();
         }
-        Map<Long, Integer> shopStatusMemo = new HashMap<>();
+        Map<Long, ShopVO> shopMemo = new HashMap<>();
         Set<Long> visible = new LinkedHashSet<>();
         for (StoreGoodsSpuPlatformDetailVO detail : details) {
-            if (detail != null && detail.getId() != null && isVisible(detail, shopStatusMemo)) {
+            if (detail != null && detail.getId() != null && isVisible(detail, shopMemo)) {
                 visible.add(detail.getId());
             }
         }
@@ -264,13 +282,13 @@ public class CatalogBffService {
      * 商品自身就不合格的没必要再多问一次店铺。</p>
      *
      * @param raw            域详情（非空）
-     * @param shopStatusMemo 店铺状态备忘录（调用方持有，同一批判定里复用；单条判定传空表即可）
+     * @param shopMemo 店铺备忘录（调用方持有，同一批判定里复用；单条判定传空表即可）
      * @return 可见为 true
      */
-    private boolean isVisible(StoreGoodsSpuPlatformDetailVO raw, Map<Long, Integer> shopStatusMemo) {
+    private boolean isVisible(StoreGoodsSpuPlatformDetailVO raw, Map<Long, ShopVO> shopMemo) {
         return SHELF_ON.equals(raw.getShelfStatus())
                 && LOCK_OFF.equals(raw.getLockStatus())
-                && shopApproved(raw.getStoreId(), shopStatusMemo);
+                && shopApproved(raw.getStoreId(), shopMemo);
     }
 
     /**
@@ -302,22 +320,33 @@ public class CatalogBffService {
      * {@code null}（= 店铺不存在 → 不可见），<b>不再靠捕 4xx</b>：商品挂在一个查不到的店上，
      * 对顾客而言与已下架无异；下游故障仍走 {@link BffFeignCall} 降级并原样抛出（<b>不记进备忘录</b>，
      * 免得一次故障被当成永久结论）。</p>
+     * <p>⚠ 备忘录存的是整份 {@link ShopVO}（不是只存状态）：详情出口要靠它<b>顺手</b>带出店铺评分，
+     * 见 {@link #detail}——存状态就得再调一次 {@code getShop} 才拿得到分。</p>
      *
      * @param storeId 店铺 id（可空）
-     * @param memo    店铺状态备忘录（调用方持有；查到即写回，null 值表示「查不到 = 未过审」）
+     * @param memo    店铺备忘录（调用方持有；查到即写回，null 值表示「查不到 = 未过审」）
      * @return 已审核通过为 true
      */
-    private boolean shopApproved(Long storeId, Map<Long, Integer> memo) {
+    private boolean shopApproved(Long storeId, Map<Long, ShopVO> memo) {
         if (storeId == null) {
             return false;
         }
         if (memo.containsKey(storeId)) {
-            return SHOP_STATUS_APPROVED.equals(memo.get(storeId));
+            return isApproved(memo.get(storeId));
         }
         ShopVO shop = BffFeignCall.call("store", DOWN_MSG, () -> storeClient.getShop(storeId));
-        Integer status = shop == null ? null : shop.getStatus();
-        memo.put(storeId, status);
-        return SHOP_STATUS_APPROVED.equals(status);
+        memo.put(storeId, shop);
+        return isApproved(shop);
+    }
+
+    /**
+     * 店铺是否已审核通过（{@code null} = 查不到 → 未过审）
+     *
+     * @param shop 店铺详情（可空）
+     * @return 已审核通过为 true
+     */
+    private boolean isApproved(ShopVO shop) {
+        return shop != null && SHOP_STATUS_APPROVED.equals(shop.getStatus());
     }
 
     /** C 端「不可见」统一出口：不存在 / 已下架 / 被平台锁定 / 店铺未过审 一律同一个 404，不区分原因 */
@@ -590,6 +619,8 @@ public class CatalogBffService {
         vo.setCategoryName(src.getCategoryName());
         vo.setBrandId(src.getBrandId());
         vo.setBrandName(src.getBrandName());
+        // 商品评分：域侧冗余列，null = 尚无评价（前端不渲染，不显示 0）
+        vo.setScore(src.getScore());
         return vo;
     }
 
@@ -606,10 +637,15 @@ public class CatalogBffService {
      * 洗一遍再下发 —— 用的是 common 的 {@link HtmlSanitizer}，与 admin 端同一个出口口径、同一份
      * 白名单（见 [cross-cutting.md 第 21 条](/docs/contracts/cross-cutting.md)）。</p>
      *
-     * @param src 域详情（已判定为对本端可见）
+     * <p>⚠ 两个评分字段来源不同：{@code score} 取域详情的商品评分冗余列；{@code shopScore} <b>不在域详情里</b>
+     * ——它由调用方从「判可见性时查到的那份店铺」里取出来传进来（见 {@link #detail}），
+     * 免得为评分多调一次 {@code getShop}。</p>
+     *
+     * @param src       域详情（已判定为对本端可见）
+     * @param shopScore 店铺评分（可空 = 本店尚无评价）
      * @return C 端详情
      */
-    private MallGoodsDetailVO toMallDetail(StoreGoodsSpuPlatformDetailVO src) {
+    private MallGoodsDetailVO toMallDetail(StoreGoodsSpuPlatformDetailVO src, BigDecimal shopScore) {
         MallGoodsDetailVO vo = new MallGoodsDetailVO();
         vo.setId(src.getId());
         vo.setName(src.getName());
@@ -624,6 +660,9 @@ public class CatalogBffService {
         vo.setCategoryName(src.getCategoryName());
         vo.setBrandId(src.getBrandId());
         vo.setBrandName(src.getBrandName());
+        // 两处评分都可空：null = 尚无评价（前端整块不渲染，不显示 0、不占位）
+        vo.setScore(src.getScore());
+        vo.setShopScore(shopScore);
         vo.setSkus(toMallSkus(src.getSkus()));
         return vo;
     }

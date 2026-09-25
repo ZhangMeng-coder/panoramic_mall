@@ -2,11 +2,20 @@ package com.panoramic.mallbff.service;
 
 import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.contract.customer.api.CustomerCenterClient;
+import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * C 端顾客资料编排（customer-center 域在本端的唯一落点）。
@@ -29,6 +38,11 @@ import org.springframework.stereotype.Service;
  * 故本层<b>原样透传</b> {@link CustomerProfileSaveDTO}、<b>不做任何 null 过滤</b> ——
  * 两边语义必须同向，否则读代码的人会把「覆盖」判成「合并」（详见该 DTO 的类注释与
  * docs/contracts/mall-bff.md 的「资料写口径」）。</p>
+ *
+ * <p>三件事收在这里：<b>读</b>（{@link #loadProfile} 单条 / {@link #loadProfiles} 批量）、
+ * <b>写</b>（{@link #saveProfile}）、以及<b>默认昵称规则本体</b>
+ * （{@link #withDefaultNickname}，「用户」+ 手机号后 4 位——只在写入侧一处实现，
+ * 见 docs/contracts/mall-bff.md 的「默认昵称」）。</p>
  */
 @Slf4j
 @Service
@@ -37,6 +51,15 @@ public class CustomerProfileBffService {
 
     /** customer-center 熔断/连接异常降级提示（仅写路径用；读路径静默留空、不走降级文案） */
     private static final String DOWN_MSG = "顾客资料暂不可用，请稍后重试";
+
+    /**
+     * 默认昵称前缀（「用户」+ 手机号后 4 位这条规则的<b>规则本体</b>在本类，
+     * 见 {@link #withDefaultNickname}；读取侧的占位名引用本常量，免得同一个字面量出现两次）
+     */
+    public static final String NICKNAME_PREFIX = "用户";
+
+    /** 默认昵称里保留的手机号位数 */
+    private static final int PHONE_TAIL_LENGTH = 4;
 
     private final CustomerCenterClient customerCenterClient;
 
@@ -57,6 +80,69 @@ public class CustomerProfileBffService {
             log.warn("顾客资料获取失败，降级为空（customerId={}）", customerId, e);
             return null;
         }
+    }
+
+    /**
+     * <b>批量</b>读资料（评价列表一次补齐昵称 / 头像用）。
+     * <p>⚠ 逐条调 {@link #loadProfile} 是 N+1，禁止：一页 10 条评价就是 10 次跨服务往返。
+     * 与 {@link #loadProfile} 同款降级语义（读增强，取不到返回<b>空表</b>、绝不阻断主流程），
+     * 故同样<b>不走</b> {@link BffFeignCall}。</p>
+     * <p>⚠ 域侧出参口径与单条不同：<b>查不到的 id 直接跳过</b>（不补「仅含 id 的空 VO」），
+     * 故调用方按「该 id 不在 map 里 = 无资料」处理，并自己兜底展示名。</p>
+     *
+     * @param customerIds 顾客账号 id 集合（= mall_user.id；空集直接返回空表，不调域）
+     * @return 命中的顾客资料（按 id 索引，可能不完整 / 为空）；域不可用时为空表
+     */
+    public Map<Long, CustomerProfileVO> loadProfiles(Collection<Long> customerIds) {
+        if (customerIds == null || customerIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        try {
+            CustomerProfileBatchQueryDTO query = new CustomerProfileBatchQueryDTO();
+            query.setCustomerIds(new ArrayList<>(customerIds));
+            List<CustomerProfileVO> profiles = customerCenterClient.listProfilesByIds(query);
+            if (profiles == null || profiles.isEmpty()) {
+                return Collections.emptyMap();
+            }
+            Map<Long, CustomerProfileVO> byId = new HashMap<>();
+            for (CustomerProfileVO profile : profiles) {
+                if (profile != null && profile.getId() != null) {
+                    byId.put(profile.getId(), profile);
+                }
+            }
+            return byId;
+        } catch (Exception e) {
+            log.warn("顾客资料批量获取失败，降级为空（customerIds={}）", customerIds, e);
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * <b>默认昵称规则本体</b>（「用户」+ 手机号后 4 位）——全模块<b>唯一</b>实现处。
+     *
+     * <p>⚠ <b>只在写入侧用，落成 {@code customer_profile.nickname} 的真数据</b>（不是读取侧兜底）：
+     * 两个写入侧入口都调它——① 注册成功时（{@code AuthService#register}）；
+     * ② {@code PUT /profile} 昵称留空时（{@code ProfileController#save}，否则「清空昵称」
+     * 会重新制造无昵称用户）。</p>
+     * <p>⚠ <b>读取侧不拼后 4 位</b>：那需要手机号，而手机号只在 {@code mall_user}（本端独有），
+     * 商户端拿不到——两套算法必然漂移。评价区拿不到资料时用的是纯占位
+     * （{@code EvaluationBffService} 的 {@code PLACEHOLDER_NICKNAME}）。</p>
+     * <p>⚠ 存量空昵称<b>不回填</b>：上线前的老顾客走读取侧的占位名。</p>
+     *
+     * @param nickname 页面 / 注册传入的昵称（可空 / 空白）
+     * @param phone    手机号（= 登录账号；注册来自入参、改资料来自登录态快照）
+     * @return 非空的昵称：传了就用传的，没传则 {@code 用户 + 手机号后 4 位}
+     */
+    public static String withDefaultNickname(String nickname, String phone) {
+        if (StringUtils.hasText(nickname)) {
+            return nickname.trim();
+        }
+        String tail = phone == null ? "" : phone.trim();
+        if (tail.length() > PHONE_TAIL_LENGTH) {
+            // 取后 4 位：手机号是 11 位，理论上不会更短；更短时原样用，不补位、不截空
+            tail = tail.substring(tail.length() - PHONE_TAIL_LENGTH);
+        }
+        return NICKNAME_PREFIX + tail;
     }
 
     /**

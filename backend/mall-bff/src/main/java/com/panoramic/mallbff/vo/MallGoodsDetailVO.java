@@ -3,6 +3,7 @@ package com.panoramic.mallbff.vo;
 import com.panoramic.contract.store.dto.SpecConfigItem;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -83,6 +84,20 @@ public class MallGoodsDetailVO {
      * 品牌名称快照
      */
     private String brandName;
+
+    /**
+     * 商品评分（该商品全部评价的算术平均，保留 1 位小数）
+     * <p>⚠ <b>可为 {@code null}</b>：{@code null} = 尚无评价（不是 0 分）→ 前端<b>不渲染评分</b>。</p>
+     */
+    private BigDecimal score;
+
+    /**
+     * 店铺评分（该店全部评价的算术平均，每笔等权）
+     * <p>⚠ <b>可为 {@code null}</b>：{@code null} = 本店尚无评价（不是 0 分）→ 前端<b>不渲染</b>。</p>
+     * <p>⚠ 它<b>不新增一次跨域调用</b>：判详情可见性时已经调过 {@code getShop(storeId)}，
+     * 值就是从那次返回里取的（见 {@code CatalogBffService#detail}）。</p>
+     */
+    private BigDecimal shopScore;
 
     /**
      * <b>上架</b> SKU 列表（下架 SKU 不下发——它不是「暂时缺货」，而是店主没在卖）。

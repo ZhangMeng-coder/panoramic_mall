@@ -6,7 +6,7 @@
 它是本仓库的**第三个端 BFF**（另两个是 admin / store-bff）：只持**顾客账号 `mall_user`**，
 签发**第三套身份** `type=user`。
 
-> ⚠ **服务范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料**（读合并进 me、写走 `PUT /profile`）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 详情）+ **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）+ **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / 待支付改收货地址 / 待支付取消 / 已支付未发货仅退款）。
+> ⚠ **服务范围 = 顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料**（读合并进 me、写走 `PUT /profile`）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 详情）+ **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）+ **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / 待支付改收货地址 / 待支付取消 / 已支付未发货仅退款）+ **评价**（提交 / 商品评价分页 / 星级分布；回复只在商户端）。
 > 首页「**热门商品列表**」区块仍是**静态 mock**（`frontend/mall/src/mock/`）。
 
 ## 一、架构位置
@@ -16,12 +16,12 @@
 | 方向 | 对象 | 通道 |
 |---|---|---|
 | 被谁调 | 前台前端，经网关 `/mall/**`（`StripPrefix=1`） | HTTP，返回 `RespData` |
-| 本层调谁 | **goods-center**（分类树，8081）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情，8083）、**customer-center**（顾客资料与收货地址，8086）与 **trade-center**（购物车与订单，8087） | Feign + 熔断降级（`BffFeignCall`） |
+| 本层调谁 | **goods-center**（分类树，8081）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情 / 评价读写，8083）、**customer-center**（顾客资料与收货地址，8086）与 **trade-center**（购物车与订单，8087） | Feign + 熔断降级（`BffFeignCall`） |
 | 与谁**互不调用** | admin / store-bff | 三端身份空间彼此隔离 |
 
 `@EnableFeignClients` 扫四个包：`com.panoramic.contract.store`（`StoreClient`）、`com.panoramic.contract.goods`（`GoodsCenterClient`）、
 `com.panoramic.contract.customer`（`CustomerCenterClient`）与 `com.panoramic.contract.trade`（`TradeCenterClient`），
-编排集中在 `service/CatalogBffService`（商品浏览）、`service/CustomerProfileBffService`（顾客资料）与 `service/CartBffService`（购物车）、`service/OrderBffService`（订单）；
+编排集中在 `service/CatalogBffService`（商品浏览）、`service/CustomerProfileBffService`（顾客资料，含默认昵称规则）、`service/CartBffService`（购物车）、`service/OrderBffService`（订单）与 `service/EvaluationBffService`（评价）；
 Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`contract.store.*` / `contract.goods.*` / `contract.customer.*` / `contract.trade.*`），本模块不复制一份。
 
 本层依赖 [common-auth](../common-auth/) 做鉴权；业务域只依赖 `common`，结构上拿不到这条链。
@@ -37,7 +37,7 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 | 地址状态缓存（`GET /addresses/status` 的回参） | **mall-bff（本模块）**。⚠ 本层除登录态外唯一直接用的 Redis 键：权威仍是 customer-center 的地址表，缓存只是它的派生物，靠四个写路径失效 + TTL 兜底 |
 | 购物车行（顾客 / 数量 / 选中态） | **trade-center**（内部 Feign，8087）。⚠ 商品名 / 图 / 规格 / 价格 / 库存**仍属 store 域**：本层读购物车时按 `spuId` 批量补详情，购物车表里**没有商品快照** |
 | 订单（单号 / 状态 / 金额 / 条目 / 收货地址快照） | **trade-center**（内部 Feign，8087）。⚠ **地址快照由本层取**：下单时先经 customer-center 取地址、校验归属，再组快照传给域（域结构上调不到 customer-center）。待支付改地址走**同一条**取快照路径；⚠ 它**不动地址簿**，故**不**失效上面那条地址状态缓存 |
-| 评价 | `trade-center` 的**后续期** |
+| 评价（评分 / 文字 / SKU 快照 / 商家回复） | **store 域**（内部 Feign，8083）——`store_goods_evaluation` + 两张表的 `score` 冗余列。⚠ 本层只**编排**：**订单门禁在 BFF**（经 trade-center 取单判「已收货」，不为它新增跨域边）、SKU 快照从订单明细归组、昵称头像经 customer-center 批量补 |
 
 > 📋 对外接口清单见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md)（**条数与落地状态以该表为准**——本 README 不另记进度，写死条数只会在下次改动时失真）。
 > 本 README 只讲**这服务是什么、持什么、做什么**；接口、形状、类型位置一律不在此处重复。
@@ -76,6 +76,10 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
 > 错误码、校验顺序、资料读写口径、换绑口径等**逐条登记在 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md) 的「形状与行为口径」**，本 README 不重复；
 > **免鉴权路径与鉴权分级**的落点是上一条与 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 11 条。
 
+⚠ **默认昵称（「用户」+ 手机号后 4 位）只在写入侧实现一处**：`CustomerProfileBffService#withDefaultNickname`——
+注册成功时、以及 `PUT /profile` 昵称留空时各调它一次（后者不放它写成 NULL，否则「清空昵称」会重新制造无昵称用户）。
+**读取侧不拼后 4 位**（那需要手机号，而手机号只在本端）：评价区拿不到顾客资料时统一下发占位「用户」。
+
 ### 3. 边界（本层不做什么）
 
 - **不持业务域实体、不落域表**：本层只有 `mall_user` 一张表
@@ -87,6 +91,12 @@ Feign 出参 DTO 与域侧**同源于该域的 `<域>-interface` 模块**（`con
   详情与购物车行**取回后重判**（见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 20 条）。
   ⚠ **别再写第三份判定**；购物车行的不可见**不 404、也不删行**，打 `invalid` 标记后照常下发
 - **不做身份类型判断**：`type` claim 由签发端携带、全链路透传；网关只验签 + 查登录态，域服务不判身份
+- **评价只编排、不自持**：评价数据（含商品 / 店铺评分）全在 store 域，本层做的是**域做不到的三件编排**——
+  订单门禁（经 trade-center 取单判「已收货」，**不为它新增 `store → trade` 的跨域边**，与「店铺审核门禁在端 BFF」同一先例）、
+  按 `spuId` 归组 SKU 快照（规格 / 单价 / 数量只能来自订单明细）、昵称头像经 customer-center **批量**补齐。
+  落点只有一处 `service/EvaluationBffService`（订单详情的「已评价」标记也从它取，**静默降级**）。
+  ⚠ 评价 / 回复文字**按纯文本渲染**（不接 `HtmlSanitizer`、前端不许 `v-html`）——清洗那条口径是为
+  「店主自由录入 HTML」这个前提存在的，评价没有这个前提。逐条口径见 [`docs/contracts/mall-bff.md`](../../docs/contracts/mall-bff.md) 第二节评价那几条
 
 ## 四、配置说明
 

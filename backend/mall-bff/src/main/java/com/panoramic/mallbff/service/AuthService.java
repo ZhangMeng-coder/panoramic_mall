@@ -107,14 +107,16 @@ public class AuthService {
         user.setStatus(1);
         mallUserService.save(user);
 
-        // 昵称非空才调域、才建资料行（spec §6.2）：空昵称没有信息量，
-        // 建一行空资料只会让「资料是否存在」多出一种无意义状态
-        if (StringUtils.hasText(dto.getNickname())) {
-            CustomerProfileSaveDTO profile = new CustomerProfileSaveDTO();
-            profile.setNickname(dto.getNickname().trim());
-            // ⚠ 写操作不可降级：saveProfile 内部走 BffFeignCall，失败会抛出降级异常 → 整个注册回滚
-            customerProfileBffService.saveProfile(user.getId(), profile);
-        }
+        // 注册**总是**播种一行资料（spec §6.2 起步只播种「非空昵称」；2026-09-24 起改为无条件播种）：
+        // 昵称留空时用默认昵称规则「用户」+ 手机号后 4 位补齐 —— 该规则只在 CustomerProfileBffService
+        // 一处实现（写入侧唯一实现处），故这里不再自己拼。
+        // ⚠ 为什么从「非空才建行」改成「总是建行」：评价区要把评价人展示成昵称，而昵称现在只存在于
+        //    customer_profile；空昵称的用户在评价区只能落到占位「用户」，把可区分的名字丢掉。
+        //    资料行本身也不再是「有没有填过」的标志（那由字段是否为 null 表达）。
+        CustomerProfileSaveDTO profile = new CustomerProfileSaveDTO();
+        profile.setNickname(CustomerProfileBffService.withDefaultNickname(dto.getNickname(), phone));
+        // ⚠ 写操作不可降级：saveProfile 内部走 BffFeignCall，失败会抛出降级异常 → 整个注册回滚
+        customerProfileBffService.saveProfile(user.getId(), profile);
         return issueLogin(user);
     }
 

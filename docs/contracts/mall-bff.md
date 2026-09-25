@@ -13,7 +13,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > 服务范围 = **顾客账号骨架**（取码 / 注册 / 登录 / 登出 / me / 换绑手机号）+ **顾客资料与收货地址**
 > （资料保存 / 地址增删改查 / 设默认 / **地址状态**）+ **C 端商品浏览**（分类树 / 商品分页 / 筛选聚合 / 商品详情）
 > + **购物车**（加购 / 列表 / 计数 / 改数量 / 选中 / 删除 / 清空）
-> + **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / **改收货地址** / **取消订单** / **仅退款**）。
+> + **订单**（下单 / 列表 / 详情 / 支付 / 确认收货 / **改收货地址** / **取消订单** / **仅退款**）
+> + **商品评价**（提交 / 分页 / 星级分布——**只写不回复**，回复是商户端的事）。
 > 已接 **goods-center**（分类树）、**store**（商品分页 / 筛选聚合 / 详情 / 批量详情）与
 > **customer-center**（顾客资料与收货地址）三个业务域（地址见 [customer-center.md](./customer-center.md)）、
 > **trade-center**（购物车与订单，见 [trade-center.md](./trade-center.md)）；
@@ -27,14 +28,15 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 类型 | 所在包 |
 |---|---|
-| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO` / `AddressStatusVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO`；购物车：`MallCartItemAddDTO` / `MallCartItemUpdateDTO` / `MallCartSelectDTO` / `MallCartItemIdsDTO` / `MallCartVO` / `MallCartShopVO` / `MallCartItemVO`；订单：`MallOrderCreateDTO` / `MallOrderPageQueryDTO` / `MallOrderPayDTO` / `MallOrderAddressUpdateDTO` / `MallOrderVO` |
+| **mall-bff 私有**（`mallbff/dto/`、`mallbff/vo/`） | 账号：`SmsCodeDTO` / `RegisterDTO` / `LoginDTO` / `ChangePhoneDTO` / `LoginResultVO` / `CurrentUserVO`；资料与地址：`ProfileSaveDTO` / `AddressSaveDTO` / `AddressVO` / `AddressStatusVO`；C 端商品：`MallGoodsPageQueryDTO` / `MallFacetQueryDTO` / `MallGoodsItemVO` / `MallFacetVO` / `MallFacetItemVO` / `MallGoodsDetailVO` / `MallGoodsSkuVO`；购物车：`MallCartItemAddDTO` / `MallCartItemUpdateDTO` / `MallCartSelectDTO` / `MallCartItemIdsDTO` / `MallCartVO` / `MallCartShopVO` / `MallCartItemVO`；订单：`MallOrderCreateDTO` / `MallOrderPageQueryDTO` / `MallOrderPayDTO` / `MallOrderAddressUpdateDTO` / `MallOrderVO`；评价：`MallEvaluationSubmitDTO` / `MallEvaluationPageQueryDTO` / `MallEvaluationItemVO` |
 | `TradeCartItemVO` 等 | `backend/trade-center-interface/src/main/java/com/panoramic/contract/trade/`（购物车**域**的类型；⚠ 页面出参**不是**它——BFF 汇总成 `MallCartVO`，域类型不出网关） |
 | `CategoryTreeVO` | `backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/vo/` |
 | `SpecConfigItem` / `SpecAttr` | `backend/store-interface/src/main/java/com/panoramic/contract/store/dto/`（详情页的规格配置与 SKU 规格属性，**数据来自 store 域**）⚠ `contract.goods.dto` 下有同形同名的孪生类，**别引错**（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
 | `PageResult` | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/` ⚠ 与 `contract.goods.vo.PageResult` 同名不同包，本模块用的是 **store** 那个（见 [cross-cutting.md](./cross-cutting.md) 第 3 条） |
+| `StoreGoodsEvaluationStatVO`（+ `StoreGoodsEvaluationScoreCountVO`） | `backend/store-interface/src/main/java/com/panoramic/contract/store/vo/`（评价星级分布；**本层原样下发**，不另造本端 VO——见第二节评价那条） |
 | `RespData` | `backend/common/src/main/java/com/panoramic/common/vo/` |
 
-## 二、接口清单（33 条）
+## 二、接口清单（36 条）
 
 | 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
 |---|---|---|---|---|---|---|
@@ -71,6 +73,38 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | PUT | /orders/{orderNo}/address | — | `String`, `MallOrderAddressUpdateDTO` | `Void` | `OrderController#updateAddress` | |
 | POST | /orders/{orderNo}/cancel | — | `String` | `Void` | `OrderController#cancel` | |
 | POST | /orders/{orderNo}/refund | — | `String` | `Void` | `OrderController#refund` | |
+| POST | /evaluations | — | `MallEvaluationSubmitDTO` | `Void` | `EvaluationController#submit` | |
+| POST | /evaluations/page | — | `MallEvaluationPageQueryDTO` | `PageResult<MallEvaluationItemVO>` | `EvaluationController#page` | |
+| GET | /evaluations/stat/{spuId} | — | `Long` | `StoreGoodsEvaluationStatVO` | `EvaluationController#stat` | |
+
+> ⚠ **评价 3 条**（2026-09-24 落契约）——C 端**只读 + 只写自己的评价**，**没有回复入口**（回复只在商户端）。
+> - **提交评价** `POST /evaluations`：入参是**页面 DTO**（`orderNo` / `spuId` / `score` / `content`），
+>   不含作用域——`customerId` 由本层从登录态取。本层做**三件编排**（域侧都做不了）：
+>   ① **订单门禁**（门禁 = 业务前置条件校验，**不是鉴权**）：经 trade-center 取该单（带 `customerId` 作用域）
+>   → 校验属本人且 `status = RECEIVED`，否则 `400`（**不暴露订单是否存在**）；
+>   ② **按 `spuId` 归组**订单明细里的 **SKU 行**（一单可含同一 SPU 的多个 SKU）→ 组 `skuSnapshot` 快照；
+>   ③ 调 store 域写评价（域侧按 `spuId` 反查 `store_id`，见 [store.md](./store.md)）。
+>   ⚠ 门禁**为什么不在域内**：域不持订单，判状态就要新增 `store → trade` 的域间边（违反
+>   [cross-cutting.md](./cross-cutting.md) 第 24 条）。**与「店铺审核门禁在端 BFF」同一先例**。
+>   ⚠ 单域写入，**本地事务，不涉及 `@GlobalTransactional`**。
+> - **评价分页** `POST /evaluations/page`：按 `spuId` 取该商品的评价，**固定时间倒序**
+>   （`create_time desc, id desc`——同秒并排必须有 tiebreaker，否则翻页重复 / 漏行）；
+>   每页 10 条由**页面传**（域侧是通用分页，不写死 10）。
+>   ⚠ 出参 `MallEvaluationItemVO` 是**本端私有类型**、**不是**域类型 `StoreGoodsEvaluationPageItemVO`：
+>   域出参带 `customerId`（内部 id，不下发），本层要把它**替换**成昵称 / 头像——**这是「造第二个出口」的正当理由**
+>   （裁剪 + 补齐），与 `MallGoodsItemVO` 对 `StoreGoodsSpuCrossShopPageItemVO` 同款。
+> - **星级分布** `GET /evaluations/stat/{spuId}`：出参**直接下发域类型** `StoreGoodsEvaluationStatVO`
+>   （只有 1–5 星人数与总数，**没有可裁剪 / 需补齐的字段**，故不另造本端 VO——「同一份形状不造第二个出口」）。
+>   固定返 5 行（含 0 人的星级）由**域侧**保证。
+>   ⚠ 它按 `spuId` 而不是路径段里带 `spu`——`spuId` 是资源标识（第 23 条同理），不是作用域。
+> - ⚠ **C 端要分布、不要筛选**：列表**只有时间倒序**，不提供按星级过滤的入口（星级筛选是**商户端**的需求）；
+>   分布照统计接口渲染。两条看似不对称是刻意的：**分布是展示、筛选是操作**。
+> - ⚠ 评价文字与回复文字**按纯文本插值渲染**（`{{ }}`）：域侧原样存，本层**不接 `HtmlSanitizer`**、
+>   前端**不许 `v-html`**。商品详情那条链路的清洗是为「店主自由录入 HTML」这个前提存在的，
+>   评价 / 回复没有这个前提，套上去只会引入第二处白名单（见 [cross-cutting.md](./cross-cutting.md) 第 21 条）。
+> - ⚠ **评价人昵称 / 头像**：读侧经 customer-center `listProfilesByIds` **批量**取（**禁止逐条 `getProfile`**）；
+>   拿不到资料时**统一下发占位「用户」**（**不拼手机号后 4 位**——手机号只在 `mall_user`、商户端拿不到，
+>   两套算法必然漂移）；头像为空下发 `null`。「用户 + 手机号后 4 位」这条规则**只在写入侧实现一处**（注册 / 改资料，见下表）。
 
 > ⚠ **新增 2 条：取消订单 / 仅退款**。两者都是 `POST` 命令语义 + 出参 `Void`（页面重拉详情 / 列表），
 > **入参只有路径里的 `orderNo`，没有本端 DTO**（与域侧一致——这正是「同一份形状不造第二个出口」）。
@@ -125,6 +159,9 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | 假支付 | `MallOrderPayDTO.amount` 必须**等于订单总额**才算支付成功。⚠ **校验落在域内**（金额是领域规则，本层只透传），不一致回 `400`「支付金额与订单总额不一致（应付 X 元，实付 Y 元）」 |
 | 订单状态文案 | 状态名与文案**由域下发**（`status` = 枚举名，`statusMallLabel` = 顾客可读文案）。⚠ **本层不重写文案**——两端各写一份必漂移；商户端 / 管理端读的是域 VO 上的另一个字段 `statusStoreAdminLabel`（**不在 `MallOrderVO` 上、C 端不下发**），如 `PAID` 在 C 端叫「已支付」、商户端叫「待发货」。⚠ 别写成 `mallLabel` / `storeAdminLabel`——那是枚举 `OrderStatus` **内部**的字段名，域 VO 上带 `status` 前缀 |
 | 全选作用域 | `PUT /cart/selected` 是**域侧整表操作**（把该顾客**所有**行的 `selected` 置为传入值，含 `invalid` 行）；页面上的「全选」勾选态按**有效行**推导，汇总只算「有效且选中」。⚠ 不要在 BFF 侧重写成「逐行改选中」——那是 N 次请求 |
+| 订单详情的「已评价」标记 | `MallOrderVO.Item.evaluated`（`Boolean`，**按 SPU**）——同单里同一 SPU 的多个 SKU 行**同值**（前端按 `spuId` 归组后取任一行的即可）。取法：拿该单 `orderNo`（带登录态 `customerId` 作用域）**一次**调 store 域取**已评价的 spuId 集合**，不逐行调。⚠ **静默降级**：store 域不可用 → **不下发已评价态**（`evaluated` 为空），入口照常可点、点了由服务端兜（域侧唯一键会拒）。理由同「分类树拿不到不拖垮商品列表」：评价态只是**增强**，订单详情的主内容不能因此没有。⚠ 这类降级**不走 `BffFeignCall`**，在本端 service 里 catch + `log.warn`（判定标准见上「静默降级的例外」） |
+| 评分下发 | 商品列表卡片 `MallGoodsItemVO.score`、商品详情 `MallGoodsDetailVO.score` 取**商品评分**；详情页 `MallGoodsDetailVO.shopScore` 取**店铺评分**。⚠ **`shopScore` 不新增一次跨域调用**：详情页判可见性时已经调过 `getShop(storeId)`（`CatalogBffService#shopApproved`），从那次返回里取。⚠ 三处都是**可空**：`null` = 无评价 → 前端**不渲染评分**（不显示 0、不显示占位） |
+| 默认昵称（「用户」+ 手机号后 4 位） | **规则只在本模块的写入侧实现一处**，落成 `customer_profile.nickname` 的**真数据**（不是读取侧兜底）：① **注册成功时**调 customer-center 写入该昵称；② `PUT /profile` **昵称留空时**用同一条规则补齐后再转发（否则「清空昵称」会重新制造无昵称用户）。⚠ **读取侧不拼后 4 位**——那需要手机号，而手机号只在 `mall_user`（本端独有），商户端拿不到，两套算法必然漂移。**存量空昵称不回填**（上线前的老顾客走占位「用户」）。⚠ `/auth/me` 的昵称兜底（读失败回退**手机号**）**不改**：那是**本人看自己**的视角，与评价区的对外展示面口径刻意不同 |
 
 ## 三、前端契约的**视觉与结构**基准
 

@@ -27,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * C 端订单编排（下单 / 列表 / 详情 / 支付 / 确认收货 / 改收货地址 / 取消订单 / 仅退款）。
@@ -34,6 +35,11 @@ import java.util.List;
  * <p><b>三层归属</b>：订单本体（单据、状态、明细快照、金额）属 <b>trade-center</b>，
  * 收货地址属 <b>customer-center</b>，本层只做「取地址 → 组下单参数 → 调域 → 成功后清车」的页面编排，
  * 不复制任何域的表、也不重写状态文案（文案由域下发，见 {@link MallOrderVO}）。</p>
+ *
+ * <p>⚠ <b>唯一一处例外：订单详情要补「已评价」标记</b>——评价数据在 store 域，而「这单哪个商品能评价」
+ * 只能由订单明细 + 已评价集合比对得出。本层<b>不</b>直接调 store（评价能力的落点在
+ * {@link EvaluationBffService}），只把结果落到明细行的 {@code evaluated} 上；那条读<b>静默降级</b>，
+ * 拿不到就不下发标记，详情照常（见 {@link #detail}）。</p>
  *
  * <p><b>锚点一律取自登录态</b>（调用方传 {@code UserContext.getUserId()}，本类不碰登录态）：
  * 八个方法都把它填进域入参 DTO（{@code page} / {@code detail} 是可选作用域，本层<b>无条件</b>写成本人，
@@ -84,6 +90,8 @@ public class OrderBffService {
 
     private final TradeCenterClient tradeCenterClient;
     private final CustomerCenterClient customerCenterClient;
+    /** 订单详情的「已评价」标记取自评价编排（store 域的评价能力在本模块只有那一处落点） */
+    private final EvaluationBffService evaluationBffService;
 
     /**
      * 下单：取地址快照 → 调域（一次提交按店铺拆成多笔）→ <b>成功后</b>清车。
@@ -150,13 +158,28 @@ public class OrderBffService {
      * 订单详情。
      * <p>⚠ 传作用域即收窄：不属本人的单在域侧回 404（不区分「不存在」与「不是你的单」），原样透传给页面。</p>
      *
+     * <p>⚠ <b>明细细多一项「已评价」标记</b>（{@code Item.evaluated}，按 SPU）：取法是拿本单号<b>一次</b>
+     * 调 store 域取已评价的 spuId 集合（不逐行调），再按 {@code spuId} 落到各行上。
+     * ⚠ 它是<b>静默降级</b>的增强读：store 域不可用时集合为 {@code null} → <b>不下发该标记</b>
+     * （行上留 {@code null}），详情照常返回。理由同「分类树拿不到不拖垮商品列表」——
+     * 「这笔单能不能评价」的展示不该拖垮订单详情本身（见 {@link EvaluationBffService#evaluatedSpuIdsQuietly}）。</p>
+     *
+     * <p>⚠ <b>只有详情出口补这个标记</b>（下单 / 列表不补）：列表一页 N 单就是 N 次跨服务调用，
+     * 而评价入口长在详情页上。</p>
+     *
      * @param customerId 顾客账号 id（只能取自登录态）
      * @param orderNo    业务可读单号
      * @return 订单（状态 + 地址快照 + 明细齐全）
      */
     public MallOrderVO detail(Long customerId, String orderNo) {
-        return toVO(BffFeignCall.call("trade-center", ORDER_DOWN_MSG,
+        MallOrderVO vo = toVO(BffFeignCall.call("trade-center", ORDER_DOWN_MSG,
                 () -> tradeCenterClient.getOrder(orderNo, customerScope(customerId))));
+        Set<Long> evaluatedSpuIds = evaluationBffService.evaluatedSpuIdsQuietly(customerId, orderNo);
+        // null = 拿不到已评价态（store 域不可用）→ 全部留空，不写成 false（「不知道」≠「未评价」）
+        if (evaluatedSpuIds != null && vo.getItems() != null) {
+            vo.getItems().forEach(item -> item.setEvaluated(evaluatedSpuIds.contains(item.getSpuId())));
+        }
+        return vo;
     }
 
     /**

@@ -25,6 +25,9 @@ public class ProfileSaveDTO {
 
     /**
      * 昵称
+     * <p>⚠ <b>留空不会写成 NULL</b>：本层用默认昵称规则「用户」+ 手机号后 4 位补齐后再转发
+     * （{@code CustomerProfileBffService#withDefaultNickname}，规则本体的唯一实现处，见契约的
+     * 「默认昵称」）——否则顾客「清空昵称」会重新制造无昵称用户。其余三项照旧整份覆盖。</p>
      */
     @Size(max = 50, message = "昵称不能超过50个字符")
     private String nickname;
