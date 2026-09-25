@@ -12,6 +12,9 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 顾客资料服务实现（customer-center 域下沉纯域）。
  * <p>资料与顾客账号一对一（主键 = {@code mall_user.id}），读走「无记录返回空 VO」、写走「无记录则建行」
@@ -31,15 +34,12 @@ public class CustomerProfileServiceImpl extends ServiceImpl<CustomerProfileMappe
     @Override
     public CustomerProfileVO getProfile(Long customerId) {
         CustomerProfile entity = getById(customerId);
-        CustomerProfileVO vo = new CustomerProfileVO();
-        vo.setId(customerId);
-        if (entity != null) {
-            vo.setNickname(entity.getNickname());
-            vo.setAvatar(entity.getAvatar());
-            vo.setGender(entity.getGender());
-            vo.setBirthday(entity.getBirthday());
+        if (entity == null) {
+            CustomerProfileVO empty = new CustomerProfileVO();
+            empty.setId(customerId);
+            return empty;
         }
-        return vo;
+        return toVO(entity);
     }
 
     /**
@@ -92,5 +92,39 @@ public class CustomerProfileServiceImpl extends ServiceImpl<CustomerProfileMappe
                 .set(CustomerProfile::getGender, dto.getGender())
                 .set(CustomerProfile::getBirthday, dto.getBirthday())
                 .update();
+    }
+
+    /**
+     * 批量读资料：一条 {@code IN} 查询，SQL 条数与 id 个数无关。
+     * <p>⚠ <b>查不到的 id 跳过</b>（不做逐 id 补空 VO）：这是与单条 {@link #getProfile} 的有意分歧——
+     * 调用方（评价列表）按「拿不到 = 无资料」走占位展示，补空 VO 只会让它多写一次「这人到底有没有资料行」的判断。</p>
+     * <p>⚠ 空集合直接返回空列表：{@code IN ()} 是语法错误，且「没有要查的人」本就不必发 SQL。</p>
+     * <p>⚠ 去重交给 SQL（{@code IN} 对重复 id 天然只命中一次）——调用方不必先 {@code distinct}
+     * （评价列表同一顾客可能有多条评价，重复 id 是常态）。</p>
+     */
+    @Override
+    public List<CustomerProfileVO> listProfilesByIds(List<Long> customerIds) {
+        if (customerIds == null || customerIds.isEmpty()) {
+            return List.of();
+        }
+        List<CustomerProfile> entities = listByIds(customerIds);
+        List<CustomerProfileVO> result = new ArrayList<>(entities.size());
+        for (CustomerProfile entity : entities) {
+            result.add(toVO(entity));
+        }
+        return result;
+    }
+
+    /**
+     * 实体 → VO 的<b>唯一</b>映射处（单条与批量共用，避免两处字段清单各写一份而漂移）。
+     */
+    private static CustomerProfileVO toVO(CustomerProfile entity) {
+        CustomerProfileVO vo = new CustomerProfileVO();
+        vo.setId(entity.getId());
+        vo.setNickname(entity.getNickname());
+        vo.setAvatar(entity.getAvatar());
+        vo.setGender(entity.getGender());
+        vo.setBirthday(entity.getBirthday());
+        return vo;
     }
 }

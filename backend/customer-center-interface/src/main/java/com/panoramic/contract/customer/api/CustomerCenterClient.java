@@ -1,6 +1,7 @@
 package com.panoramic.contract.customer.api;
 
 import com.panoramic.contract.customer.dto.CustomerAddressSaveDTO;
+import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
 import com.panoramic.contract.customer.vo.CustomerAddressVO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
@@ -30,8 +31,8 @@ import java.util.List;
  * 服务端路径与映射需与 customer-center 域内部控制器一一对应（前缀 /internal/customer）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表（docs/contracts/customer-center.md）某行的 {@code 待实现} 标记、
  * 在此声明该方法、域侧补上实现，三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前已补齐「顾客资料」两条（getProfile / saveProfile）与「收货地址」六条（list/get/save/update/delete/setDefault），
- * 契约表 8 条**全部落地**（{@code 待实现} 归零）。</p>
+ * 当前已补齐「顾客资料」三条（getProfile / saveProfile / listProfilesByIds）与「收货地址」六条
+ * （list/get/save/update/delete/setDefault），契约表 9 条**全部落地**（{@code 待实现} 归零）。</p>
  */
 @FeignClient(name = "customer-center", contextId = "customerCenterClient",
         path = "/internal/customer", configuration = CustomerFeignConfiguration.class)
@@ -54,6 +55,20 @@ public interface CustomerCenterClient {
      */
     @PostMapping("/profile/{customerId}")
     void saveProfile(@PathVariable("customerId") Long customerId, @RequestBody CustomerProfileSaveDTO dto);
+
+    /**
+     * <b>批量</b>读顾客资料（昵称 / 头像等，评价列表一次补齐用）。
+     * <p>⚠ 逐条调 {@link #getProfile} 是 N+1，禁止：一页 10 条评价就是 10 次跨服务往返
+     * （与 store 域购物车列表批量的同一条纪律）。</p>
+     * <p>⚠ 出参与 {@link #getProfile} 不同形：<b>查不到的 id 跳过、不出现在出参里</b>，
+     * 不补「仅含 id 的空 VO」——调用方按「拿不到 = 无资料」处理，并自己兜底展示名。
+     * 空集合即空出参，不报错。</p>
+     *
+     * @param dto 顾客账号 id 集合（= mall_user.id，1 ~ 200 个）
+     * @return 命中的顾客资料列表（不含查不到的 id），不返回 null
+     */
+    @PostMapping("/profile/batch")
+    List<CustomerProfileVO> listProfilesByIds(@RequestBody CustomerProfileBatchQueryDTO dto);
 
     /**
      * 我的收货地址列表（默认地址排最前）；无地址返回空列表，不返回 null

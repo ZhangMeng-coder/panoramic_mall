@@ -32,6 +32,7 @@ typeDirs: backend/customer-center-interface/src/main/java
 |---|---|---|---|---|---|---|---|---|
 | getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | `CustomerCenterClient#getProfile` | `ProfileController#getProfile` | CustomerProfileBffService(mall-bff) |  |
 | saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | `CustomerCenterClient#saveProfile` | `ProfileController#saveProfile` | CustomerProfileBffService(mall-bff) |  |
+| listProfilesByIds | POST | /profile/batch | `CustomerProfileBatchQueryDTO` | `List<CustomerProfileVO>` | `CustomerCenterClient#listProfilesByIds` | `ProfileController#listProfilesByIds` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
 | listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | `CustomerCenterClient#listAddresses` | `AddressController#listAddresses` | CustomerAddressBffService(mall-bff) |  |
 | getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | `CustomerCenterClient#getAddress` | `AddressController#getAddress` | OrderBffService(mall-bff) |  |
 | saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | `CustomerCenterClient#saveAddress` | `AddressController#saveAddress` | CustomerAddressBffService(mall-bff) |  |
@@ -41,6 +42,17 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 > 「入参」列里**连续两个 `Long`** 时，第一个是 **`customerId`**（数据权限锚点），第二个是 `id`。
 > 例：`getAddress` 的 `Long, Long` = `customerId, id`。
+
+> ⚠ **批量读资料（`listProfilesByIds`）为「评价区的昵称 / 头像」而加**（2026-09-24 落契约）：
+> 调用方拿本页的 `customerId` 集合**一次**取回，**禁止**逐条调 `getProfile`（10 行评价 = 10 次跨服务调用）。
+> 三点形状：
+> ① **查不到的 id 跳过、不出现在出参里**（口径同 store 域的 `batchSpuDetail`）——调用方按
+> 「拿不到 = 无资料」处理，**不整批失败**（评价列表不能因为某个顾客资料缺失就整页取不回来）；
+> ② ⚠ 与 `getProfile` 的「无资料行返回**仅含 id 的空 VO**」刻意不同：批量场景给每人补一个占位没有意义，
+> 反而让调用方分不清「真有一条空资料」与「压根没这个人」；
+> ③ 用 `POST + @RequestBody` 传 id 集合（`@SpringQueryMap` 对集合字段的序列化口径不确定，与
+> [store.md](./store.md) 的跨店分页同因）。
+> ⚠ 它**不返回手机号**——手机号是 `mall_user` 的列，本域不持（见上「不含账号字段」）。
 
 > 字段定义**不在本表**，去 `customer-center-interface`（包根 `com.panoramic.contract.customer`）的
 > `dto` / `vo` 包里看；表里只登记**有哪些接口、形状是什么、类型在哪、谁在调**，不抄字段。

@@ -5,6 +5,8 @@ import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
 import com.panoramic.customer.entity.CustomerProfile;
 
+import java.util.List;
+
 /**
  * 顾客资料服务（customer-center 域下沉纯域）。
  * <p>own-entity CRUD 直接用 MyBatis-Plus 基类（IService）内置方法；本接口只承载资料的两个领域入口。
@@ -30,4 +32,14 @@ public interface CustomerProfileService extends IService<CustomerProfile> {
      * @param dto        资料字段（全字段选填）
      */
     void saveProfile(Long customerId, CustomerProfileSaveDTO dto);
+
+    /**
+     * <b>批量</b>读顾客资料：一次取回多个顾客的资料行（评价列表补齐昵称 / 头像用），消除 N+1。
+     * <p>⚠ 出参与 {@link #getProfile} 刻意不同形：<b>查不到的 id 跳过</b>（不补「仅含 id 的空 VO」），
+     * 否则调用方分不清「真有一条空资料」与「压根没这个人」。空集合 → 空列表（一条 SQL 都不发）。</p>
+     *
+     * @param customerIds 顾客账号 id 集合（== 资料主键）
+     * @return 命中的资料列表（不含查不到的 id），不返回 null
+     */
+    List<CustomerProfileVO> listProfilesByIds(List<Long> customerIds);
 }
