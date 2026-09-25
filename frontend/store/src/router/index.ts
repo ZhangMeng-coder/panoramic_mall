@@ -4,9 +4,9 @@ import { isApproved, fetchMyShop } from '../store/shop'
 import { authApi } from '../api/auth'
 
 /**
- * 开店后业务入口路由（须审核通过才可见/可进入，本期均为假页面占位）
+ * 开店后业务入口路由（须审核通过才可见 / 可进入）：商品 / 订单 / 评价 / 库存
  */
-const AFTER_APPROVED_PATHS = ['/goods', '/orders', '/stock']
+const AFTER_APPROVED_PATHS = ['/goods', '/orders', '/evaluations', '/stock']
 
 const routes: RouteRecordRaw[] = [
   {
@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '订单管理' }
       },
       {
+        path: '/evaluations',
+        name: 'evaluations',
+        component: () => import('../views/evaluation/EvaluationManage.vue'),
+        meta: { title: '评价管理' }
+      },
+      {
         path: '/stock',
         name: 'stock',
         component: () => import('../views/stock/StockManage.vue'),
@@ -72,7 +78,7 @@ const router = createRouter({
  * 1) 未登录（无 token）→ 仅放行注册/登录，其余跳登录（带来源页）；
  * 2) 已登录访问注册/登录 → 回默认落地页；
  * 3) 已登录但内存无用户态（刷新场景）→ 先拉 /auth/me 重建，失败则登出；
- * 4) 访问 开店后业务入口(/goods|/orders|/stock) → 拉店铺态，未审核通过一律回店铺信息。
+ * 4) 访问 开店后业务入口(/goods|/orders|/evaluations|/stock) → 拉店铺态，未审核通过一律回店铺信息。
  */
 router.beforeEach(async (to) => {
   const token = getToken()

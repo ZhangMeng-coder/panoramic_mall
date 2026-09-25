@@ -5,7 +5,7 @@
         <span class="logo-badge">店主</span>
         <span class="logo-title">全景商城 · 店铺端</span>
       </div>
-      <!-- 静态菜单：主页 置顶恒可见；店铺信息恒可见；商品/订单/库存为开店后业务入口，仅审核通过后显示 -->
+      <!-- 静态菜单：主页 置顶恒可见；店铺信息恒可见；商品/订单/评价/库存为开店后业务入口，仅审核通过后显示 -->
       <el-menu :default-active="activeMenu" router class="app-menu">
         <el-menu-item index="/home">
           <el-icon><HomeFilled /></el-icon>
@@ -24,13 +24,17 @@
             <el-icon><component :is="Tickets" /></el-icon>
             <span>订单管理</span>
           </el-menu-item>
+          <el-menu-item index="/evaluations">
+            <el-icon><component :is="ChatLineSquare" /></el-icon>
+            <span>评价管理</span>
+          </el-menu-item>
           <el-menu-item index="/stock">
             <el-icon><component :is="Box" /></el-icon>
             <span>库存管理</span>
           </el-menu-item>
         </template>
       </el-menu>
-      <div v-if="!isApproved" class="aside-tip">店铺审核通过后，开放 商品 / 订单 / 库存 管理入口。</div>
+      <div v-if="!isApproved" class="aside-tip">店铺审核通过后，开放 商品 / 订单 / 评价 / 库存 管理入口。</div>
     </el-aside>
 
     <el-container class="app-body" direction="vertical">
@@ -79,7 +83,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { authApi } from '../api/auth'
 import { getUser, clearAuth } from '../store/auth'
 import { isApproved, clearShop, fetchMyShop } from '../store/shop'
-import { HomeFilled, Shop, Goods, Tickets, Box, User, Sunny, Moon, ArrowDown, SwitchButton } from '@element-plus/icons-vue'
+import { HomeFilled, Shop, Goods, Tickets, ChatLineSquare, Box, User, Sunny, Moon, ArrowDown, SwitchButton } from '@element-plus/icons-vue'
 
 const THEME_KEY = 'pm-store-theme'
 
