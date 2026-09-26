@@ -1,5 +1,6 @@
 package com.panoramic.contract.trade.api;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.trade.dto.TradeCartItemAddDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemIdsDTO;
 import com.panoramic.contract.trade.dto.TradeCartItemUpdateDTO;
@@ -35,15 +36,18 @@ import java.util.List;
  * 只被端 BFF 经本接口内部调用。规约（见 docs/contracts/trade-center.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 trade-center-interface（域服务端、各端 BFF 客户端引用同一份类型）；</li>
- *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link TradeFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *   <li>出参一律包 {@code RespData<T>}，<b>HTTP 200 承载一切业务结果</b>：正常 {@code code=200} + {@code data}，
+ *       业务失败 {@code code=400/403/404} + {@code msg}（域侧不抛异常，故 {@code ErrorDecoder} 不会被调用）；
+ *       只有真故障才是 HTTP 5xx → 调用方抛 {@code FeignException} → 计入熔断。调用方解包走
+ *       {@code com.panoramic.common.feign.DomainResp#unwrap}（端 BFF 再经 {@code BffFeignCall#call} 叠降级）；</li>
+ *   <li>调用经 {@link TradeFeignConfiguration} 附带信任头 + 透传主身份；熔断由<b>调用方</b>经 Nacos
  *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * <b>数据作用域口径（一处，不是「三侧各一套」，cross-cutting 第 22 / 23 条）</b>：
  * {@code customerId} = {@code mall_user.id}、{@code storeId} = 店主账号 id（都是跨域 id 引用、无外键）。
  * 它们<b>不进路径段</b>，只作为<b>入参 DTO 的字段</b>：域内只做「传了就按它筛，没传就是不限定」，
  * <b>不判身份、不看 {@code X-User-Type}、不做端别分流</b>。作用域<b>只在该能力存在合法全量视角时才可省</b>
- * ——订单分页 / 详情（管理端要看全量）的字段可选，其余（订单四个写、购物车八条）一律必填。
+ * ——订单分页 / 详情（管理端要看全量）的字段可选，其余（订单七个写、购物车八条）一律必填。
  * 订单标识一律用 {@code orderNo}（业务可读单号），不用自增 id。
  * <p>⚠ <b>作用域的值只能由端 BFF 从登录态取</b>（{@code LoginUser.getId()}），<b>禁止</b>从前端入参透传——
  * 前端传来的 id 一旦被当作作用域，等于把数据权限交给页面。域侧不校验「是否真是本人 / 本店」：防线在 BFF。
@@ -70,7 +74,7 @@ public interface TradeCenterClient {
      * @return 购物车行列表（空则为空列表）
      */
     @GetMapping("/cart")
-    List<TradeCartItemVO> listCartItems(@RequestParam("customerId") Long customerId);
+    RespData<List<TradeCartItemVO>> listCartItems(@RequestParam("customerId") Long customerId);
 
     /**
      * 购物车<b>行数</b>（不是件数之和：同一 SPU 的不同 SKU 各算一行，quantity 不影响计数）
@@ -79,37 +83,37 @@ public interface TradeCenterClient {
      * @return 行数；空购物车为 0
      */
     @GetMapping("/cart/count")
-    Integer cartItemCount(@RequestParam("customerId") Long customerId);
+    RespData<Integer> cartItemCount(@RequestParam("customerId") Long customerId);
 
     /**
      * 加入购物车：同一 {@code (customerId, skuId)} 已存在则<b>累加数量</b>（不新增行），否则新增一行
      *
      * @param dto 加购参数（**作用域** customerId + SPU / SKU / 数量）
      * @return 该 SKU 对应的**购物车行 id**（新增或既有行都返回同一个语义：这条 SKU 在车里的那一行）
-     * @throws com.panoramic.common.exception.ServiceException 单车已达 100 行上限（HTTP 400）
+     * @throws com.panoramic.common.exception.ServiceException 单车已达 100 行上限（{@code code=400}）
      */
     @PostMapping("/cart/items")
-    Long addCartItem(@RequestBody TradeCartItemAddDTO dto);
+    RespData<Long> addCartItem(@RequestBody TradeCartItemAddDTO dto);
 
     /**
-     * 修改单行数量（**整份覆盖**，不是增量）；行不存在或不属于该顾客 → 404，不区分两种情形
+     * 修改单行数量（**整份覆盖**，不是增量）；行不存在或不属于该顾客 → {@code code=404}，不区分两种情形
      *
      * @param id  购物车行 id（资源标识，走路径变量）
      * @param dto 新数量（1..999）+ **作用域** customerId
      */
     @PutMapping("/cart/items/{id}")
-    void updateCartItemQuantity(@PathVariable("id") Long id,
-                                @RequestBody TradeCartItemUpdateDTO dto);
+    RespData<Void> updateCartItemQuantity(@PathVariable("id") Long id,
+                                          @RequestBody TradeCartItemUpdateDTO dto);
 
     /**
-     * 设置单行选中状态；行不存在或不属于该顾客 → 404，不区分两种情形
+     * 设置单行选中状态；行不存在或不属于该顾客 → {@code code=404}，不区分两种情形
      *
      * @param id  购物车行 id（资源标识，走路径变量）
      * @param dto 选中状态 + **作用域** customerId
      */
     @PutMapping("/cart/items/{id}/selected")
-    void setCartItemSelected(@PathVariable("id") Long id,
-                             @RequestBody TradeCartSelectDTO dto);
+    RespData<Void> setCartItemSelected(@PathVariable("id") Long id,
+                                       @RequestBody TradeCartSelectDTO dto);
 
     /**
      * 全选 / 全不选：对该顾客<b>名下全部行</b>置同一选中态（幂等，0 行不报错）
@@ -119,7 +123,7 @@ public interface TradeCenterClient {
      * @param dto 选中状态 + **作用域** customerId
      */
     @PutMapping("/cart/selected")
-    void setAllCartItemsSelected(@RequestBody TradeCartSelectDTO dto);
+    RespData<Void> setAllCartItemsSelected(@RequestBody TradeCartSelectDTO dto);
 
     /**
      * 批量删除购物车行（**物理删除**）——<b>幂等</b>：删 0 行不报错（多选删除不该因某行被并发删掉而整体失败）
@@ -127,7 +131,7 @@ public interface TradeCenterClient {
      * @param dto 待删除的**行 id** 列表（空列表直接返回，不做任何删除）+ **作用域** customerId
      */
     @PostMapping("/cart/items/remove")
-    void removeCartItems(@RequestBody TradeCartItemIdsDTO dto);
+    RespData<Void> removeCartItems(@RequestBody TradeCartItemIdsDTO dto);
 
     /**
      * 清空购物车（**物理删除**该顾客名下全部行）；幂等
@@ -135,9 +139,9 @@ public interface TradeCenterClient {
      * @param customerId 顾客账号 id（= mall_user.id，数据作用域）
      */
     @DeleteMapping("/cart")
-    void clearCart(@RequestParam("customerId") Long customerId);
+    RespData<Void> clearCart(@RequestParam("customerId") Long customerId);
 
-    // ── 订单（7 条，按能力定义；作用域由调用方经入参 DTO 自设） ────────────────────
+    // ── 订单（9 条，按能力定义；作用域由调用方经入参 DTO 自设） ────────────────────
 
     /**
      * 下单：一次提交按 {@code storeId} 拆成多笔（一单一店），**返回整批**，顺序 = {@code storeId} 升序
@@ -149,10 +153,10 @@ public interface TradeCenterClient {
      *
      * @param dto 下单参数（**作用域** customerId 必填 / 来源 / 幂等键 / 地址快照 / 商品行）
      * @return 本次提交的整批订单（至少一笔）
-     * @throws com.panoramic.common.exception.ServiceException 商品不可购买 / 库存不足 / 数量越界 / 地址非法（HTTP 400）
+     * @throws com.panoramic.common.exception.ServiceException 商品不可购买 / 库存不足 / 数量越界 / 地址非法（{@code code=400}）
      */
     @PostMapping("/order")
-    List<TradeOrderVO> createOrder(@RequestBody TradeOrderCreateDTO dto);
+    RespData<List<TradeOrderVO>> createOrder(@RequestBody TradeOrderCreateDTO dto);
 
     /**
      * 订单分页：**同一能力对所有调用方**——传 {@code customerId} 即「我的订单」、传 {@code storeId}
@@ -162,7 +166,7 @@ public interface TradeCenterClient {
      * @return 总数 + 当页订单
      */
     @PostMapping("/order/page")
-    TradeOrderPageVO pageOrders(@RequestBody TradeOrderPageQueryDTO dto);
+    RespData<TradeOrderPageVO> pageOrders(@RequestBody TradeOrderPageQueryDTO dto);
 
     /**
      * 修改订单收货地址（**只改这一笔的地址快照，不动顾客地址簿**）：**仅待支付可改**，其余状态一律拒
@@ -175,78 +179,78 @@ public interface TradeCenterClient {
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     新的地址快照（四字段）+ **作用域** customerId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 缺少作用域 / 非待支付状态 / 地址非法（HTTP 400）、
-     *                                                       订单不属本人（404）
+     * @throws com.panoramic.common.exception.ServiceException 缺少作用域 / 非待支付状态 / 地址非法（{@code code=400}）、
+     *                                                       订单不属本人（{@code code=404}）
      */
     @PutMapping("/order/{orderNo}/address")
-    void updateOrderAddress(@PathVariable("orderNo") String orderNo,
-                            @RequestBody TradeOrderAddressUpdateDTO dto);
+    RespData<Void> updateOrderAddress(@PathVariable("orderNo") String orderNo,
+                                      @RequestBody TradeOrderAddressUpdateDTO dto);
 
     /**
      * 订单详情：传作用域即收窄（顾客 / 店主传各自的 id），都不传即全量（管理端）；
-     * 收窄后不存在或不属该作用域 → 404，不区分两种情形
+     * 收窄后不存在或不属该作用域 → {@code code=404}，不区分两种情形
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     **可选作用域**（{@code customerId} / {@code storeId}）
      * @return 订单（状态 + 地址快照 + 明细齐全）
      */
     @GetMapping("/order/{orderNo}")
-    TradeOrderVO getOrder(@PathVariable("orderNo") String orderNo,
-                          @SpringQueryMap TradeOrderQueryDTO dto);
+    RespData<TradeOrderVO> getOrder(@PathVariable("orderNo") String orderNo,
+                                    @SpringQueryMap TradeOrderQueryDTO dto);
 
     /**
-     * 支付（假支付）：{@code dto.amount} 必须<b>等于订单总额</b>，不一致 → 400
+     * 支付（假支付）：{@code dto.amount} 必须<b>等于订单总额</b>，不一致 → {@code code=400}
      *
-     * <p>⚠ <b>不幂等，重复提交由状态机拒</b>：第二次 {@code pay} 回 400「订单状态不能从「已支付」重复变更到
-     * 「已支付」」。调用方**原样透传**该 4xx，不另译成「请勿重复操作」（同一句提示只此一份）。</p>
+     * <p>⚠ <b>不幂等，重复提交由状态机拒</b>：第二次 {@code pay} 回 {@code code=400}「订单状态不能从「已支付」重复变更到
+     * 「已支付」」。调用方**原样透传**该业务码，不另译成「请勿重复操作」（同一句提示只此一份）。</p>
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     支付金额 + **作用域** customerId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 金额不符 / 非法迁移（HTTP 400）、订单不属本人（404）
+     * @throws com.panoramic.common.exception.ServiceException 金额不符 / 非法迁移（{@code code=400}）、订单不属本人（{@code code=404}）
      */
     @PostMapping("/order/{orderNo}/pay")
-    void payOrder(@PathVariable("orderNo") String orderNo,
-                  @RequestBody TradeOrderPayDTO dto);
+    RespData<Void> payOrder(@PathVariable("orderNo") String orderNo,
+                            @RequestBody TradeOrderPayDTO dto);
 
     /**
-     * 发货（记录快递单号）；重复发货 / 这笔单当前状态不允许发货 → 400
+     * 发货（记录快递单号）；重复发货 / 这笔单当前状态不允许发货 → {@code code=400}
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     快递单号（必填）+ **作用域** storeId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 单号为空 / 非法迁移（HTTP 400）、订单不属本店（404）
+     * @throws com.panoramic.common.exception.ServiceException 单号为空 / 非法迁移（{@code code=400}）、订单不属本店（{@code code=404}）
      */
     @PostMapping("/order/{orderNo}/ship")
-    void shipOrder(@PathVariable("orderNo") String orderNo,
-                   @RequestBody TradeOrderShipDTO dto);
+    RespData<Void> shipOrder(@PathVariable("orderNo") String orderNo,
+                             @RequestBody TradeOrderShipDTO dto);
 
     /**
-     * 确认收货（终态）；已收货再调用 → 400
+     * 确认收货（终态）；已收货再调用 → {@code code=400}
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     **作用域** customerId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 非法迁移（HTTP 400）、订单不属本人（404）
+     * @throws com.panoramic.common.exception.ServiceException 非法迁移（{@code code=400}）、订单不属本人（{@code code=404}）
      */
     @PostMapping("/order/{orderNo}/receive")
-    void receiveOrder(@PathVariable("orderNo") String orderNo,
-                      @RequestBody TradeOrderReceiveDTO dto);
+    RespData<Void> receiveOrder(@PathVariable("orderNo") String orderNo,
+                                @RequestBody TradeOrderReceiveDTO dto);
 
     /**
      * 取消订单：**仅待支付可取消**（{@code PENDING_PAYMENT → CANCELLED}），其余状态一律拒
      *
      * <p>⚠ 取消**一律回补库存**（下单即扣的库存在这里还回去）：回补按订单流水净额算、**幂等**，
      * 重复调用的第二次数不到未还净额即 no-op。故「取消」这个动作对同一笔单被调用两次时，
-     * 第二次会先被状态机拒（400「重复变更」），根本走不到回补。</p>
+     * 第二次会先被状态机拒（{@code code=400}「重复变更」），根本走不到回补。</p>
      *
      * <p>⚠ 触发方有两个（都是这一条能力）：顾客主动取消、**超时未支付自动关单**（域内定时任务）。
      * 两者的域侧口径完全一致——差异只在「谁触发、凭什么判定超时」，故没有第二个方法。</p>
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     **作用域** customerId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 非待支付状态（HTTP 400）、订单不属本人（404）
+     * @throws com.panoramic.common.exception.ServiceException 非待支付状态（{@code code=400}）、订单不属本人（{@code code=404}）
      */
     @PostMapping("/order/{orderNo}/cancel")
-    void cancelOrder(@PathVariable("orderNo") String orderNo,
-                     @RequestBody TradeOrderCancelDTO dto);
+    RespData<Void> cancelOrder(@PathVariable("orderNo") String orderNo,
+                               @RequestBody TradeOrderCancelDTO dto);
 
     /**
      * 仅退款：**仅「已支付、未发货」可退**（{@code PAID → REFUNDED}），全额退、一步生效、无需商户同意
@@ -255,9 +259,9 @@ public interface TradeCenterClient {
      *
      * @param orderNo 业务可读单号（资源标识，走路径变量）
      * @param dto     **作用域** customerId（必填）
-     * @throws com.panoramic.common.exception.ServiceException 非「已支付未发货」（HTTP 400）、订单不属本人（404）
+     * @throws com.panoramic.common.exception.ServiceException 非「已支付未发货」（{@code code=400}）、订单不属本人（{@code code=404}）
      */
     @PostMapping("/order/{orderNo}/refund")
-    void refundOrder(@PathVariable("orderNo") String orderNo,
-                     @RequestBody TradeOrderRefundDTO dto);
+    RespData<Void> refundOrder(@PathVariable("orderNo") String orderNo,
+                               @RequestBody TradeOrderRefundDTO dto);
 }

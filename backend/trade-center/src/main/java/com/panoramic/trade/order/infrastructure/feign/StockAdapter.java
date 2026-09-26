@@ -1,5 +1,6 @@
 package com.panoramic.trade.order.infrastructure.feign;
 
+import com.panoramic.common.feign.DomainResp;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreStockDeductDTO;
@@ -17,7 +18,7 @@ import java.util.List;
  *
  * <p>⚠ <b>不吞异常、不做降级</b>（见 cross-cutting 第 24 条）：store 不可达 / 熔断打开时异常原样上抛，
  * 整次下单失败。唯一的「不抛」是 {@link #deduct} 返回 {@code false}——那**不是故障**，是库存不足
- * （store 域以 HTTP 200 + false 表达，R18），由 stock-check 翻成 400「库存不足」给页面。</p>
+ * （store 域以 {@code code=200} + {@code data=false} 表达，R18），由 stock-check 翻成 400「库存不足」给页面。</p>
  */
 public class StockAdapter implements StockPort {
 
@@ -33,14 +34,18 @@ public class StockAdapter implements StockPort {
         dto.setSkuId(skuId);
         dto.setQuantity(quantity);
         dto.setOrderNo(orderNo);
-        return storeClient.deductStock(dto);
+        // ⚠ DomainResp.unwrap 而非 BffFeignCall：本类是域间调用，**不解包成降级文案**——
+        //   域侧 code=400/404 要作为业务异常原样上抛（第 24 条），只有 code=200 才取 data。
+        //   data=false（库存不足，R18）照旧返回 false，不能翻成异常。
+        Boolean deducted = DomainResp.unwrap(storeClient.deductStock(dto));
+        return Boolean.TRUE.equals(deducted);
     }
 
     @Override
     public void revertByOrder(String orderNo) {
         // 补偿路径：store 域侧对「单号为空 / 该单没扣过 / 库存行已不存在」一律静默成功（R19），
         // 故这里也没有任何分支要写——异常照旧上抛，由编排器挂 addSuppressed、不覆盖主异常
-        storeClient.revertStockByOrder(orderNo);
+        DomainResp.unwrap(storeClient.revertStockByOrder(orderNo));
     }
 
     /**
@@ -61,7 +66,7 @@ public class StockAdapter implements StockPort {
         }
         StoreGoodsSkuBatchQueryDTO query = new StoreGoodsSkuBatchQueryDTO();
         query.setSkuIds(List.of(skuId));
-        List<StoreGoodsSkuSnapshotVO> rows = storeClient.tradeSkuSnapshotBatch(query);
+        List<StoreGoodsSkuSnapshotVO> rows = DomainResp.unwrap(storeClient.tradeSkuSnapshotBatch(query));
         if (rows == null || rows.isEmpty()) {
             return 0;
         }

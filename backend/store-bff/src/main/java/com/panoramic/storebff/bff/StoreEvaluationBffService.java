@@ -2,8 +2,10 @@ package com.panoramic.storebff.bff;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.feign.DomainResp;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.api.CustomerCenterClient;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
@@ -124,10 +126,7 @@ public class StoreEvaluationBffService {
         StoreGoodsEvaluationReplyDTO payload = new StoreGoodsEvaluationReplyDTO();
         payload.setStoreId(currentStoreId());
         payload.setReplyContent(dto.getReplyContent());
-        call(() -> {
-            storeClient.replyEvaluation(id, payload);
-            return null;
-        });
+        call(() -> storeClient.replyEvaluation(id, payload));
     }
 
     // ---- 编排辅助 ----
@@ -191,7 +190,7 @@ public class StoreEvaluationBffService {
         try {
             CustomerProfileBatchQueryDTO query = new CustomerProfileBatchQueryDTO();
             query.setCustomerIds(new ArrayList<>(customerIds));
-            List<CustomerProfileVO> profiles = customerCenterClient.listProfilesByIds(query);
+            List<CustomerProfileVO> profiles = DomainResp.unwrap(customerCenterClient.listProfilesByIds(query));
             if (profiles == null || profiles.isEmpty()) {
                 return Collections.emptyMap();
             }
@@ -223,7 +222,7 @@ public class StoreEvaluationBffService {
     /**
      * 调 store 域的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T call(Supplier<T> action) {
+    private <T> T call(Supplier<RespData<T>> action) {
         return BffFeignCall.call("store", EVALUATION_DEGRADE_MSG, action);
     }
 }

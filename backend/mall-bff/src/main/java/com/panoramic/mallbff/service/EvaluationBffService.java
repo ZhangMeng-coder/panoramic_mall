@@ -2,6 +2,8 @@ package com.panoramic.mallbff.service;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.feign.DomainResp;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.SpecAttr;
@@ -124,10 +126,7 @@ public class EvaluationBffService {
         payload.setContent(dto.getContent());
         payload.setSkuSnapshot(snapshot);
         // 写操作不可降级：域侧业务 4xx（「该商品已评价」）原样透传，其余降级为「评价暂不可用」
-        BffFeignCall.call("store", DOWN_MSG, () -> {
-            storeClient.submitEvaluation(payload);
-            return null;
-        });
+        BffFeignCall.call("store", DOWN_MSG, () -> storeClient.submitEvaluation(payload));
     }
 
     /**
@@ -198,7 +197,7 @@ public class EvaluationBffService {
         try {
             StoreGoodsEvaluationOrderQueryDTO query = new StoreGoodsEvaluationOrderQueryDTO();
             query.setCustomerId(customerId);
-            List<Long> ids = storeClient.listEvaluatedSpuIds(orderNo, query);
+            List<Long> ids = DomainResp.unwrap(storeClient.listEvaluatedSpuIds(orderNo, query));
             return ids == null ? Set.of() : new LinkedHashSet<>(ids);
         } catch (Exception e) {
             // ⚠ catch 面刻意宽到 Exception：这是「订单详情已组装好之后」的增强读，漏网的异常会逃出

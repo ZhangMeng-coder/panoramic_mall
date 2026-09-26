@@ -2,6 +2,7 @@ package com.panoramic.admin.bff;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.ShopAuditDTO;
 import com.panoramic.contract.store.dto.ShopPageQueryDTO;
@@ -55,10 +56,7 @@ public class StoreShopBffService {
      * 店铺审核：通过/驳回（驳回原因必填）；仅对「待审核」生效，防重复审核
      */
     public void auditShop(Long id, ShopAuditDTO dto) {
-        call(() -> {
-            storeClient.auditShop(id, dto);
-            return null;
-        });
+        call(() -> storeClient.auditShop(id, dto));
     }
 
     /**
@@ -66,7 +64,7 @@ public class StoreShopBffService {
      * <p>剥 cause 链与降级的实现已抽到 common 的 {@link BffFeignCall}（admin 与 store-bff 共用一份），
      * 本类只传自己的降级文案。</p>
      */
-    private <T> T call(Supplier<T> action) {
+    private <T> T call(Supplier<RespData<T>> action) {
         return BffFeignCall.call("store", DEGRADE_MSG, action);
     }
 }

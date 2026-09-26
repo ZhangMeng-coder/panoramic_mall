@@ -65,7 +65,7 @@
             <artifactId>jsoup</artifactId>
         </dependency>
         <!-- BFF 化内部调用通道：Feign 客户端 + LoadBalancer + 熔断。
-             common 只放与域无关的通道件（InternalApiErrorDecoder / BffFeignCall）；
+             common 只放与域无关的通道件（DomainResp / BffFeignCall）；
              各域的 Feign 客户端与同源 DTO/VO 在各自的 <域>-interface 模块，调用方(端 BFF)经 @EnableFeignClients 扫描启用；
              被调用方(业务域)仅当实现端 HTTP 接口，不扫描 Feign 客户端，仅因依赖 common 而带上依赖，无副作用。
              版本由父 POM 的 spring-cloud-dependencies BOM 统一管理。 -->

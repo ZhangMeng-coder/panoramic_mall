@@ -2,6 +2,7 @@ package com.panoramic.admin.bff;
 
 import com.panoramic.admin.dto.OrderPageQueryDTO;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.trade.api.TradeCenterClient;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
@@ -87,7 +88,7 @@ public class AdminOrderBffService {
     /**
      * 调 trade-center 的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callTrade(Supplier<T> action) {
+    private <T> T callTrade(Supplier<RespData<T>> action) {
         return BffFeignCall.call("trade-center", ORDER_DEGRADE_MSG, action);
     }
 }

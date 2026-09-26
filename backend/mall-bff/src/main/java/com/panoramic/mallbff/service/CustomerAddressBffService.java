@@ -67,7 +67,7 @@ public class CustomerAddressBffService {
      */
     public List<AddressVO> list(Long customerId) {
         return BffFeignCall.call("customer-center", ADDRESS_DOWN,
-                () -> customerCenterClient.listAddresses(customerId).stream().map(this::toVO).toList());
+                () -> customerCenterClient.listAddresses(customerId)).stream().map(this::toVO).toList();
     }
 
     /**
@@ -120,10 +120,7 @@ public class CustomerAddressBffService {
      */
     public void update(Long customerId, Long id, AddressSaveDTO dto) {
         BffFeignCall.call("customer-center", ADDRESS_DOWN,
-                () -> {
-                    customerCenterClient.updateAddress(customerId, id, toDomain(dto));
-                    return null;
-                });
+                () -> customerCenterClient.updateAddress(customerId, id, toDomain(dto)));
         addressStatusCache.evict(customerId);
     }
 
@@ -138,10 +135,7 @@ public class CustomerAddressBffService {
      */
     public void delete(Long customerId, Long id) {
         BffFeignCall.call("customer-center", ADDRESS_DOWN,
-                () -> {
-                    customerCenterClient.deleteAddress(customerId, id);
-                    return null;
-                });
+                () -> customerCenterClient.deleteAddress(customerId, id));
         addressStatusCache.evict(customerId);
     }
 
@@ -153,10 +147,7 @@ public class CustomerAddressBffService {
      */
     public void setDefault(Long customerId, Long id) {
         BffFeignCall.call("customer-center", ADDRESS_DOWN,
-                () -> {
-                    customerCenterClient.setDefaultAddress(customerId, id);
-                    return null;
-                });
+                () -> customerCenterClient.setDefaultAddress(customerId, id));
         addressStatusCache.evict(customerId);
     }
 

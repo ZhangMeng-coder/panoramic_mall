@@ -82,4 +82,5 @@
 - **Nacos 共享配置**：只引入 `datasource-mysql.yml`，且 import **不带 `optional:`**——缺该 dataId 则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
 - MyBatis-Plus：主键自增、`is_delete` 逻辑删除、驼峰映射、SQL 日志打印（StdOutImpl，上线前移除）
 - 启动类扫描 `com.panoramic` 以加载 common 中的字段自动填充等
-- 异常语义（内部）：业务失败 `ServiceException` → 真实 HTTP 状态（如 400/403/404）+ `{code,msg}`，由 `GoodsDomainExceptionHandler` 产出；未知异常 → 500 `{code:500,msg:"系统异常"}`
+- 异常语义（内部）：业务失败以 **HTTP 200 + `{code,msg}`** 返回（域侧不抛异常，故调用方 Feign 的 `ErrorDecoder` 不会被调用）；只有兜底异常才由 common 的 `GlobalExceptionHandler` 返 **HTTP 500** `{code:500,msg:"系统内部错误，请联系管理员"}` —— 那是熔断唯一的失败信号（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 13 条）
+- 响应结构：**本域内部接口出参包 `RespData<T>`**（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 2 条），与端 BFF 的对外接口同一形状；调用方解包走 `DomainResp#unwrap`

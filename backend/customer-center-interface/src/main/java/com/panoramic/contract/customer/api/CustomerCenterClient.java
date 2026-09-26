@@ -1,5 +1,6 @@
 package com.panoramic.contract.customer.api;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.dto.CustomerAddressSaveDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
@@ -21,8 +22,11 @@ import java.util.List;
  * 只被 mall-bff 经本接口内部调用。规约（见 docs/contracts/customer-center.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 customer-center-interface（域服务端、mall-bff 客户端引用同一份类型）；</li>
- *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link CustomerFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *   <li>出参一律包 {@code RespData<T>}，<b>HTTP 200 承载一切业务结果</b>：正常 {@code code=200} + {@code data}，
+ *       业务失败 {@code code=400/403/404} + {@code msg}（域侧不抛异常，故 {@code ErrorDecoder} 不会被调用）；
+ *       只有真故障才是 HTTP 5xx → 调用方抛 {@code FeignException} → 计入熔断。调用方解包走
+ *       {@code com.panoramic.common.feign.DomainResp#unwrap}（端 BFF 再经 {@code BffFeignCall#call} 叠降级）；</li>
+ *   <li>调用经 {@link CustomerFeignConfiguration} 附带信任头 + 透传主身份；熔断由<b>调用方</b>经 Nacos
  *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * 数据权限口径：锚点 {@code customerId} = {@code mall_user.id}（跨域 id 引用、无外键），所有方法全按传入锚点过滤；
@@ -42,10 +46,10 @@ public interface CustomerCenterClient {
      * 读顾客资料：无资料行返回「仅含 id 的空 VO」，不返回 null、不抛 404（调用方不必判空）
      *
      * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
-     * @return 顾客资料
+     * @return 顾客资料（{@code code=200} 时的 {@code data}）
      */
     @GetMapping("/profile/{customerId}")
-    CustomerProfileVO getProfile(@PathVariable("customerId") Long customerId);
+    RespData<CustomerProfileVO> getProfile(@PathVariable("customerId") Long customerId);
 
     /**
      * 保存顾客资料（域侧惰性建行：无记录则建 id=customerId 的资料行）
@@ -54,7 +58,7 @@ public interface CustomerCenterClient {
      * @param dto        资料字段
      */
     @PostMapping("/profile/{customerId}")
-    void saveProfile(@PathVariable("customerId") Long customerId, @RequestBody CustomerProfileSaveDTO dto);
+    RespData<Void> saveProfile(@PathVariable("customerId") Long customerId, @RequestBody CustomerProfileSaveDTO dto);
 
     /**
      * <b>批量</b>读顾客资料（昵称 / 头像等，评价列表一次补齐用）。
@@ -68,7 +72,7 @@ public interface CustomerCenterClient {
      * @return 命中的顾客资料列表（不含查不到的 id），不返回 null
      */
     @PostMapping("/profile/batch")
-    List<CustomerProfileVO> listProfilesByIds(@RequestBody CustomerProfileBatchQueryDTO dto);
+    RespData<List<CustomerProfileVO>> listProfilesByIds(@RequestBody CustomerProfileBatchQueryDTO dto);
 
     /**
      * 我的收货地址列表（默认地址排最前）；无地址返回空列表，不返回 null
@@ -77,29 +81,29 @@ public interface CustomerCenterClient {
      * @return 地址列表
      */
     @GetMapping("/addresses/{customerId}")
-    List<CustomerAddressVO> listAddresses(@PathVariable("customerId") Long customerId);
+    RespData<List<CustomerAddressVO>> listAddresses(@PathVariable("customerId") Long customerId);
 
     /**
-     * 地址详情（不存在或不属于该顾客 → 404「地址不存在」，不区分两种情形）
+     * 地址详情（不存在或不属于该顾客 → {@code code=404}「地址不存在」，不区分两种情形）
      *
      * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
      * @param id         地址 id
      * @return 地址视图对象
      */
     @GetMapping("/addresses/{customerId}/{id}")
-    CustomerAddressVO getAddress(@PathVariable("customerId") Long customerId,
-                                 @PathVariable("id") Long id);
+    RespData<CustomerAddressVO> getAddress(@PathVariable("customerId") Long customerId,
+                                           @PathVariable("id") Long id);
 
     /**
-     * 新增地址（首条自动设为默认；最多 20 条，超限 → 400）
+     * 新增地址（首条自动设为默认；最多 20 条，超限 → {@code code=400}）
      *
      * @param customerId 顾客账号 id（= mall_user.id，数据权限锚点）
      * @param dto        地址字段（**不含 isDefault**：设默认只能走 setDefaultAddress）
      * @return 新地址 id
      */
     @PostMapping("/addresses/{customerId}")
-    Long saveAddress(@PathVariable("customerId") Long customerId,
-                     @RequestBody CustomerAddressSaveDTO dto);
+    RespData<Long> saveAddress(@PathVariable("customerId") Long customerId,
+                               @RequestBody CustomerAddressSaveDTO dto);
 
     /**
      * 修改地址（只改四个业务列，**不动默认位**）
@@ -109,9 +113,9 @@ public interface CustomerCenterClient {
      * @param dto        地址字段
      */
     @PutMapping("/addresses/{customerId}/{id}")
-    void updateAddress(@PathVariable("customerId") Long customerId,
-                       @PathVariable("id") Long id,
-                       @RequestBody CustomerAddressSaveDTO dto);
+    RespData<Void> updateAddress(@PathVariable("customerId") Long customerId,
+                                 @PathVariable("id") Long id,
+                                 @RequestBody CustomerAddressSaveDTO dto);
 
     /**
      * 删除地址（逻辑删除）；⚠ 删掉默认地址后**不自动递补**
@@ -120,8 +124,8 @@ public interface CustomerCenterClient {
      * @param id         地址 id
      */
     @DeleteMapping("/addresses/{customerId}/{id}")
-    void deleteAddress(@PathVariable("customerId") Long customerId,
-                       @PathVariable("id") Long id);
+    RespData<Void> deleteAddress(@PathVariable("customerId") Long customerId,
+                                 @PathVariable("id") Long id);
 
     /**
      * 设为唯一默认地址（同事务内先清该顾客的默认位、再置目标行；并发由该顾客名下行锁串行化）
@@ -130,6 +134,6 @@ public interface CustomerCenterClient {
      * @param id         地址 id
      */
     @PostMapping("/addresses/{customerId}/{id}/default")
-    void setDefaultAddress(@PathVariable("customerId") Long customerId,
-                           @PathVariable("id") Long id);
+    RespData<Void> setDefaultAddress(@PathVariable("customerId") Long customerId,
+                                     @PathVariable("id") Long id);
 }

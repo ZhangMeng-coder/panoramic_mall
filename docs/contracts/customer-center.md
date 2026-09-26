@@ -5,6 +5,7 @@ basePath: /internal/customer
 feignClient: backend/customer-center-interface/src/main/java/com/panoramic/contract/customer/api/CustomerCenterClient.java
 implScanDirs: backend/customer-center/src/main/java/com/panoramic/customer/controller
 typeDirs: backend/customer-center-interface/src/main/java
+respEnvelope: RespData
 -->
 
 # 顾客域（customer-center）内部契约 · 第 ② 层
@@ -22,7 +23,7 @@ typeDirs: backend/customer-center-interface/src/main/java
 - **域内不做任何身份判断**：不判 `X-User-Type`、不校验 token、无 `@PreAuthorize`；
   身份头只读来填 `UserContext`，且**仅用于审计留痕**。
   调用方传的 `customerId` 是否真是「本人」，**由 mall-bff 从登录态取**，域侧不校验 —— 防线在 BFF。
-- **形状**：**不包 `RespData`**，错误走 `{code,msg}` + 真实 HTTP 状态 —— 见 [cross-cutting.md](./cross-cutting.md) 第 2 条。
+- **形状**：出参**包 `RespData<T>`**（无返回值用 `RespData<Void>`）：业务结果（含业务失败 `code=400/403/404`）一律 **HTTP 200 + `{code,msg,data}`**，只有兜底异常才是 **HTTP 500** —— 见 [cross-cutting.md](./cross-cutting.md) 第 2、13 条。
 - **前缀**：`/internal/customer`；拼法（不是 context-path、由 Controller 类级 `@RequestMapping` 写死）
   见 [README.md](./README.md) 的「内部 Feign 的「路径」前缀怎么来的」。
 
@@ -30,15 +31,15 @@ typeDirs: backend/customer-center-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| getProfile | GET | /profile/{customerId} | `Long` | `CustomerProfileVO` | `CustomerCenterClient#getProfile` | `ProfileController#getProfile` | CustomerProfileBffService(mall-bff) |  |
-| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `void` | `CustomerCenterClient#saveProfile` | `ProfileController#saveProfile` | CustomerProfileBffService(mall-bff) |  |
-| listProfilesByIds | POST | /profile/batch | `CustomerProfileBatchQueryDTO` | `List<CustomerProfileVO>` | `CustomerCenterClient#listProfilesByIds` | `ProfileController#listProfilesByIds` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
-| listAddresses | GET | /addresses/{customerId} | `Long` | `List<CustomerAddressVO>` | `CustomerCenterClient#listAddresses` | `AddressController#listAddresses` | CustomerAddressBffService(mall-bff) |  |
-| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `CustomerAddressVO` | `CustomerCenterClient#getAddress` | `AddressController#getAddress` | OrderBffService(mall-bff) |  |
-| saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `Long` | `CustomerCenterClient#saveAddress` | `AddressController#saveAddress` | CustomerAddressBffService(mall-bff) |  |
-| updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `void` | `CustomerCenterClient#updateAddress` | `AddressController#updateAddress` | CustomerAddressBffService(mall-bff) |  |
-| deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `void` | `CustomerCenterClient#deleteAddress` | `AddressController#deleteAddress` | CustomerAddressBffService(mall-bff) |  |
-| setDefaultAddress | POST | /addresses/{customerId}/{id}/default | `Long`, `Long` | `void` | `CustomerCenterClient#setDefaultAddress` | `AddressController#setDefaultAddress` | CustomerAddressBffService(mall-bff) |  |
+| getProfile | GET | /profile/{customerId} | `Long` | `RespData<CustomerProfileVO>` | `CustomerCenterClient#getProfile` | `ProfileController#getProfile` | CustomerProfileBffService(mall-bff) |  |
+| saveProfile | POST | /profile/{customerId} | `Long`, `CustomerProfileSaveDTO` | `RespData<Void>` | `CustomerCenterClient#saveProfile` | `ProfileController#saveProfile` | CustomerProfileBffService(mall-bff) |  |
+| listProfilesByIds | POST | /profile/batch | `CustomerProfileBatchQueryDTO` | `RespData<List<CustomerProfileVO>>` | `CustomerCenterClient#listProfilesByIds` | `ProfileController#listProfilesByIds` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
+| listAddresses | GET | /addresses/{customerId} | `Long` | `RespData<List<CustomerAddressVO>>` | `CustomerCenterClient#listAddresses` | `AddressController#listAddresses` | CustomerAddressBffService(mall-bff) |  |
+| getAddress | GET | /addresses/{customerId}/{id} | `Long`, `Long` | `RespData<CustomerAddressVO>` | `CustomerCenterClient#getAddress` | `AddressController#getAddress` | OrderBffService(mall-bff) |  |
+| saveAddress | POST | /addresses/{customerId} | `Long`, `CustomerAddressSaveDTO` | `RespData<Long>` | `CustomerCenterClient#saveAddress` | `AddressController#saveAddress` | CustomerAddressBffService(mall-bff) |  |
+| updateAddress | PUT | /addresses/{customerId}/{id} | `Long`, `Long`, `CustomerAddressSaveDTO` | `RespData<Void>` | `CustomerCenterClient#updateAddress` | `AddressController#updateAddress` | CustomerAddressBffService(mall-bff) |  |
+| deleteAddress | DELETE | /addresses/{customerId}/{id} | `Long`, `Long` | `RespData<Void>` | `CustomerCenterClient#deleteAddress` | `AddressController#deleteAddress` | CustomerAddressBffService(mall-bff) |  |
+| setDefaultAddress | POST | /addresses/{customerId}/{id}/default | `Long`, `Long` | `RespData<Void>` | `CustomerCenterClient#setDefaultAddress` | `AddressController#setDefaultAddress` | CustomerAddressBffService(mall-bff) |  |
 
 > 「入参」列里**连续两个 `Long`** 时，第一个是 **`customerId`**（数据权限锚点），第二个是 `id`。
 > 例：`getAddress` 的 `Long, Long` = `customerId, id`。

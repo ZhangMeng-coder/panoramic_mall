@@ -2,6 +2,7 @@ package com.panoramic.mallbff.service;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.StoreGoodsSpuBatchQueryDTO;
 import com.panoramic.contract.store.vo.StoreGoodsSkuVO;
@@ -213,10 +214,7 @@ public class CartBffService {
         TradeCartItemUpdateDTO payload = new TradeCartItemUpdateDTO();
         payload.setCustomerId(customerId);
         payload.setQuantity(dto.getQuantity());
-        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.updateCartItemQuantity(id, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> tradeCenterClient.updateCartItemQuantity(id, payload));
     }
 
     /**
@@ -230,10 +228,7 @@ public class CartBffService {
         TradeCartSelectDTO payload = new TradeCartSelectDTO();
         payload.setCustomerId(customerId);
         payload.setSelected(dto.getSelected());
-        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.setCartItemSelected(id, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> tradeCenterClient.setCartItemSelected(id, payload));
     }
 
     /**
@@ -248,10 +243,7 @@ public class CartBffService {
         TradeCartSelectDTO payload = new TradeCartSelectDTO();
         payload.setCustomerId(customerId);
         payload.setSelected(dto.getSelected());
-        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.setAllCartItemsSelected(payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> tradeCenterClient.setAllCartItemsSelected(payload));
     }
 
     /**
@@ -265,10 +257,7 @@ public class CartBffService {
         TradeCartItemIdsDTO payload = new TradeCartItemIdsDTO();
         payload.setCustomerId(customerId);
         payload.setIds(dto.getIds());
-        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.removeCartItems(payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> tradeCenterClient.removeCartItems(payload));
     }
 
     /**
@@ -277,10 +266,7 @@ public class CartBffService {
      * @param customerId 顾客账号 id（只能取自登录态）
      */
     public void clear(Long customerId) {
-        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> {
-            tradeCenterClient.clearCart(customerId);
-            return null;
-        });
+        BffFeignCall.call("trade-center", TRADE_DOWN_MSG, () -> tradeCenterClient.clearCart(customerId));
     }
 
     // ---- 内部 ----

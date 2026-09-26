@@ -21,7 +21,7 @@
  *   3  权限串：契约表 ⊆ sys_permission 种子；前端 v-perm ⊆ 契约表
  *   4  路由（前端 router ↔ 权限种子 route）—— 启发式，仅告警
  *   5  入出参类型存在性（在 typeDirs 下能找到 .java）
- *   6  形状哨兵：页面级必出现 RespData；域实现必不出现
+ *   6  形状哨兵：页面级必出现 RespData；域实现按 contract-meta.respEnvelope（RespData | none）判
  *   7  隐式契约哨兵（cross-cutting.md 的 contract-sentinels 块）
  *   8  网关：路由 / bff-services 白名单 / 两侧鉴权白名单
  *   9  Nacos：spring.config.import 不得带 optional:
@@ -508,9 +508,23 @@ for (const file of contractFiles) {
     for (const k of feignSet) if (!implSet.has(k)) fail(scope, `Feign 声明有、域实现没有：${k}（域侧是否改了类级 @RequestMapping 前缀？）`);
     for (const k of implSet.keys()) if (!feignSet.has(k)) fail(scope, `域实现有、Feign 声明没有：${k}（域侧未使用端点：${implSet.get(k).raw}）`);
 
-    // 第 6 项反向哨兵：域实现不得出现 RespData
-    for (const c of implAll) {
-      if (/RespData/.test(c.text)) fail(scope, `域实现 ${c.file} 出现了 RespData —— 域内接口必须直接返回业务类型`);
+    // 第 6 项（域实现形状哨兵）：由 contract-meta 的 respEnvelope 驱动。
+    // ⚠ 不做「没写就按旧形态默认 none」的兜底：那样新增契约页忘了写开关会**静默跳过**本项，
+    //    而「静默跳过」正是 2026-09-14 那次 BFF 名单硬编码踩过的坑。故缺项直接判错。
+    if (meta.respEnvelope === 'RespData') {
+      // 新形态：域实现必须包 RespData（剥注释后再判，避免认注释里提到的 RespData）
+      for (const c of implAll) {
+        if (!/RespData/.test(blankComments(read(c.file)))) {
+          fail(scope, `域实现 ${c.file} 未出现 RespData —— respEnvelope 标着 RespData，域内接口应返回 RespData<T>`);
+        }
+      }
+    } else if (meta.respEnvelope === 'none') {
+      // 旧形态：域实现不得出现 RespData
+      for (const c of implAll) {
+        if (/RespData/.test(c.text)) fail(scope, `域实现 ${c.file} 出现了 RespData —— 域内接口必须直接返回业务类型`);
+      }
+    } else {
+      fail(scope, `contract-meta 缺少 respEnvelope（取 RespData | none）—— 第 6 项形状哨兵无法判定`);
     }
 
     summary.push({ scope, layer: meta.layer, table: allRows.length, pending: pendRows.length, code: implSet.size, feign: feignSet.size });

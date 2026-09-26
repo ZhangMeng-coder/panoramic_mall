@@ -1,5 +1,6 @@
 package com.panoramic.customer.controller;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
@@ -18,8 +19,9 @@ import java.util.List;
 /**
  * 顾客资料内部领域接口（customer-center 域下沉纯域）。
  * <p>仅供端 BFF（mall-bff，C 端顾客自助）经内部 Feign（{@code /internal/customer/profile/...}）调用，
- * 不向页面暴露公网路由；方法直接返回业务原类型（不包 RespData），错误经
- * {@code CustomerDomainExceptionHandler} 以真实 HTTP 状态码传播。</p>
+ * 不向页面暴露公网路由。出参一律包 {@code RespData<T>}（cross-cutting 第 2 条）：业务结果（含业务失败）
+ * 走 HTTP 200 + {@code code}，异常由 common 的 {@code GlobalExceptionHandler} 兜底成 HTTP 500 —— 那是熔断
+ * 唯一的失败信号（第 13 条）。</p>
  * <p><b>域内不做任何鉴权、不做权限判断、不校验 token</b>：路径上的 {@code customerId} 就是数据权限锚点，
  * 它是否等于「本人」由 mall-bff 从登录态取，域侧不校验（防线在 BFF）。身份头只由
  * {@code CustomerUserIdentityFilter} 填 {@code UserContext} 供审计留痕，缺头即留空、不回 401。</p>
@@ -32,20 +34,21 @@ public class ProfileController {
     private final CustomerProfileService customerProfileService;
 
     /**
-     * 读顾客资料：无资料行返回「仅含 id 的空 VO」（HTTP 200），不返回 null、不抛 404
+     * 读顾客资料：无资料行返回「仅含 id 的空 VO」（{@code code=200, data=空VO}），不返回 null、不抛 404
      */
     @GetMapping("/{customerId}")
-    public CustomerProfileVO getProfile(@PathVariable("customerId") Long customerId) {
-        return customerProfileService.getProfile(customerId);
+    public RespData<CustomerProfileVO> getProfile(@PathVariable("customerId") Long customerId) {
+        return RespData.success(customerProfileService.getProfile(customerId));
     }
 
     /**
      * 保存顾客资料（惰性建行：无记录则建 id=customerId 的资料行）
      */
     @PostMapping("/{customerId}")
-    public void saveProfile(@PathVariable("customerId") Long customerId,
-                            @Validated @RequestBody CustomerProfileSaveDTO dto) {
+    public RespData<Void> saveProfile(@PathVariable("customerId") Long customerId,
+                                     @Validated @RequestBody CustomerProfileSaveDTO dto) {
         customerProfileService.saveProfile(customerId, dto);
+        return RespData.success();
     }
 
     /**
@@ -56,7 +59,7 @@ public class ProfileController {
      * <p>⚠ 查不到的 id <b>跳过</b>，不补空 VO（与单读 {@link #getProfile} 的有意分歧，见契约页）。</p>
      */
     @PostMapping("/batch")
-    public List<CustomerProfileVO> listProfilesByIds(@Validated @RequestBody CustomerProfileBatchQueryDTO dto) {
-        return customerProfileService.listProfilesByIds(dto.getCustomerIds());
+    public RespData<List<CustomerProfileVO>> listProfilesByIds(@Validated @RequestBody CustomerProfileBatchQueryDTO dto) {
+        return RespData.success(customerProfileService.listProfilesByIds(dto.getCustomerIds()));
     }
 }

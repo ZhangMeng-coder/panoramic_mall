@@ -20,8 +20,8 @@
 | `security` | `LoginUser` | 登录用户模型（含 `userType` 与 `USER_TYPE_ADMIN/STORE/USER` 常量、`HEADER_USER_TYPE`）。**留在 common**，供域服务读身份做审计填充 |
 | `util` | `UserContext` | 当前用户上下文（ThreadLocal）：`getUserId()` / `getUserType()`（类型缺失回退 `admin`）/ 角色权限等 |
 | `util` | `HtmlSanitizer` | 富文本消毒：把店主录入的商品详情等**不可信 HTML** 洗成可安全渲染的 HTML。**消毒点在消费端 BFF 的出口**（域只原样存取、前端不得各引一套），各端 BFF 共用本类这一份白名单（见 cross-cutting 第 21 条） |
-| `feign` | `InternalApiErrorDecoder` | 把下游非 2xx 的 `{code,msg}` 还原为 `ServiceException`（按 HTTP 状态码分野 4xx/5xx） |
-| `feign` | `BffFeignCall` | 端 BFF 调域的统一执行器：沿 cause 链剥出下游业务异常、其余降级为「…暂不可用」；4xx 原样透传（见 cross-cutting 第 13 条） |
+| `feign` | `DomainResp` | 内部 Feign 响应的解包规约：`unwrap(RespData<T>)` → `code=200` 取 `data`、否则抛 `ServiceException(code,msg)`、空响应抛 500（见 cross-cutting 第 2 条） |
+| `feign` | `BffFeignCall` | 端 BFF 调域的统一执行器（`call`）：解包后沿 cause 链剥出下游业务异常、其余降级为「…暂不可用」；400/403/404 原样透传（见 cross-cutting 第 13 条）。⚠ 域间调用**不用**它（第 24 条） |
 | `enums` | `DeleteTypeEnum` / `ServiceExceptionEnums` | 删除标识枚举 / 通用异常码枚举 |
 
 > ⚠ **各域的 Feign 客户端与同源 DTO/VO 不在本模块**（2026-09-19 拆出）：`GoodsCenterClient` + `contract.goods.*`

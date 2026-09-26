@@ -1,5 +1,6 @@
 package com.panoramic.contract.goods.api;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.goods.dto.BrandPageQueryDTO;
 import com.panoramic.contract.goods.dto.BrandSaveDTO;
 import com.panoramic.contract.goods.dto.BrandUpdateDTO;
@@ -35,8 +36,11 @@ import java.util.Map;
  * 规约（见 docs/contracts/goods-center.md 与 cross-cutting.md）：
  * <ul>
  *   <li>入参/出参 DTO 与接口同源维护在 goods-center-interface（goods-center 服务端、本客户端引用同一份类型）；</li>
- *   <li>方法直接返回业务结果类型（不包 RespData），错误走异常统一传播；</li>
- *   <li>调用经 {@link GoodsFeignConfiguration} 附带信任头 + 错误解码；熔断由<b>调用方</b>经 Nacos
+ *   <li>出参一律包 {@code RespData<T>}，<b>HTTP 200 承载一切业务结果</b>：正常 {@code code=200} + {@code data}，
+ *       业务失败 {@code code=400/403/404} + {@code msg}（域侧不抛异常，故 {@code ErrorDecoder} 不会被调用）；
+ *       只有真故障才是 HTTP 5xx → 调用方抛 {@code FeignException} → 计入熔断。调用方解包走
+ *       {@code com.panoramic.common.feign.DomainResp#unwrap}（端 BFF 再经 {@code BffFeignCall#call} 叠降级）；</li>
+ *   <li>调用经 {@link GoodsFeignConfiguration} 附带信任头；熔断由<b>调用方</b>经 Nacos
  *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * 服务端路径与映射需与 goods-center 内部控制器一一对应（前缀 /internal/goods）。</p>
@@ -47,29 +51,29 @@ public interface GoodsCenterClient {
 
     // ---- 品牌 ----
     @GetMapping("/brands/page")
-    PageResult<BrandVO> pageBrands(@SpringQueryMap BrandPageQueryDTO dto);
+    RespData<PageResult<BrandVO>> pageBrands(@SpringQueryMap BrandPageQueryDTO dto);
 
     @GetMapping("/brands/list")
-    List<BrandVO> listBrands();
+    RespData<List<BrandVO>> listBrands();
 
     @GetMapping("/brands/{id}")
-    BrandVO brandDetail(@PathVariable("id") Long id);
+    RespData<BrandVO> brandDetail(@PathVariable("id") Long id);
 
     @PostMapping("/brands")
-    Long saveBrand(@RequestBody BrandSaveDTO dto);
+    RespData<Long> saveBrand(@RequestBody BrandSaveDTO dto);
 
     @PutMapping("/brands/{id}")
-    void updateBrand(@PathVariable("id") Long id, @RequestBody BrandUpdateDTO dto);
+    RespData<Void> updateBrand(@PathVariable("id") Long id, @RequestBody BrandUpdateDTO dto);
 
     @DeleteMapping("/brands/{id}")
-    void deleteBrand(@PathVariable("id") Long id);
+    RespData<Void> deleteBrand(@PathVariable("id") Long id);
 
     // ---- 分类 ----
     @PostMapping("/categories")
-    Long saveCategory(@RequestBody CategorySaveDTO dto);
+    RespData<Long> saveCategory(@RequestBody CategorySaveDTO dto);
 
     @GetMapping("/categories/tree")
-    List<CategoryTreeVO> categoryTree();
+    RespData<List<CategoryTreeVO>> categoryTree();
 
     /**
      * 批量取分类全路径（如「服饰 / 男装 / T恤」，以 " / " 连接）。
@@ -78,41 +82,42 @@ public interface GoodsCenterClient {
      * 入参为空集合时直接返回空 Map。</p>
      */
     @PostMapping("/categories/paths")
-    Map<Long, String> categoryPaths(@RequestBody List<Long> categoryIds);
+    RespData<Map<Long, String>> categoryPaths(@RequestBody List<Long> categoryIds);
 
     @PutMapping("/categories/{id}")
-    void updateCategory(@PathVariable("id") Long id, @RequestBody CategoryUpdateDTO dto);
+    RespData<Void> updateCategory(@PathVariable("id") Long id, @RequestBody CategoryUpdateDTO dto);
 
     @DeleteMapping("/categories/{id}")
-    void deleteCategory(@PathVariable("id") Long id);
+    RespData<Void> deleteCategory(@PathVariable("id") Long id);
 
     // ---- 标准商品 SPU（模板） ----
     @GetMapping("/spu/page")
-    PageResult<SpuPageItemVO> pageSpu(@SpringQueryMap SpuPageQueryDTO dto);
+    RespData<PageResult<SpuPageItemVO>> pageSpu(@SpringQueryMap SpuPageQueryDTO dto);
 
     @GetMapping("/spu/{id}")
-    SpuDetailVO spuDetail(@PathVariable("id") Long id);
+    RespData<SpuDetailVO> spuDetail(@PathVariable("id") Long id);
 
     /**
      * 按 SKU 编码反查所属标准商品（店铺端「填 SKU_CODE 预填新增表单」用）。
      * <p>中台 goods_sku.sku_code 无唯一索引，重复时按 SKU id 升序取首条并置 matchedSkuCount；
-     * <b>未命中返回 spu=null</b>（HTTP 200，不抛异常）——店铺端允许「查不到照样自建」。</p>
+     * <b>未命中返回 spu=null</b>（{@code code=200} + {@code data.spu=null}，不报业务错）——
+     * 店铺端允许「查不到照样自建」。</p>
      */
     @GetMapping("/spu/by-sku-code")
-    SpuBySkuCodeVO spuDetailBySkuCode(@RequestParam("skuCode") String skuCode);
+    RespData<SpuBySkuCodeVO> spuDetailBySkuCode(@RequestParam("skuCode") String skuCode);
 
     @PostMapping("/spu")
-    Long saveSpu(@RequestBody SpuSaveDTO dto);
+    RespData<Long> saveSpu(@RequestBody SpuSaveDTO dto);
 
     @PutMapping("/spu/{id}")
-    void updateSpu(@PathVariable("id") Long id, @RequestBody SpuUpdateDTO dto);
+    RespData<Void> updateSpu(@PathVariable("id") Long id, @RequestBody SpuUpdateDTO dto);
 
     @PutMapping("/spu/{id}/skus")
-    void replaceSpuSkus(@PathVariable("id") Long id, @RequestBody SpuSkuReplaceDTO dto);
+    RespData<Void> replaceSpuSkus(@PathVariable("id") Long id, @RequestBody SpuSkuReplaceDTO dto);
 
     @PutMapping("/spu/{id}/status")
-    void updateSpuStatus(@PathVariable("id") Long id, @RequestBody SpuStatusDTO dto);
+    RespData<Void> updateSpuStatus(@PathVariable("id") Long id, @RequestBody SpuStatusDTO dto);
 
     @DeleteMapping("/spu/{id}")
-    void deleteSpu(@PathVariable("id") Long id);
+    RespData<Void> deleteSpu(@PathVariable("id") Long id);
 }

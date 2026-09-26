@@ -1,5 +1,6 @@
 package com.panoramic.trade.order.infrastructure;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.SpecAttr;
 import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
@@ -130,7 +131,7 @@ class OrderDomainWiringTest {
      * store 域的**测试替身**：本类只验装配，故只提供 {@link StoreClient} 这一个 bean，
      * 具体行为（快照长什么样、库存够不够）由用例自己打桩（见 {@link OrderDomainWiringTest#givenSellableSkuWithStock}）。
      *
-     * <p>⚠ 用 Mockito 而不是手写空实现：{@code StoreClient} 有 27 个方法，逐条 no-op 覆盖不值得
+     * <p>⚠ 用 Mockito 而不是手写空实现：{@code StoreClient} 有 29 个方法，逐条 no-op 覆盖不值得
      * ——本类要的只是「有一个能装得进去的 StoreClient」。</p>
      */
     @Configuration
@@ -365,17 +366,20 @@ class OrderDomainWiringTest {
      */
     private AtomicInteger givenSellableSkuWithStock(int stock) {
         AtomicInteger available = new AtomicInteger(stock);
+        // ⚠ 出参是 RespData（域内接口一律包），替身也要按新形状回话：适配器侧的解包
+        //   （DomainResp.unwrap）才能取到 data。直接回裸值会让 unwrap 看到 null 而抛 500。
         when(storeClient.tradeSkuSnapshotBatch(any())).thenAnswer(invocation -> {
             StoreGoodsSkuBatchQueryDTO query = invocation.getArgument(0);
-            return query.getSkuIds().stream()
+            return RespData.success(query.getSkuIds().stream()
                     .filter(SKU_ID::equals)
                     .map(skuId -> snapshot(available.get()))
-                    .toList();
+                    .toList());
         });
         when(storeClient.deductStock(any())).thenAnswer(invocation -> {
             StoreStockDeductDTO dto = invocation.getArgument(0);
             int current = available.get();
-            return current >= dto.getQuantity() && available.compareAndSet(current, current - dto.getQuantity());
+            return RespData.success(
+                    current >= dto.getQuantity() && available.compareAndSet(current, current - dto.getQuantity()));
         });
         return available;
     }

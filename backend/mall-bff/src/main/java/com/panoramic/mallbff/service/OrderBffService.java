@@ -1,6 +1,8 @@
 package com.panoramic.mallbff.service;
 
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.feign.DomainResp;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.api.CustomerCenterClient;
 import com.panoramic.contract.customer.vo.CustomerAddressVO;
 import com.panoramic.contract.store.vo.PageResult;
@@ -195,10 +197,7 @@ public class OrderBffService {
         TradeOrderPayDTO payload = new TradeOrderPayDTO();
         payload.setCustomerId(customerId);
         payload.setAmount(dto.getAmount());
-        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
-            tradeCenterClient.payOrder(orderNo, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> tradeCenterClient.payOrder(orderNo, payload));
     }
 
     /**
@@ -219,10 +218,7 @@ public class OrderBffService {
         TradeOrderAddressUpdateDTO payload = new TradeOrderAddressUpdateDTO();
         payload.setCustomerId(customerId);
         payload.setAddress(addressSnapshot(customerId, dto.getAddressId()));
-        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
-            tradeCenterClient.updateOrderAddress(orderNo, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> tradeCenterClient.updateOrderAddress(orderNo, payload));
     }
 
     /**
@@ -234,10 +230,7 @@ public class OrderBffService {
     public void receive(Long customerId, String orderNo) {
         TradeOrderReceiveDTO payload = new TradeOrderReceiveDTO();
         payload.setCustomerId(customerId);
-        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
-            tradeCenterClient.receiveOrder(orderNo, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> tradeCenterClient.receiveOrder(orderNo, payload));
     }
 
     /**
@@ -255,10 +248,7 @@ public class OrderBffService {
     public void cancel(Long customerId, String orderNo) {
         TradeOrderCancelDTO payload = new TradeOrderCancelDTO();
         payload.setCustomerId(customerId);
-        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
-            tradeCenterClient.cancelOrder(orderNo, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> tradeCenterClient.cancelOrder(orderNo, payload));
     }
 
     /**
@@ -276,10 +266,7 @@ public class OrderBffService {
     public void refund(Long customerId, String orderNo) {
         TradeOrderRefundDTO payload = new TradeOrderRefundDTO();
         payload.setCustomerId(customerId);
-        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> {
-            tradeCenterClient.refundOrder(orderNo, payload);
-            return null;
-        });
+        BffFeignCall.call("trade-center", ORDER_DOWN_MSG, () -> tradeCenterClient.refundOrder(orderNo, payload));
     }
 
     // ---- 内部 ----
@@ -296,6 +283,7 @@ public class OrderBffService {
     private TradeOrderAddressDTO addressSnapshot(Long customerId, Long addressId) {
         CustomerAddressVO address = BffFeignCall.call("customer-center", ADDRESS_DOWN_MSG,
                 () -> customerCenterClient.getAddress(customerId, addressId));
+
         TradeOrderAddressDTO snapshot = new TradeOrderAddressDTO();
         snapshot.setReceiverName(address.getReceiverName());
         snapshot.setReceiverPhone(address.getReceiverPhone());
@@ -335,7 +323,9 @@ public class OrderBffService {
         payload.setCustomerId(customerId);
         payload.setIds(cartItemIds);
         try {
-            tradeCenterClient.removeCartItems(payload);
+            // ⚠ 必须解包：域侧业务失败是 code≠200（不抛异常），丢掉返回值就等于把失败静默吞掉、
+            //   连下面那条 warn 都不会打（cross-cutting 第 2 条）。unwrap 抛出的异常走同一个 catch。
+            DomainResp.unwrap(tradeCenterClient.removeCartItems(payload));
         } catch (Exception e) {
             // 订单已建、不可逆；清车可重放（顾客手动删 / 再提交一次会命中幂等复用原单），故只记日志。
             // ⚠ catch 面刻意宽到 Exception（与本端静默降级先例一致：CatalogBffService / CustomerProfileBffService 同款）：

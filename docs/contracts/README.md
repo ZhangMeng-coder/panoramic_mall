@@ -66,8 +66,11 @@ layer: internal
 basePath: /internal/goods
 feignClient: backend/goods-center-interface/src/main/java/com/panoramic/contract/goods/api/GoodsCenterClient.java
 implScanDirs: backend/goods-center/src/main/java/com/panoramic/goods/controller
+respEnvelope: RespData
 -->
 ```
+
+- `respEnvelope`：**必填**，取 `RespData` | `none`，决定第 6 项「域实现形状哨兵」往哪个方向判 —— `RespData` 要求域实现出现 `RespData`，`none` 要求不得出现。**缺项直接判错、不兜底默认值**：默认值会让新契约页漏写时静默跳过本项。迁移期各域逐一从 `none` 翻成 `RespData`。
 
 **网关**：
 

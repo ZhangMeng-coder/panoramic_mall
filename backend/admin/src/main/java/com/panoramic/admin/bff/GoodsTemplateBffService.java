@@ -1,6 +1,7 @@
 package com.panoramic.admin.bff;
 
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.goods.api.GoodsCenterClient;
 import com.panoramic.contract.goods.dto.BrandPageQueryDTO;
 import com.panoramic.contract.goods.dto.BrandSaveDTO;
@@ -28,8 +29,8 @@ import java.util.function.Supplier;
  * admin 端 BFF · 标准商品模板维护编排。
  * <p>只做页面编排与聚合，不持有/复制 goods 域任何实体与表；全部经内部 Feign 调 goods-center
  * （共享 DTO 同源在 goods-center-interface），并按 Feign 规约熔断：
- * 下游业务异常（400 参数/业务、403 权限）原样透传由统一异常处理还原 RespData 给页面；
- * 连接失败 / 熔断开启 / 其它异常统一降级为友好提示，避免拖垮调用方。</p>
+ * 下游业务错误（body {@code code} 为 400 参数/业务、403 权限、404 不存在）原样透传、由统一异常处理还原给页面；
+ * 连接失败 / 熔断开启 / 下游 5xx 等真故障统一降级为友好提示，避免拖垮调用方。</p>
  */
 @Slf4j
 @Service
@@ -59,17 +60,11 @@ public class GoodsTemplateBffService {
     }
 
     public void updateBrand(Long id, BrandUpdateDTO dto) {
-        call(() -> {
-            goodsCenterClient.updateBrand(id, dto);
-            return null;
-        });
+        call(() -> goodsCenterClient.updateBrand(id, dto));
     }
 
     public void deleteBrand(Long id) {
-        call(() -> {
-            goodsCenterClient.deleteBrand(id);
-            return null;
-        });
+        call(() -> goodsCenterClient.deleteBrand(id));
     }
 
     // ---- 分类 ----
@@ -82,17 +77,11 @@ public class GoodsTemplateBffService {
     }
 
     public void updateCategory(Long id, CategoryUpdateDTO dto) {
-        call(() -> {
-            goodsCenterClient.updateCategory(id, dto);
-            return null;
-        });
+        call(() -> goodsCenterClient.updateCategory(id, dto));
     }
 
     public void deleteCategory(Long id) {
-        call(() -> {
-            goodsCenterClient.deleteCategory(id);
-            return null;
-        });
+        call(() -> goodsCenterClient.deleteCategory(id));
     }
 
     // ---- 标准商品 SPU（模板） ----
@@ -109,31 +98,19 @@ public class GoodsTemplateBffService {
     }
 
     public void updateSpu(Long id, SpuUpdateDTO dto) {
-        call(() -> {
-            goodsCenterClient.updateSpu(id, dto);
-            return null;
-        });
+        call(() -> goodsCenterClient.updateSpu(id, dto));
     }
 
     public void replaceSpuSkus(Long id, SpuSkuReplaceDTO dto) {
-        call(() -> {
-            goodsCenterClient.replaceSpuSkus(id, dto);
-            return null;
-        });
+        call(() -> goodsCenterClient.replaceSpuSkus(id, dto));
     }
 
     public void updateSpuStatus(Long id, SpuStatusDTO dto) {
-        call(() -> {
-            goodsCenterClient.updateSpuStatus(id, dto);
-            return null;
-        });
+        call(() -> goodsCenterClient.updateSpuStatus(id, dto));
     }
 
     public void deleteSpu(Long id) {
-        call(() -> {
-            goodsCenterClient.deleteSpu(id);
-            return null;
-        });
+        call(() -> goodsCenterClient.deleteSpu(id));
     }
 
     /**
@@ -141,7 +118,7 @@ public class GoodsTemplateBffService {
      * <p>剥 cause 链与降级的实现已抽到 common 的 {@link BffFeignCall}（各端 BFF 共用一份），
      * 本类只传自己的降级文案。</p>
      */
-    private <T> T call(Supplier<T> action) {
+    private <T> T call(Supplier<RespData<T>> action) {
         return BffFeignCall.call("goods-center", DEGRADE_MSG, action);
     }
 }

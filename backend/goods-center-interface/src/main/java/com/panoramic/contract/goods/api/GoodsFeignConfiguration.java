@@ -1,10 +1,8 @@
 package com.panoramic.contract.goods.api;
 
-import com.panoramic.common.feign.InternalApiErrorDecoder;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import feign.RequestInterceptor;
-import feign.codec.ErrorDecoder;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -20,7 +18,11 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       （X-User-Type）透传给下游（优先取当前 Web 请求上 gateway 透传的身份头，经
  *       RequestContextHolder 跨熔断线程读取；兜底取请求线程 UserContext），供 goods-center 填充
  *       审计字段（{@code UserContext}）；⚠ goods-center 已不做权限判定，也不再校验信任头令牌；</li>
- *   <li>{@link ErrorDecoder}：把下游非 2xx 的 {@code {code,msg}} 响应还原为业务异常。</li>
+ *   <li>⚠ <b>刻意没有 {@code ErrorDecoder}</b>：域侧业务失败一律 HTTP 200 + {@code code}（第 2 条），
+ *       由调用方自己解包（{@code DomainResp#unwrap} / 端 BFF 的 {@code BffFeignCall#call}）；
+ *       只有真故障才是 5xx，那时 Feign 直接抛 {@code FeignException}——熔断唯一的失败信号（第 13 条）。
+ *       再挂一个 ErrorDecoder 去「还原业务异常」等于把业务错误重新变成熔断信号（2026-09-10 的坑），
+ *       不要加回。</li>
  * </ul></p>
  */
 public class GoodsFeignConfiguration {
@@ -58,8 +60,4 @@ public class GoodsFeignConfiguration {
         };
     }
 
-    @Bean
-    public ErrorDecoder goodsInternalErrorDecoder() {
-        return new InternalApiErrorDecoder();
-    }
 }

@@ -1,5 +1,6 @@
 package com.panoramic.store.controller;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.dto.StoreGoodsEvaluationOrderQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsEvaluationPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsEvaluationReplyDTO;
@@ -23,8 +24,8 @@ import java.util.List;
 /**
  * 商品评价内部领域接口（store 域）。
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/store/goods/evaluation/**}）调用，
- * 不对页面暴露公网路由；方法直接返回业务原类型（不包 RespData），错误经
- * {@code StoreDomainExceptionHandler} 以真实 HTTP 状态码传播。</p>
+ * 不对页面暴露公网路由；方法一律返回 {@code RespData<T>}——业务失败（{@code code=400/403/404}）
+ * 也走 <b>HTTP 200 + {code,msg}</b>，只有兜底异常才由 common 的 {@code GlobalExceptionHandler} 返 HTTP 500。</p>
  * <p><b>作用域在哪</b>（见 store.md 第三节）：
  * <ul>
  *   <li>{@code submitEvaluation} —— 作用域是 {@code customerId}（评价人），<b>无 storeId</b>：
@@ -48,8 +49,9 @@ public class EvaluationController {
      * 提交商品评价（一笔订单里的一个商品一条；重复提交 → 400「该商品已评价」）
      */
     @PostMapping
-    public void submitEvaluation(@Validated @RequestBody StoreGoodsEvaluationSubmitDTO dto) {
+    public RespData<Void> submitEvaluation(@Validated @RequestBody StoreGoodsEvaluationSubmitDTO dto) {
         storeGoodsEvaluationService.submit(dto);
+        return RespData.success();
     }
 
     /**
@@ -57,9 +59,9 @@ public class EvaluationController {
      * <p>用 POST + body：{@code scores} 是集合（同 {@code /goods/cross-shop/spu/page} 口径）。</p>
      */
     @PostMapping("/page")
-    public PageResult<StoreGoodsEvaluationPageItemVO> pageEvaluations(
+    public RespData<PageResult<StoreGoodsEvaluationPageItemVO>> pageEvaluations(
             @Validated @RequestBody StoreGoodsEvaluationPageQueryDTO dto) {
-        return storeGoodsEvaluationService.page(dto);
+        return RespData.success(storeGoodsEvaluationService.page(dto));
     }
 
     /**
@@ -67,8 +69,8 @@ public class EvaluationController {
      * <p>无集合字段，故走 GET + query（{@code /page} 与 {@code /stat} 是两个字面量路径，不冲突）。</p>
      */
     @GetMapping("/stat")
-    public StoreGoodsEvaluationStatVO evaluationStat(@Validated StoreGoodsEvaluationStatQueryDTO query) {
-        return storeGoodsEvaluationService.stat(query);
+    public RespData<StoreGoodsEvaluationStatVO> evaluationStat(@Validated StoreGoodsEvaluationStatQueryDTO query) {
+        return RespData.success(storeGoodsEvaluationService.stat(query));
     }
 
     /**
@@ -76,17 +78,18 @@ public class EvaluationController {
      * <p>订单号是路径变量（资源标识，不进 DTO）；顾客锚点走 DTO。未评价过 → 空列表。</p>
      */
     @GetMapping("/order/{orderNo}/spu-ids")
-    public List<Long> listEvaluatedSpuIds(@PathVariable("orderNo") String orderNo,
+    public RespData<List<Long>> listEvaluatedSpuIds(@PathVariable("orderNo") String orderNo,
                                          @Validated StoreGoodsEvaluationOrderQueryDTO query) {
-        return storeGoodsEvaluationService.listEvaluatedSpuIds(orderNo, query);
+        return RespData.success(storeGoodsEvaluationService.listEvaluatedSpuIds(orderNo, query));
     }
 
     /**
      * 商家回复评价（一条评价至多一条回复；已回复 → 400「该评价已回复」）
      */
     @PostMapping("/{id}/reply")
-    public void replyEvaluation(@PathVariable("id") Long id,
+    public RespData<Void> replyEvaluation(@PathVariable("id") Long id,
                                 @Validated @RequestBody StoreGoodsEvaluationReplyDTO dto) {
         storeGoodsEvaluationService.reply(id, dto);
+        return RespData.success();
     }
 }

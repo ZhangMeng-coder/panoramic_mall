@@ -75,5 +75,5 @@
 - MyBatis-Plus：主键策略**按表**——`customer_profile` = `IdType.INPUT`（主键即账号 id，显式插入）、`customer_address` = `IdType.AUTO`（自增）；`is_delete` 逻辑删除、驼峰映射。
   ⚠ 两表**刻意不同**，新建实体时按「主键是否等于外部锚点」选，别照抄隔壁那张表
 - 启动类扫描 `com.panoramic` 以加载 common 的全局异常处理、分页插件、字段自动填充与安全链
-- 异常语义（内部）：经 `CustomerDomainExceptionHandler` 还原**真实 HTTP 状态 + `{code,msg}`**，供内部 Feign ErrorDecoder 还原为 `ServiceException`
-- 响应结构：**本域内部接口不包 `RespData`**（`RespData` 只用于端 BFF 的对外接口）
+- 异常语义（内部）：业务失败以 **HTTP 200 + `{code,msg}`** 返回（域侧不抛异常，故调用方 Feign 的 `ErrorDecoder` 不会被调用）；只有兜底异常才由 common 的 `GlobalExceptionHandler` 返 **HTTP 500** —— 那是熔断唯一的失败信号（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 13 条）
+- 响应结构：**本域内部接口出参包 `RespData<T>`**（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 2 条），与端 BFF 的对外接口同一形状；调用方解包走 `DomainResp#unwrap`

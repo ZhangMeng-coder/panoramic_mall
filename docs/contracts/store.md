@@ -5,6 +5,7 @@ basePath: /internal/store
 feignClient: backend/store-interface/src/main/java/com/panoramic/contract/store/api/StoreClient.java
 implScanDirs: backend/store/src/main/java/com/panoramic/store/controller
 typeDirs: backend/store-interface/src/main/java
+respEnvelope: RespData
 -->
 
 # 店铺域（store）内部契约 · 第 ② 层
@@ -25,35 +26,35 @@ typeDirs: backend/store-interface/src/main/java
 
 | Feign 方法 | 方法 | 路径 | 入参 | 出参 | 契约声明(接口模块) | 域实现 | 调用方 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| getShop | GET | /shops/{id} | Long | ShopVO | `StoreClient#getShop` | `ShopController#getShop` | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff), StoreShopBffService(admin), CatalogBffService(mall-bff) |  |
-| saveShop | POST | /shops/save | ShopSaveDTO | void | `StoreClient#saveShop` | `ShopController#save` | StoreShopBffService(store-bff) |  |
-| submitShop | POST | /shops/submit | ShopSaveDTO | void | `StoreClient#submitShop` | `ShopController#submit` | StoreShopBffService(store-bff) |  |
-| pageShops | GET | /shops/page | ShopPageQueryDTO | PageResult<ShopVO> | `StoreClient#pageShops` | `ShopController#page` | StoreShopBffService(admin) |  |
-| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | void | `StoreClient#auditShop` | `ShopController#audit` | StoreShopBffService(admin) |  |
-| listShopOptions | GET | /shops/options | — | List<ShopOptionVO> | `StoreClient#listShopOptions` | `ShopController#options` | ShopGoodsBffService(admin) |  |
-| pageStoreGoods | GET | /goods/spu/page | StoreGoodsSpuPageQueryDTO | PageResult<StoreGoodsSpuPageItemVO> | `StoreClient#pageStoreGoods` | `GoodsController#page` | StoreGoodsBffService(store-bff) |  |
-| storeGoodsDetail | GET | /goods/spu/{id} | Long, StoreGoodsSpuDetailQueryDTO | StoreGoodsSpuPlatformDetailVO | `StoreClient#storeGoodsDetail` | `GoodsController#detail` | StoreGoodsBffService(store-bff), ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| saveStoreGoods | POST | /goods/spu | StoreGoodsSpuSaveDTO | Long | `StoreClient#saveStoreGoods` | `GoodsController#save` | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoods | PUT | /goods/spu/{id} | Long, StoreGoodsSpuUpdateDTO | void | `StoreClient#updateStoreGoods` | `GoodsController#update` | StoreGoodsBffService(store-bff) |  |
-| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | void | `StoreClient#deleteStoreGoods` | `GoodsController#delete` | StoreGoodsBffService(store-bff) |  |
-| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, StoreGoodsSkuReplaceDTO | void | `StoreClient#replaceStoreGoodsSkus` | `GoodsController#replaceSkus` | StoreGoodsBffService(store-bff) |  |
-| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, StoreGoodsSkuShelfDTO | void | `StoreClient#updateStoreGoodsSkuShelf` | `GoodsController#updateSkuShelf` | StoreGoodsBffService(store-bff) |  |
-| pageSkuStock | GET | /goods/stock/page | StoreGoodsStockPageQueryDTO | PageResult<StoreGoodsStockPageItemVO> | `StoreClient#pageSkuStock` | `GoodsController#pageSkuStock` | StoreGoodsBffService(store-bff) |  |
-| updateSkuStock | PUT | /goods/stock/{skuId} | Long, StoreGoodsStockUpdateDTO | void | `StoreClient#updateSkuStock` | `GoodsController#updateSkuStock` | StoreGoodsBffService(store-bff) |  |
-| batchUpdateSkuStock | PUT | /goods/stock/batch | StoreGoodsStockBatchUpdateDTO | void | `StoreClient#batchUpdateSkuStock` | `GoodsController#batchUpdateSkuStock` | StoreGoodsBffService(store-bff) |  |
-| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | PageResult<StoreGoodsSpuCrossShopPageItemVO> | `StoreClient#pageStoreGoodsCrossShop` | `GoodsController#crossShopPage` | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
-| crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | StoreGoodsSpuFacetVO | `StoreClient#crossShopFacets` | `GoodsController#facets` | CatalogBffService(mall-bff) |  |
-| batchSpuDetail | POST | /goods/spu/batch | StoreGoodsSpuBatchQueryDTO | List<StoreGoodsSpuPlatformDetailVO> | `StoreClient#batchSpuDetail` | `GoodsController#batchSpuDetail` | CatalogBffService(mall-bff) |  |
-| lockStoreGoods | POST | /goods/spu/{id}/lock | Long, StoreGoodsLockDTO | void | `StoreClient#lockStoreGoods` | `GoodsController#lock` | ShopGoodsBffService(admin) |  |
-| unlockStoreGoods | POST | /goods/spu/{id}/unlock | Long | void | `StoreClient#unlockStoreGoods` | `GoodsController#unlock` | ShopGoodsBffService(admin) |  |
-| tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | List<StoreGoodsSkuSnapshotVO> | `StoreClient#tradeSkuSnapshotBatch` | `GoodsTradeController#tradeSkuSnapshotBatch` | GoodsQueryAdapter(trade-center) |  |
-| deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | boolean | `StoreClient#deductStock` | `GoodsTradeController#deductStock` | StockAdapter(trade-center) |  |
-| revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | void | `StoreClient#revertStockByOrder` | `GoodsTradeController#revertStockByOrder` | StockAdapter(trade-center) |  |
-| submitEvaluation | POST | /goods/evaluation | `StoreGoodsEvaluationSubmitDTO` | `void` | `StoreClient#submitEvaluation` | `EvaluationController#submitEvaluation` | EvaluationBffService(mall-bff) |  |
-| pageEvaluations | POST | /goods/evaluation/page | `StoreGoodsEvaluationPageQueryDTO` | `PageResult<StoreGoodsEvaluationPageItemVO>` | `StoreClient#pageEvaluations` | `EvaluationController#pageEvaluations` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
-| evaluationStat | GET | /goods/evaluation/stat | `StoreGoodsEvaluationStatQueryDTO` | `StoreGoodsEvaluationStatVO` | `StoreClient#evaluationStat` | `EvaluationController#evaluationStat` | EvaluationBffService(mall-bff) |  |
-| listEvaluatedSpuIds | GET | /goods/evaluation/order/{orderNo}/spu-ids | `String`, `StoreGoodsEvaluationOrderQueryDTO` | `List<Long>` | `StoreClient#listEvaluatedSpuIds` | `EvaluationController#listEvaluatedSpuIds` | EvaluationBffService(mall-bff) |  |
-| replyEvaluation | POST | /goods/evaluation/{id}/reply | `Long`, `StoreGoodsEvaluationReplyDTO` | `void` | `StoreClient#replyEvaluation` | `EvaluationController#replyEvaluation` | StoreEvaluationBffService(store-bff) |  |
+| getShop | GET | /shops/{id} | Long | `RespData<ShopVO>` | `StoreClient#getShop` | `ShopController#getShop` | StoreShopBffService(store-bff), StoreGoodsBffService(store-bff), StoreShopBffService(admin), CatalogBffService(mall-bff) |  |
+| saveShop | POST | /shops/save | ShopSaveDTO | `RespData<Void>` | `StoreClient#saveShop` | `ShopController#save` | StoreShopBffService(store-bff) |  |
+| submitShop | POST | /shops/submit | ShopSaveDTO | `RespData<Void>` | `StoreClient#submitShop` | `ShopController#submit` | StoreShopBffService(store-bff) |  |
+| pageShops | GET | /shops/page | ShopPageQueryDTO | `RespData<PageResult<ShopVO>>` | `StoreClient#pageShops` | `ShopController#page` | StoreShopBffService(admin) |  |
+| auditShop | POST | /shops/{id}/audit | Long, ShopAuditDTO | `RespData<Void>` | `StoreClient#auditShop` | `ShopController#audit` | StoreShopBffService(admin) |  |
+| listShopOptions | GET | /shops/options | — | `RespData<List<ShopOptionVO>>` | `StoreClient#listShopOptions` | `ShopController#options` | ShopGoodsBffService(admin) |  |
+| pageStoreGoods | GET | /goods/spu/page | StoreGoodsSpuPageQueryDTO | `RespData<PageResult<StoreGoodsSpuPageItemVO>>` | `StoreClient#pageStoreGoods` | `GoodsController#page` | StoreGoodsBffService(store-bff) |  |
+| storeGoodsDetail | GET | /goods/spu/{id} | Long, StoreGoodsSpuDetailQueryDTO | `RespData<StoreGoodsSpuPlatformDetailVO>` | `StoreClient#storeGoodsDetail` | `GoodsController#detail` | StoreGoodsBffService(store-bff), ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| saveStoreGoods | POST | /goods/spu | StoreGoodsSpuSaveDTO | `RespData<Long>` | `StoreClient#saveStoreGoods` | `GoodsController#save` | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoods | PUT | /goods/spu/{id} | Long, StoreGoodsSpuUpdateDTO | `RespData<Void>` | `StoreClient#updateStoreGoods` | `GoodsController#update` | StoreGoodsBffService(store-bff) |  |
+| deleteStoreGoods | DELETE | /goods/spu/{id} | Long, Long | `RespData<Void>` | `StoreClient#deleteStoreGoods` | `GoodsController#delete` | StoreGoodsBffService(store-bff) |  |
+| replaceStoreGoodsSkus | PUT | /goods/spu/{id}/skus | Long, StoreGoodsSkuReplaceDTO | `RespData<Void>` | `StoreClient#replaceStoreGoodsSkus` | `GoodsController#replaceSkus` | StoreGoodsBffService(store-bff) |  |
+| updateStoreGoodsSkuShelf | PUT | /goods/spu/{spuId}/skus/{skuId}/shelf | Long, Long, StoreGoodsSkuShelfDTO | `RespData<Void>` | `StoreClient#updateStoreGoodsSkuShelf` | `GoodsController#updateSkuShelf` | StoreGoodsBffService(store-bff) |  |
+| pageSkuStock | GET | /goods/stock/page | StoreGoodsStockPageQueryDTO | `RespData<PageResult<StoreGoodsStockPageItemVO>>` | `StoreClient#pageSkuStock` | `GoodsController#pageSkuStock` | StoreGoodsBffService(store-bff) |  |
+| updateSkuStock | PUT | /goods/stock/{skuId} | Long, StoreGoodsStockUpdateDTO | `RespData<Void>` | `StoreClient#updateSkuStock` | `GoodsController#updateSkuStock` | StoreGoodsBffService(store-bff) |  |
+| batchUpdateSkuStock | PUT | /goods/stock/batch | StoreGoodsStockBatchUpdateDTO | `RespData<Void>` | `StoreClient#batchUpdateSkuStock` | `GoodsController#batchUpdateSkuStock` | StoreGoodsBffService(store-bff) |  |
+| pageStoreGoodsCrossShop | POST | /goods/cross-shop/spu/page | StoreGoodsSpuCrossShopPageQueryDTO | `RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>>` | `StoreClient#pageStoreGoodsCrossShop` | `GoodsController#crossShopPage` | ShopGoodsBffService(admin), CatalogBffService(mall-bff) |  |
+| crossShopFacets | POST | /goods/facets | StoreGoodsSpuFacetQueryDTO | `RespData<StoreGoodsSpuFacetVO>` | `StoreClient#crossShopFacets` | `GoodsController#facets` | CatalogBffService(mall-bff) |  |
+| batchSpuDetail | POST | /goods/spu/batch | StoreGoodsSpuBatchQueryDTO | `RespData<List<StoreGoodsSpuPlatformDetailVO>>` | `StoreClient#batchSpuDetail` | `GoodsController#batchSpuDetail` | CatalogBffService(mall-bff) |  |
+| lockStoreGoods | POST | /goods/spu/{id}/lock | Long, StoreGoodsLockDTO | `RespData<Void>` | `StoreClient#lockStoreGoods` | `GoodsController#lock` | ShopGoodsBffService(admin) |  |
+| unlockStoreGoods | POST | /goods/spu/{id}/unlock | Long | `RespData<Void>` | `StoreClient#unlockStoreGoods` | `GoodsController#unlock` | ShopGoodsBffService(admin) |  |
+| tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | `RespData<List<StoreGoodsSkuSnapshotVO>>` | `StoreClient#tradeSkuSnapshotBatch` | `GoodsTradeController#tradeSkuSnapshotBatch` | GoodsQueryAdapter(trade-center) |  |
+| deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | `RespData<Boolean>` | `StoreClient#deductStock` | `GoodsTradeController#deductStock` | StockAdapter(trade-center) |  |
+| revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | `RespData<Void>` | `StoreClient#revertStockByOrder` | `GoodsTradeController#revertStockByOrder` | StockAdapter(trade-center) |  |
+| submitEvaluation | POST | /goods/evaluation | `StoreGoodsEvaluationSubmitDTO` | `RespData<Void>` | `StoreClient#submitEvaluation` | `EvaluationController#submitEvaluation` | EvaluationBffService(mall-bff) |  |
+| pageEvaluations | POST | /goods/evaluation/page | `StoreGoodsEvaluationPageQueryDTO` | `RespData<PageResult<StoreGoodsEvaluationPageItemVO>>` | `StoreClient#pageEvaluations` | `EvaluationController#pageEvaluations` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
+| evaluationStat | GET | /goods/evaluation/stat | `StoreGoodsEvaluationStatQueryDTO` | `RespData<StoreGoodsEvaluationStatVO>` | `StoreClient#evaluationStat` | `EvaluationController#evaluationStat` | EvaluationBffService(mall-bff) |  |
+| listEvaluatedSpuIds | GET | /goods/evaluation/order/{orderNo}/spu-ids | `String`, `StoreGoodsEvaluationOrderQueryDTO` | `RespData<List<Long>>` | `StoreClient#listEvaluatedSpuIds` | `EvaluationController#listEvaluatedSpuIds` | EvaluationBffService(mall-bff) |  |
+| replyEvaluation | POST | /goods/evaluation/{id}/reply | `Long`, `StoreGoodsEvaluationReplyDTO` | `RespData<Void>` | `StoreClient#replyEvaluation` | `EvaluationController#replyEvaluation` | StoreEvaluationBffService(store-bff) |  |
 
 > ⚠ **评价组 5 条**（商品评价 `store_goods_evaluation`，2026-09-24 落契约）—— 评价是商品的**二级资源**，
 > 路径挂在 `/goods/evaluation/**`，与 `/goods/stock/**` 同层（两者同属「独立表、独立能力，只是以商品为维度」）。
@@ -127,19 +128,21 @@ typeDirs: backend/store-interface/src/main/java
 
 ## 四、形状规则
 
-- 形状（不包 `RespData` / 不鉴权 / `{code,msg}` + 真实 HTTP 状态）与跨店能力用 `POST + @RequestBody` 的口径、
-  facets 两维互斥，见 [cross-cutting.md](./cross-cutting.md) 第 2、6、13、18 条。
+- 形状：出参**包 `RespData<T>`**（无返回值用 `RespData<Void>`）：业务结果（含业务失败 `code=400/403/404`）一律
+  **HTTP 200 + `{code,msg,data}`**，只有兜底异常才是 **HTTP 500**（不鉴权、跨店能力用 `POST + @RequestBody`、
+  facets 两维互斥），见 [cross-cutting.md](./cross-cutting.md) 第 2、6、13、18 条。
+  ⚠ **本节下文里所有「报 400 / 取不到即 400」都指 `RespData.code`**（HTTP 状态是 200）。
 - **查询不到 ≠ 故障，但两种处置按资源而异**：
-  - `getShop`（店铺）**返空不抛**——「未开店」「店铺不可见」都是正常态，HTTP 200 空 body → Feign 解出 `null`，
-    由调用方各自重判（见第三节表）；
-  - 商品详情 `storeGoodsDetail` **取不到即报 400「商品不存在」**（传了作用域时不属本店与不存在同样报错、
+  - `getShop`（店铺）**返空不抛**——「未开店」「店铺不可见」都是正常态，`code=200` + `data=null` →
+    调用方解包得 `null`，由调用方各自重判（见第三节表）；
+  - 商品详情 `storeGoodsDetail` **取不到即报 `code=400`「商品不存在」**（传了作用域时不属本店与不存在同样报错、
     不泄露存在性）；`batchSpuDetail` 反向——查不到的 id **跳过不报**（购物车行可能引用已删商品，
     逐行报错会让整个列表取不回来）。
 - ⚠ **`deleteStoreGoods` 的双条件不变量**：它是唯一保留裸参的方法（`(Long id, Long storeId)`，
   位置约定不进类型），故删除语句本身写成 `where id = ? and store_id = ?`——
   传参写反时命中 0 行、报「商品不存在」，而不是删掉别人的商品。
 - 商品写操作的**作用域必填**靠域入口的 `@Validated({Default.class, StoreScopeGroup.class})` 守：
-  缺 `storeId` 的请求得 **HTTP 400**，而不是 NPE 或静默写库。
+  缺 `storeId` 的请求得 **`code=400`**，而不是 NPE 或静默写库。
 
 ## 五、类型所在包（全部在 `store-interface`，各端引用同一份）
 

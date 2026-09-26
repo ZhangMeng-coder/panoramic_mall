@@ -2,6 +2,7 @@ package com.panoramic.mallbff.service;
 
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.feign.DomainResp;
 import com.panoramic.contract.goods.api.GoodsCenterClient;
 import com.panoramic.contract.goods.vo.CategoryTreeVO;
 import com.panoramic.contract.store.api.StoreClient;
@@ -770,7 +771,7 @@ public class CatalogBffService {
      */
     private List<CategoryTreeVO> categoryTreeOrEmpty() {
         try {
-            List<CategoryTreeVO> tree = goodsCenterClient.categoryTree();
+            List<CategoryTreeVO> tree = DomainResp.unwrap(goodsCenterClient.categoryTree());
             return tree == null ? Collections.emptyList() : tree;
         } catch (Exception e) {
             log.warn("分类树获取失败，本次按无树降级（不展开子树、facet 原样输出）", e);

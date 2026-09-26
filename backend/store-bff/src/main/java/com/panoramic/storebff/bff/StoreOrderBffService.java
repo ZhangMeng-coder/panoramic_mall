@@ -4,6 +4,7 @@ import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.trade.api.TradeCenterClient;
 import com.panoramic.contract.trade.dto.TradeOrderPageQueryDTO;
@@ -102,10 +103,7 @@ public class StoreOrderBffService {
         TradeOrderShipDTO payload = new TradeOrderShipDTO();
         payload.setStoreId(currentStoreId());
         payload.setTrackingNo(dto.getTrackingNo());
-        callTrade(() -> {
-            tradeCenterClient.shipOrder(orderNo, payload);
-            return null;
-        });
+        callTrade(() -> tradeCenterClient.shipOrder(orderNo, payload));
     }
 
     // ---- 编排辅助 ----
@@ -135,7 +133,7 @@ public class StoreOrderBffService {
     /**
      * 调 trade-center 的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callTrade(Supplier<T> action) {
+    private <T> T callTrade(Supplier<RespData<T>> action) {
         return BffFeignCall.call("trade-center", ORDER_DEGRADE_MSG, action);
     }
 }

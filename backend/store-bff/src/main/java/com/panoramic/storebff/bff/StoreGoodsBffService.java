@@ -24,6 +24,7 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.common.util.UserContext;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.storebff.vo.StoreGoodsSpuDetailBffVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -120,10 +121,7 @@ public class StoreGoodsBffService {
      */
     public void update(Long id, StoreGoodsSpuUpdateDTO dto) {
         dto.setStoreId(assertShopApprovedAndGetStoreId());
-        callStore(() -> {
-            storeClient.updateStoreGoods(id, dto);
-            return null;
-        });
+        callStore(() -> storeClient.updateStoreGoods(id, dto));
     }
 
     /**
@@ -132,10 +130,7 @@ public class StoreGoodsBffService {
      */
     public void delete(Long id) {
         Long storeId = assertShopApprovedAndGetStoreId();
-        callStore(() -> {
-            storeClient.deleteStoreGoods(id, storeId);
-            return null;
-        });
+        callStore(() -> storeClient.deleteStoreGoods(id, storeId));
     }
 
     /**
@@ -143,10 +138,7 @@ public class StoreGoodsBffService {
      */
     public void replaceSkus(Long id, StoreGoodsSkuReplaceDTO dto) {
         dto.setStoreId(assertShopApprovedAndGetStoreId());
-        callStore(() -> {
-            storeClient.replaceStoreGoodsSkus(id, dto);
-            return null;
-        });
+        callStore(() -> storeClient.replaceStoreGoodsSkus(id, dto));
     }
 
     /**
@@ -154,10 +146,7 @@ public class StoreGoodsBffService {
      */
     public void updateSkuShelf(Long spuId, Long skuId, StoreGoodsSkuShelfDTO dto) {
         dto.setStoreId(assertShopApprovedAndGetStoreId());
-        callStore(() -> {
-            storeClient.updateStoreGoodsSkuShelf(spuId, skuId, dto);
-            return null;
-        });
+        callStore(() -> storeClient.updateStoreGoodsSkuShelf(spuId, skuId, dto));
     }
 
     /**
@@ -175,10 +164,7 @@ public class StoreGoodsBffService {
      */
     public void updateSkuStock(Long skuId, StoreGoodsStockUpdateDTO dto) {
         dto.setStoreId(assertShopApprovedAndGetStoreId());
-        callStore(() -> {
-            storeClient.updateSkuStock(skuId, dto);
-            return null;
-        });
+        callStore(() -> storeClient.updateSkuStock(skuId, dto));
     }
 
     /**
@@ -186,10 +172,7 @@ public class StoreGoodsBffService {
      */
     public void batchUpdateSkuStock(StoreGoodsStockBatchUpdateDTO dto) {
         dto.setStoreId(assertShopApprovedAndGetStoreId());
-        callStore(() -> {
-            storeClient.batchUpdateSkuStock(dto);
-            return null;
-        });
+        callStore(() -> storeClient.batchUpdateSkuStock(dto));
     }
 
     // ---- 中台基础数据（下拉 / 预填，经 goods-center）----
@@ -396,14 +379,14 @@ public class StoreGoodsBffService {
     /**
      * 调 store 域的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callStore(Supplier<T> action) {
+    private <T> T callStore(Supplier<RespData<T>> action) {
         return BffFeignCall.call("store", STORE_DEGRADE_MSG, action);
     }
 
     /**
      * 调 goods-center 的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callGoods(Supplier<T> action) {
+    private <T> T callGoods(Supplier<RespData<T>> action) {
         return BffFeignCall.call("goods-center", GOODS_DEGRADE_MSG, action);
     }
 }

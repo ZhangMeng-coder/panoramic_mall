@@ -3,7 +3,7 @@
 # 由端 BFF（admin / store-bff / mall-bff）经 spring.config.import 加载。gateway 不加载。
 #
 # ⚠ 加载方还有 **trade-center**（唯一的域侧例外）：本域既是被调方，**也是调用方**——
-#   下单要经 Feign 调 store 域（商品快照 / 扣减库存），域间调用同样要熔断与 4xx-5xx 分野。
+#   下单要经 Feign 调 store 域（商品快照 / 扣减库存），域间调用同样要熔断。
 #   其余业务域（goods-center / store / customer-center）都不走 Feign 客户端，故不加载本文件。
 #   见 docs/contracts/cross-cutting.md 第 12 条加载矩阵与第 24 条「域间协作」。
 #
@@ -28,13 +28,15 @@ spring:
 #   上游偶发慢查询即被掐断并计入失败、累积打开熔断（表现为页面 500「…服务暂不可用」）。
 #   这里显式放宽并给出可接受的降级/恢复节奏；三个端 BFF 同源一份，与 common 的 Feign 规约配套。
 #
-# ⚠ ignore-exceptions：业务 4xx 不计入熔断失败率（2026-09-10 修正）。
-#   域内业务校验失败（如「已上架 SKU 不可修改」「商品不存在」）经 common 的
-#   InternalApiErrorDecoder 还原为 ServiceException，但它们是**调用方语义/参数错误，不是下游健康度信号**。
-#   若不忽略：连续几次操作失误（默认窗口 10 次 / 最少 5 次 / 失败率 >50%）就会打开熔断，
-#   把后续**正常**请求也降级成 500「…服务暂不可用」，错误文案与真实原因完全脱节。
-#   忽略后 4xx 既不计失败也不计成功；**5xx 仍走 FeignException 照常计入**（下游故障保护不变）——
-#   这个 4xx/5xx 的分野由 InternalApiErrorDecoder 按 HTTP 状态码划分，见该类的类注释。
+# ⚠ 失败信号 = HTTP 非 2xx / 连接失败 /（TimeLimiter）超时，就这些。
+#   域侧**业务失败**（如「已上架 SKU 不可修改」「商品不存在」）一律 **HTTP 200 + code≠200**，
+#   不抛异常也不落 4xx，故压根不进熔断统计——**这里不再需要任何「忽略某类业务异常」的配置项**。
+#   2026-09-10 曾在此挂过一条忽略名单把 ServiceException 排除在失败率外：那是「域侧抛 ServiceException、
+#   浏览器收到 4xx」时代的补丁——那时业务错与下游故障同为异常，只能靠异常类型掰开。
+#   现在两者从**信封**上就分开了（200+code vs 5xx），再挂忽略名单等于给一个已不存在的场景留后门。
+#   ⚠ 该配置项与 common 里那个按 HTTP 状态码分野的解码器均已删除，并列入**反向哨兵**——
+#     源码里出现其字面量即判错，故此处只用文字描述、不写出它们的名字。
+#     见 docs/contracts/cross-cutting.md 第六节与第 13 条。
 resilience4j:
   circuitbreaker:
     configs:
@@ -44,8 +46,6 @@ resilience4j:
         failure-rate-threshold: 50       # 失败率超过 50% 打开
         permitted-number-of-calls-in-half-open-state: 3  # 半开试探数
         wait-duration-in-open-state: 10s # 打开后多久进入半开
-        ignore-exceptions:               # 不计入失败率：下游业务 4xx（调用方语义错误），5xx 仍计入
-          - com.panoramic.common.exception.ServiceException
   timelimiter:
     configs:
       default:

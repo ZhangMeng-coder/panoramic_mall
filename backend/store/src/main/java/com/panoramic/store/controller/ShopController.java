@@ -3,6 +3,7 @@ package com.panoramic.store.controller;
 import com.panoramic.contract.store.dto.ShopAuditDTO;
 import com.panoramic.contract.store.dto.ShopPageQueryDTO;
 import com.panoramic.contract.store.dto.ShopSaveDTO;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.dto.StoreScopeGroup;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
@@ -23,8 +24,9 @@ import java.util.List;
 /**
  * 店铺内部领域接口（store 域下沉纯域）。
  * <p>仅供端 BFF（store-bff 店主端 / admin 店铺管理）经内部 Feign（{@code /internal/store/...}）调用，
- * 不再向页面暴露公网路由；方法直接返回业务原类型（不包 RespData），错误经
- * {@code StoreDomainExceptionHandler} 以真实 HTTP 状态码传播。权限判定已收敛在端 BFF，
+ * 不再向页面暴露公网路由；方法一律返回 {@code RespData<T>}——业务失败（{@code code=400/403/404}）
+ * 也走 <b>HTTP 200 + {code,msg}</b>，只有兜底异常才由 common 的 {@code GlobalExceptionHandler}
+ * 返 HTTP 500。权限判定已收敛在端 BFF，
  * 本接口只负责执行；写操作审计 user_id 由 {@code StoreUserIdentityFilter} 从 X-User-Id 直取填充。</p>
  * <p><b>接口按能力通用、不按端分侧</b>（cross-cutting 第 22 条）：每条能力只有一条路径，
  * 数据作用域由<b>入参</b>携带——店主侧传自己的 {@code storeId}（= 账号 id）、管理端跨店不传，
@@ -41,43 +43,48 @@ public class ShopController {
      * 保存草稿（{@code dto.storeId} 必填：无店则建 id=storeId 的店；已驳回回草稿并清审核留痕）
      */
     @PostMapping("/save")
-    public void save(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody ShopSaveDTO dto) {
+    public RespData<Void> save(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody ShopSaveDTO dto) {
         storeShopService.saveDraft(dto.getStoreId(), dto);
+        return RespData.success();
     }
 
     /**
      * 提交审核（{@code dto.storeId} 必填：完整资质校验后进入待审核）
      */
     @PostMapping("/submit")
-    public void submit(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody ShopSaveDTO dto) {
+    public RespData<Void> submit(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody ShopSaveDTO dto) {
         storeShopService.submit(dto.getStoreId(), dto);
+        return RespData.success();
     }
 
     /**
      * 店铺分页列表（admin 店铺管理；全量，无作用域维度）
      */
     @GetMapping("/page")
-    public PageResult<ShopVO> page(@Validated ShopPageQueryDTO dto) {
-        return storeShopService.adminPage(dto);
+    public RespData<PageResult<ShopVO>> page(@Validated ShopPageQueryDTO dto) {
+        return RespData.success(storeShopService.adminPage(dto));
     }
 
     /**
      * 店铺详情（一条路径服务所有调用方）。
-     * <p>⚠ <b>查不到一律返空</b>（HTTP 200 空 body → Feign 解出 {@code null}），域内不抛：
-     * 店主侧「未开店」、C 端「店铺不可见」都是正常态。调用方各自重判——store-bff 判「未开店」、
-     * admin 转本层「店铺不存在」、mall-bff 判「不可见」（见 docs/contracts/store.md 第三节）。</p>
+     * <p>⚠ <b>查不到一律返空</b>（{@code code=200} + {@code data=null} → 调用方解包得 {@code null}），
+     * 域内不抛 —— 「查不到」是<b>正常结果</b>不是业务失败，故<b>不得</b>写成 {@code code=404}
+     * （见 cross-cutting 第 2 条的语义不变式）：店主侧「未开店」、C 端「店铺不可见」都是正常态。
+     * 调用方各自重判——store-bff 判「未开店」、admin 转本层「店铺不存在」、mall-bff 判「不可见」
+     * （见 docs/contracts/store.md 第三节）。</p>
      */
     @GetMapping("/{id}")
-    public ShopVO detail(@PathVariable("id") Long id) {
-        return storeShopService.getShop(id);
+    public RespData<ShopVO> detail(@PathVariable("id") Long id) {
+        return RespData.success(storeShopService.getShop(id));
     }
 
     /**
      * 审核店铺（仅对「待审核」做条件更新，防重复/并发审核）
      */
     @PostMapping("/{id}/audit")
-    public void audit(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto) {
+    public RespData<Void> audit(@PathVariable("id") Long id, @RequestBody ShopAuditDTO dto) {
         storeShopService.adminAudit(id, dto);
+        return RespData.success();
     }
 
     /**
@@ -85,7 +92,7 @@ public class ShopController {
      * <p>不按审核状态过滤：未审核通过的店铺本就没有商品，过滤无收益。</p>
      */
     @GetMapping("/options")
-    public List<ShopOptionVO> options() {
-        return storeShopService.options();
+    public RespData<List<ShopOptionVO>> options() {
+        return RespData.success(storeShopService.options());
     }
 }

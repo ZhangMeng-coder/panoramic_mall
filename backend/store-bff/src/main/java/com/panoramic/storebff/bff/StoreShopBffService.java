@@ -3,6 +3,7 @@ package com.panoramic.storebff.bff;
 import com.panoramic.common.exception.ServiceException;
 import com.panoramic.common.feign.BffFeignCall;
 import com.panoramic.common.security.LoginUser;
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.ShopSaveDTO;
 import com.panoramic.contract.store.vo.ShopVO;
@@ -49,10 +50,7 @@ public class StoreShopBffService {
      */
     public void saveDraft(ShopSaveDTO dto) {
         dto.setStoreId(currentStoreId());
-        call(() -> {
-            storeClient.saveShop(dto);
-            return null;
-        });
+        call(() -> storeClient.saveShop(dto));
     }
 
     /**
@@ -60,10 +58,7 @@ public class StoreShopBffService {
      */
     public void submit(ShopSaveDTO dto) {
         dto.setStoreId(currentStoreId());
-        call(() -> {
-            storeClient.submitShop(dto);
-            return null;
-        });
+        call(() -> storeClient.submitShop(dto));
     }
 
     /**
@@ -82,7 +77,7 @@ public class StoreShopBffService {
      * <p>剥 cause 链与降级的实现已抽到 common 的 {@link BffFeignCall}（与 admin BFF 共用一份），
      * 本类只传自己的降级文案。</p>
      */
-    private <T> T call(Supplier<T> action) {
+    private <T> T call(Supplier<RespData<T>> action) {
         return BffFeignCall.call("store", DEGRADE_MSG, action);
     }
 }

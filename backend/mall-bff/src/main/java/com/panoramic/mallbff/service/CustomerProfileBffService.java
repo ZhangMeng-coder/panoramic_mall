@@ -1,6 +1,7 @@
 package com.panoramic.mallbff.service;
 
 import com.panoramic.common.feign.BffFeignCall;
+import com.panoramic.common.feign.DomainResp;
 import com.panoramic.contract.customer.api.CustomerCenterClient;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
@@ -75,7 +76,8 @@ public class CustomerProfileBffService {
      */
     public CustomerProfileVO loadProfile(Long customerId) {
         try {
-            return customerCenterClient.getProfile(customerId);
+            // 解包域响应（code != 200 → ServiceException）；本方法只要「取不到就留空」，故下面统一捕
+            return DomainResp.unwrap(customerCenterClient.getProfile(customerId));
         } catch (Exception e) {
             log.warn("顾客资料获取失败，降级为空（customerId={}）", customerId, e);
             return null;
@@ -100,7 +102,7 @@ public class CustomerProfileBffService {
         try {
             CustomerProfileBatchQueryDTO query = new CustomerProfileBatchQueryDTO();
             query.setCustomerIds(new ArrayList<>(customerIds));
-            List<CustomerProfileVO> profiles = customerCenterClient.listProfilesByIds(query);
+            List<CustomerProfileVO> profiles = DomainResp.unwrap(customerCenterClient.listProfilesByIds(query));
             if (profiles == null || profiles.isEmpty()) {
                 return Collections.emptyMap();
             }
@@ -156,9 +158,6 @@ public class CustomerProfileBffService {
      */
     public void saveProfile(Long customerId, CustomerProfileSaveDTO dto) {
         BffFeignCall.call("customer-center", DOWN_MSG,
-                () -> {
-                    customerCenterClient.saveProfile(customerId, dto);
-                    return null;
-                });
+                () -> customerCenterClient.saveProfile(customerId, dto));
     }
 }

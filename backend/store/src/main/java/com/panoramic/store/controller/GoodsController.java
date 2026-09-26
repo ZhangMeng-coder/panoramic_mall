@@ -1,5 +1,6 @@
 package com.panoramic.store.controller;
 
+import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
@@ -39,8 +40,9 @@ import java.util.List;
 /**
  * 店铺在售商品内部领域接口（store 域下沉纯域）。
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/store/goods/**}）调用，不对页面暴露公网路由；
- * 方法直接返回业务原类型（不包 RespData），错误经 {@code StoreDomainExceptionHandler}
- * 以真实 HTTP 状态码传播。权限判定与店铺审核门禁（{@code status == 2}，R9）已收敛在端 BFF，
+ * 方法一律返回 {@code RespData<T>}——业务失败（{@code code=400/403/404}）也走 <b>HTTP 200 + {code,msg}</b>，
+ * 只有兜底异常才由 common 的 {@code GlobalExceptionHandler} 返 HTTP 500。
+ * 权限判定与店铺审核门禁（{@code status == 2}，R9）已收敛在端 BFF，
  * 本接口只负责执行；写操作审计 user_id 由 {@code StoreUserIdentityFilter} 从 X-User-Id 直取填充。</p>
  * <p><b>接口按能力通用、不按端分侧</b>（cross-cutting 第 22/23 条）：同一能力只有一条路径，
  * 路径段里不出现端别子段；数据作用域（{@code storeId}）<b>不进路径段</b>，只是入参 DTO 的一项——
@@ -48,7 +50,7 @@ import java.util.List;
  * 锁定解锁）不传就是不限定。域内只做「传了就按它筛」，不判身份、不读 {@code X-User-Type} 判权。</p>
  * <p><b>作用域必填的写法</b>：DTO 上的 {@code storeId} 只在域入口必填，
  * 故域侧用 {@code @Validated({Default.class, StoreScopeGroup.class})}（页面入口那些 DTO 是同一份类型，
- * 只跑默认组，见 {@link StoreScopeGroup}）。缺 {@code storeId} 的写入请求应得 HTTP 400，而不是 NPE。</p>
+ * 只跑默认组，见 {@link StoreScopeGroup}）。缺 {@code storeId} 的写入请求应得 <b>{@code code=400}</b>，而不是 NPE。</p>
  */
 @RestController
 @RequestMapping("/internal/store/goods")
@@ -63,9 +65,9 @@ public class GoodsController {
      * 商品分页（仅 {@code dto.storeId} 名下的商品）
      */
     @GetMapping("/spu/page")
-    public PageResult<StoreGoodsSpuPageItemVO> page(
+    public RespData<PageResult<StoreGoodsSpuPageItemVO>> page(
             @Validated({Default.class, StoreScopeGroup.class}) StoreGoodsSpuPageQueryDTO dto) {
-        return storeGoodsSpuService.page(dto.getStoreId(), dto);
+        return RespData.success(storeGoodsSpuService.page(dto.getStoreId(), dto));
     }
 
     /**
@@ -75,26 +77,27 @@ public class GoodsController {
      * 注：{@code /spu/page} 为字面量路径，优先于 {@code /spu/{id}} 模板匹配。</p>
      */
     @GetMapping("/spu/{id}")
-    public StoreGoodsSpuPlatformDetailVO detail(@PathVariable("id") Long id,
+    public RespData<StoreGoodsSpuPlatformDetailVO> detail(@PathVariable("id") Long id,
                                                StoreGoodsSpuDetailQueryDTO query) {
-        return storeGoodsSpuService.detail(id, query.getStoreId());
+        return RespData.success(storeGoodsSpuService.detail(id, query.getStoreId()));
     }
 
     /**
      * 新增商品（可一并落 SKU；SPU 与 SKU 均以下架态起步）
      */
     @PostMapping("/spu")
-    public Long save(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsSpuSaveDTO dto) {
-        return storeGoodsSpuService.save(dto.getStoreId(), dto);
+    public RespData<Long> save(@Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsSpuSaveDTO dto) {
+        return RespData.success(storeGoodsSpuService.save(dto.getStoreId(), dto));
     }
 
     /**
      * 修改商品（基础信息 + 规格属性配置；存在上架 SKU 时规格配置只读）
      */
     @PutMapping("/spu/{id}")
-    public void update(@PathVariable("id") Long id,
+    public RespData<Void> update(@PathVariable("id") Long id,
                        @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsSpuUpdateDTO dto) {
         storeGoodsSpuService.update(dto.getStoreId(), id, dto);
+        return RespData.success();
     }
 
     /**
@@ -104,28 +107,31 @@ public class GoodsController {
      * 双条件删除」这条不变量——见 {@code StoreGoodsSpuServiceImpl#delete}。</p>
      */
     @DeleteMapping("/spu/{id}")
-    public void delete(@PathVariable("id") Long id,
+    public RespData<Void> delete(@PathVariable("id") Long id,
                        @RequestParam("storeId") Long storeId) {
         storeGoodsSpuService.delete(id, storeId);
+        return RespData.success();
     }
 
     /**
      * SKU 整单替换（未上架可增/改/删；已上架须原样保留且不得缺失）
      */
     @PutMapping("/spu/{id}/skus")
-    public void replaceSkus(@PathVariable("id") Long id,
+    public RespData<Void> replaceSkus(@PathVariable("id") Long id,
                             @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsSkuReplaceDTO dto) {
         storeGoodsSpuService.replaceSkus(dto.getStoreId(), id, dto);
+        return RespData.success();
     }
 
     /**
      * SKU 上下架（不受 SPU 状态限制，并反向联动 SPU 上下架）
      */
     @PutMapping("/spu/{spuId}/skus/{skuId}/shelf")
-    public void updateSkuShelf(@PathVariable("spuId") Long spuId,
+    public RespData<Void> updateSkuShelf(@PathVariable("spuId") Long spuId,
                                @PathVariable("skuId") Long skuId,
                                @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsSkuShelfDTO dto) {
         storeGoodsSpuService.updateSkuShelf(dto.getStoreId(), spuId, skuId, dto.getShelfStatus());
+        return RespData.success();
     }
 
     // ---- 库存（有作用域维度，storeId 必填；库存独立成表，读写只碰库存表）----
@@ -135,27 +141,29 @@ public class GoodsController {
      * 支持商品名 / SKU 编码关键字、上下架筛选、仅看低库存）
      */
     @GetMapping("/stock/page")
-    public PageResult<StoreGoodsStockPageItemVO> pageSkuStock(
+    public RespData<PageResult<StoreGoodsStockPageItemVO>> pageSkuStock(
             @Validated({Default.class, StoreScopeGroup.class}) StoreGoodsStockPageQueryDTO dto) {
-        return storeGoodsSpuService.pageStock(dto.getStoreId(), dto);
+        return RespData.success(storeGoodsSpuService.pageStock(dto.getStoreId(), dto));
     }
 
     /**
      * 改单行 SKU 库存（仅 {@code dto.storeId} 名下）；{@code warnStock} 传 null = 清除预警。平台锁定期只读。
      */
     @PutMapping("/stock/{skuId}")
-    public void updateSkuStock(@PathVariable("skuId") Long skuId,
+    public RespData<Void> updateSkuStock(@PathVariable("skuId") Long skuId,
                                @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsStockUpdateDTO dto) {
         storeGoodsSpuService.updateSkuStock(dto.getStoreId(), skuId, dto);
+        return RespData.success();
     }
 
     /**
      * 批量设置整批 SKU 的总库存（仅 {@code dto.storeId} 名下，单条 IN 更新）；平台锁定期只读。
      */
     @PutMapping("/stock/batch")
-    public void batchUpdateSkuStock(
+    public RespData<Void> batchUpdateSkuStock(
             @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsStockBatchUpdateDTO dto) {
         storeGoodsSpuService.batchUpdateSkuStock(dto.getStoreId(), dto);
+        return RespData.success();
     }
 
     // ---- 跨店通用（无作用域锚点，限定条件全由调用方自设）----
@@ -168,9 +176,9 @@ public class GoodsController {
      * <p>用 POST + body 而非 query 参数：categoryIds/brandIds 是集合，走 body 规避 @SpringQueryMap 的集合序列化问题。</p>
      */
     @PostMapping("/cross-shop/spu/page")
-    public PageResult<StoreGoodsSpuCrossShopPageItemVO> crossShopPage(
+    public RespData<PageResult<StoreGoodsSpuCrossShopPageItemVO>> crossShopPage(
             @Validated @RequestBody StoreGoodsSpuCrossShopPageQueryDTO dto) {
-        return storeGoodsSpuService.crossShopPage(dto);
+        return RespData.success(storeGoodsSpuService.crossShopPage(dto));
     }
 
     /**
@@ -178,8 +186,8 @@ public class GoodsController {
      * 品牌维度不受已选品牌影响（否则选中后同维度选项即消失）。
      */
     @PostMapping("/facets")
-    public StoreGoodsSpuFacetVO facets(@RequestBody StoreGoodsSpuFacetQueryDTO dto) {
-        return storeGoodsSpuService.facets(dto);
+    public RespData<StoreGoodsSpuFacetVO> facets(@RequestBody StoreGoodsSpuFacetQueryDTO dto) {
+        return RespData.success(storeGoodsSpuService.facets(dto));
     }
 
     /**
@@ -194,9 +202,9 @@ public class GoodsController {
      * <p>用 POST + body 而非 query 参数：{@code spuIds} 是集合（同 /cross-shop/spu/page 与 /facets 口径）。</p>
      */
     @PostMapping("/spu/batch")
-    public List<StoreGoodsSpuPlatformDetailVO> batchSpuDetail(
+    public RespData<List<StoreGoodsSpuPlatformDetailVO>> batchSpuDetail(
             @Validated @RequestBody StoreGoodsSpuBatchQueryDTO dto) {
-        return storeGoodsSpuService.details(dto.getSpuIds());
+        return RespData.success(storeGoodsSpuService.details(dto.getSpuIds()));
     }
 
     /**
@@ -204,15 +212,17 @@ public class GoodsController {
      * 锁定期有作用域的那些写方法一律拒绝（整行只读）
      */
     @PostMapping("/spu/{id}/lock")
-    public void lock(@PathVariable("id") Long id, @Validated @RequestBody StoreGoodsLockDTO dto) {
+    public RespData<Void> lock(@PathVariable("id") Long id, @Validated @RequestBody StoreGoodsLockDTO dto) {
         storeGoodsSpuService.lock(id, dto);
+        return RespData.success();
     }
 
     /**
      * 解锁商品：清空锁定字段；<b>不恢复上架</b>（SKU 保持下架，需店主手动上架）
      */
     @PostMapping("/spu/{id}/unlock")
-    public void unlock(@PathVariable("id") Long id) {
+    public RespData<Void> unlock(@PathVariable("id") Long id) {
         storeGoodsSpuService.unlock(id);
+        return RespData.success();
     }
 }

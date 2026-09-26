@@ -1,10 +1,8 @@
 package com.panoramic.contract.store.api;
 
-import com.panoramic.common.feign.InternalApiErrorDecoder;
 import com.panoramic.common.security.LoginUser;
 import com.panoramic.common.util.UserContext;
 import feign.RequestInterceptor;
-import feign.codec.ErrorDecoder;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -22,7 +20,11 @@ import org.springframework.web.context.request.ServletRequestAttributes;
  *       与做 owner/platform 分流；⚠ 不做 goods 版「缺省回退 admin」的写死兜底——店主侧（store-bff）
  *       调用若被盖成 admin，会使 store 域 owner 分支（X-User-Type=store）失效，故缺省就缺省，
  *       交给下游按缺省语义处理（store-bff 侧 owner 方法实际会显式传 store_id，不依赖此兜底）；</li>
- *   <li>{@link ErrorDecoder}：把下游非 2xx 的 {@code {code,msg}} 响应还原为业务异常。</li>
+ *   <li>⚠ <b>刻意没有 {@code ErrorDecoder}</b>：域侧业务失败一律 HTTP 200 + {@code code}（第 2 条），
+ *       由调用方自己解包（{@code DomainResp#unwrap} / 端 BFF 的 {@code BffFeignCall#call}）；
+ *       只有真故障才是 5xx，那时 Feign 直接抛 {@code FeignException}——熔断唯一的失败信号（第 13 条）。
+ *       再挂一个 ErrorDecoder 去「还原业务异常」等于把业务错误重新变成熔断信号（2026-09-10 的坑），
+ *       不要加回。</li>
  * </ul></p>
  */
 public class StoreFeignConfiguration {
@@ -62,8 +64,4 @@ public class StoreFeignConfiguration {
         };
     }
 
-    @Bean
-    public ErrorDecoder storeInternalErrorDecoder() {
-        return new InternalApiErrorDecoder();
-    }
 }

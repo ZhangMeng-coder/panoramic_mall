@@ -15,6 +15,7 @@ import com.panoramic.contract.store.vo.ShopOptionVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
 import com.panoramic.common.util.HtmlSanitizer;
+import com.panoramic.common.vo.RespData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -109,10 +110,7 @@ public class ShopGoodsBffService {
      * @param dto 锁定原因
      */
     public void lockGoods(Long id, StoreGoodsLockDTO dto) {
-        callStore(() -> {
-            storeClient.lockStoreGoods(id, dto);
-            return null;
-        });
+        callStore(() -> storeClient.lockStoreGoods(id, dto));
     }
 
     /**
@@ -121,10 +119,7 @@ public class ShopGoodsBffService {
      * @param id 店铺商品 id
      */
     public void unlockGoods(Long id) {
-        callStore(() -> {
-            storeClient.unlockStoreGoods(id);
-            return null;
-        });
+        callStore(() -> storeClient.unlockStoreGoods(id));
     }
 
     // ---- 筛选/表单下拉（分类、品牌来自 goods-center，店铺来自 store 域）----
@@ -285,14 +280,14 @@ public class ShopGoodsBffService {
     /**
      * 调 store 域的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callStore(Supplier<T> action) {
+    private <T> T callStore(Supplier<RespData<T>> action) {
         return BffFeignCall.call("store", STORE_DEGRADE_MSG, action);
     }
 
     /**
      * 调 goods-center 的统一编排执行（异常剥壳与降级见 {@link BffFeignCall}）
      */
-    private <T> T callGoods(Supplier<T> action) {
+    private <T> T callGoods(Supplier<RespData<T>> action) {
         return BffFeignCall.call("goods-center", GOODS_DEGRADE_MSG, action);
     }
 }

@@ -6,7 +6,7 @@
 
 | 模块 | 类型 | 端口 | 说明 |
 |---|---|---|---|
-| [common](common/) | 工具包（非服务） | — | 公共基座：通用返回结构、异常处理、实体基类（`BaseEntity`）、审计自动填充（`MyMetaObjectHandler`）、登录用户模型与 `UserContext`、Feign 错误解码与降级包装（`InternalApiErrorDecoder` / `BffFeignCall`）、`HtmlSanitizer`。**所有服务都依赖**；⚠ **不含任何域契约类型** |
+| [common](common/) | 工具包（非服务） | — | 公共基座：通用返回结构、异常处理、实体基类（`BaseEntity`）、审计自动填充（`MyMetaObjectHandler`）、登录用户模型与 `UserContext`、内部 Feign 响应解包与降级包装（`DomainResp` / `BffFeignCall`）、`HtmlSanitizer`。**所有服务都依赖**；⚠ **不含任何域契约类型** |
 | [common-auth](common-auth/) | 工具包（非服务） | — | 鉴权装配层：`SecurityConfig` / `AuthTokenFilter` / `JwtService` / `LoginUserCacheService`（Redis 登录态 + JJWT）。**只被端 BFF（admin / store-bff / mall-bff）依赖**；业务域只依赖 `common`，结构上拿不到认证链与 Redis |
 | [goods-center-interface](goods-center-interface/) | 工具包（非服务） | — | 标准商品域**内部契约包**：`GoodsCenterClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.goods`）。**被 goods-center 与调用它的端 BFF 共用同一份**（不各抄一份，避免漂移） |
 | [store-interface](store-interface/) | 工具包（非服务） | — | 店铺域**内部契约包**：`StoreClient`（Feign）+ 同源 DTO/VO（包根 `com.panoramic.contract.store`）。**被 store 与调用它的端 BFF 共用同一份** |

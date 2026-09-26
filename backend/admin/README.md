@@ -91,14 +91,14 @@
 - **不持域实体、不落域表**：本层的 5 张表全是自己的 RBAC 表；分类/品牌/SPU/店铺/店铺商品数据全在下游域
 - **不做数据归属判断**：域侧只做「传了 `storeId` 就按它筛」，本层是跨店视角、**不传作用域**（= 全量），授权由本层 `@PreAuthorize` 把关
 - **不直接改上下架推导量**：锁定时的级联下架由 store 域内 `refreshShelfStatus` 完成，本层只提交锁定意图
-- **不做业务校验兜底**：域内业务校验失败（400/403/404）经 `InternalApiErrorDecoder` 还原后**原样透传**给页面，不吞、不改写
+- **不做业务校验兜底**：域内业务校验失败一律 **HTTP 200 + `code`≠200**，经 `BffFeignCall#call` 解包后按 `code` **原样透传**给页面（400/403/404 不吞、不改写），只有真故障才降级成 500 文案
 - **不做域的服务发现直连**：只经 Feign 客户端，**不带任何内部令牌**（该信任头已删除，域不做鉴权）
 
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供，默认指向 `123.56.117.17:3306`（库 `panoramic_mall`）；连接其他库请注入环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_DB`、`MYSQL_USERNAME`、`MYSQL_PASSWORD`（占位符定义见该共享配置，账号密码勿写入代码或提交到仓库）
 - **Nacos 共享配置**：`datasource-mysql.yml` / `datasource-redis.yml` / `auth.yml` / `feign-circuitbreaker.yml`。import **不带 `optional:`**——缺任一则启动失败。加载矩阵见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 12 条
-- **熔断**：`resilience4j.circuitbreaker.configs.default.ignore-exceptions` 必须含 `com.panoramic.common.exception.ServiceException`（业务 4xx 不计失败率），否则店主/管理员连续几次操作失误就会打开熔断、把后续**正常**请求降级成 500。语义见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 13 条
+- **熔断**：**失败信号只有 HTTP 非 2xx / 连接失败 / 超时**——域侧业务失败是 HTTP 200 + `code`≠200，既不抛异常也不落 4xx，天然不进熔断统计，故**刻意没有** `ignore-exceptions`。语义见 [`docs/contracts/cross-cutting.md`](../../docs/contracts/cross-cutting.md) 第 13 条
 - `@EnableFeignClients` 扫描 `com.panoramic.contract.goods` / `com.panoramic.contract.store` / `com.panoramic.contract.trade`
 - 响应结构：成功 `code=200`；业务失败 `code=400` 携带中文提示；系统异常 / 下游不可用 `code=500`
 - 前端 `frontend/admin`（5173）经 Vite dev proxy 走网关

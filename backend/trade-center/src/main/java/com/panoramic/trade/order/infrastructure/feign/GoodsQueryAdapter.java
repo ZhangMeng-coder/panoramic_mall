@@ -1,5 +1,6 @@
 package com.panoramic.trade.order.infrastructure.feign;
 
+import com.panoramic.common.feign.DomainResp;
 import com.panoramic.contract.store.api.StoreClient;
 import com.panoramic.contract.store.dto.SpecAttr;
 import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
@@ -56,7 +57,9 @@ public class GoodsQueryAdapter implements GoodsQueryPort {
         if (skuIds == null || skuIds.isEmpty()) {
             return Map.of();
         }
-        List<StoreGoodsSkuSnapshotVO> rows = storeClient.tradeSkuSnapshotBatch(queryOf(skuIds));
+        // ⚠ DomainResp.unwrap 而非 BffFeignCall：解包后域侧业务失败（code≠200）**照旧抛异常**，
+        //   由编排器让整次下单失败——域间调用不能降级（见类注释与 cross-cutting 第 24 条）。
+        List<StoreGoodsSkuSnapshotVO> rows = DomainResp.unwrap(storeClient.tradeSkuSnapshotBatch(queryOf(skuIds)));
         if (rows == null || rows.isEmpty()) {
             return Map.of();
         }

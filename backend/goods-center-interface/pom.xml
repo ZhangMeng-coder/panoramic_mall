@@ -21,7 +21,7 @@
       （GoodsFeignConfiguration 刻意不带 @Configuration/@Component，不参与组件扫描）。
     -->
     <dependencies>
-        <!-- common 基座：BasePageVO / ValidationGroups / InternalApiErrorDecoder / LoginUser / UserContext -->
+        <!-- common 基座：BasePageVO / ValidationGroups / DomainResp / LoginUser / UserContext -->
         <dependency>
             <groupId>com.panoramic</groupId>
             <artifactId>common</artifactId>
