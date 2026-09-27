@@ -12,10 +12,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 
 /**
@@ -57,6 +59,14 @@ public class InMemoryOrderRepository implements OrderRepository {
 
     /** **已提交**的批次：submissionId → 那次提交返回的整批（含复用笔，顺序即首次返回顺序） */
     private final Map<Long, List<OrderModel>> committedBatches = new LinkedHashMap<>();
+
+    /**
+     * 已推过销量的单号（= 落库实现里那列 {@code trade_order.sales_pushed}）
+     *
+     * <p>⚠ 它必须与订单列表**分开**存：那一列记的是「store 域收到过这单的销量」，
+     * 不是订单自身的属性——订单聚合上根本没有这个字段，内存实现也不该为了省一个集合去编一个。</p>
+     */
+    private final Set<String> salesPushed = new LinkedHashSet<>();
 
     private long nextSubmissionId = 1;
 
@@ -120,6 +130,16 @@ public class InMemoryOrderRepository implements OrderRepository {
         //    在内存实现下验不到——只能靠真库（同 update 的说明）。
     }
 
+    @Override
+    public synchronized void markSalesPushed(String orderNo) {
+        if (orderNo == null) {
+            return;
+        }
+        // 直接置位、不看订单在不在：与落库实现的无条件 UPDATE 同口径（订单不删行，故「不在」
+        // 这一支在两边都到不了；写进来只是让替身不会因为一行脏数据就抛出去）
+        salesPushed.add(orderNo);
+    }
+
     // ── 读侧 ────────────────────────────────────────────────────────────────────
 
     @Override
@@ -160,6 +180,18 @@ public class InMemoryOrderRepository implements OrderRepository {
                 .filter(order -> order.getStatus() == OrderStatus.PENDING_PAYMENT)
                 .filter(order -> order.isTimedOut(now))
                 .sorted(Comparator.comparing(OrderModel::getExpireTime))
+                .limit(limit)
+                .toList();
+    }
+
+    @Override
+    public synchronized List<OrderModel> findReceivedUnpushed(int limit) {
+        // ⚠ 条件与落库实现逐项对齐（替身少一个条件就会造出「只在内存实现上绿」的用例）：
+        //    已完成 + 未推送。顺序也对齐——落库侧是主键升序（= 下单顺序），本列表是插入顺序，
+        //    故直接按流顺序取前 limit 笔即同一个批次（与 findTimeoutPending 同款说明）。
+        return orders.stream()
+                .filter(order -> order.getStatus() == OrderStatus.RECEIVED)
+                .filter(order -> !salesPushed.contains(order.getOrderNo()))
                 .limit(limit)
                 .toList();
     }
@@ -272,13 +304,16 @@ public class InMemoryOrderRepository implements OrderRepository {
      * 清空仓库（测试入口）
      *
      * <p>每个用例从一个空仓库开始，跨用例残留会让「仓库条数不变」这类断言失去意义。
-     * 占位、已提交批次、订单一并清掉：只清一半会让下一个用例意外命中上一个用例的提交记录。</p>
+     * 占位、已提交批次、订单、已推送单号一并清掉：只清一半会让下一个用例意外命中上一个用例的提交记录。
+     * ⚠ 已推送单号尤其不能留：单号是同一个格式、用例之间常常复用同一个假单号，
+     * 留着它会让下一个用例本来该「补推捞得到」的单变成捞不到——一个**假绿**的兜底用例。</p>
      */
     public synchronized void clear() {
         orders.clear();
         keyBySubmission.clear();
         committedKeys.clear();
         committedBatches.clear();
+        salesPushed.clear();
         nextSubmissionId = 1;
     }
 

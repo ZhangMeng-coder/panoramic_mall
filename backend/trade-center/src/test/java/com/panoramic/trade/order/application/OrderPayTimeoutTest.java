@@ -95,9 +95,11 @@ class OrderPayTimeoutTest {
         OrderCreateCoordinator coordinator = new OrderCreateCoordinator(orderRepository, goodsQueryPort, stockPort,
                 new DefaultOrderNoGenerator(clock, new AtomicInteger()::getAndIncrement), pipeline, properties, clock);
 
-        // 支付的用例只走「读单 → 判超时 → 迁移 → 落库」，编排器只为构造齐备而存在（不参与这些路径）
+        // 支付的用例只走「读单 → 判超时 → 迁移 → 落库」，编排器只为构造齐备而存在（不参与这些路径）；
+        // 事件发布器同理——本类全部用例都停在「支付」，走不到收货那条会发事件的路径
         service = new OrderApplicationService(coordinator,
-                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock);
+                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock,
+                event -> { });
     }
 
     // ── ① 没到期：照常支付 ──────────────────────────────────────────────────────

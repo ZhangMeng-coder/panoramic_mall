@@ -61,8 +61,12 @@ public class StoreGoodsSpuCrossShopPageQueryDTO extends BasePageVO {
     private Integer lockStatus;
 
     /**
-     * 排序：{@code default}（按 id 倒序，等价于原行为）/ {@code priceAsc} / {@code priceDesc}（按 min_price）。
+     * 排序：{@code default}（按 id 倒序）/ {@code rank}（按 {@code rank_score} 倒序，2026-09-26 新增）/
+     * {@code priceAsc} / {@code priceDesc}（按 {@code min_price}）。
      * <p>取其它值一律按 {@code default} 处理（宽松容错，不抛异常）。</p>
+     * <p>⚠ <b>admin BFF 不传本字段</b>（其页面 DTO 没有这个字段）→ 落 {@code default} → 平台列表顺序
+     * 与改动前逐字相同；C 端的「综合」由 mall-bff 映射成 {@code rank}，<b>不</b>把新语义挂在
+     * {@code default} 上（那是两端共用的入口）。取值与各档调用方见 docs/contracts/store.md 第四节。</p>
      */
     private String sort;
 }

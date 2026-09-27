@@ -44,7 +44,7 @@ import java.util.List;
  * 都从它取，单测注入固定/可推进的时钟才能钉住「窗口内复用、窗口外新单」这条边界。
  * 生产用系统时钟，语义与原来的 {@code now()} 完全一致。</p>
  *
- * <h3>两个下游端口（商品 / 库存）不在本类</h3>
+ * <h3>三个下游端口（商品 / 库存 / 销量）不在本类</h3>
  * <p>它们由 store 域提供（{@code infrastructure/feign} 的 {@code StoreFeignAdapterConfiguration}
  * 经 {@code StoreClient} 调真实 store 域）——单独放一个配置类，是因为它有自己的开关
  * （{@code panoramic.trade.order.store-adapter}）与条件装配语义，与本类的「步骤链 + 仓库」是两件事；

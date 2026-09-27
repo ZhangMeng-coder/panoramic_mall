@@ -17,8 +17,10 @@ import com.panoramic.trade.order.domain.OrderSource;
 import com.panoramic.trade.order.domain.OrderStatus;
 import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.GoodsQueryPort;
+import com.panoramic.trade.order.domain.port.SalesPort;
 import com.panoramic.trade.order.domain.port.StockPort;
 import com.panoramic.trade.order.infrastructure.feign.GoodsQueryAdapter;
+import com.panoramic.trade.order.infrastructure.feign.SalesAdapter;
 import com.panoramic.trade.order.infrastructure.feign.StockAdapter;
 import com.panoramic.trade.order.infrastructure.feign.StoreFeignAdapterConfiguration;
 import com.panoramic.trade.order.infrastructure.inmemory.InMemoryOrderRepository;
@@ -168,6 +170,9 @@ class OrderDomainWiringTest {
     private StockPort stockPort;
 
     @Autowired
+    private SalesPort salesPort;
+
+    @Autowired
     private InMemoryOrderRepository orderRepository;
 
     @BeforeEach
@@ -280,6 +285,7 @@ class OrderDomainWiringTest {
 
             assertThat(context.getBeanNamesForType(GoodsQueryPort.class)).hasSize(1);
             assertThat(context.getBeanNamesForType(StockPort.class)).hasSize(1);
+            assertThat(context.getBeanNamesForType(SalesPort.class)).hasSize(1);
         }
     }
 
@@ -302,6 +308,8 @@ class OrderDomainWiringTest {
                         .as("store-adapter=%s 不该装配出任何下游端口", wrong).isEmpty();
                 assertThat(context.getBeanNamesForType(StockPort.class))
                         .as("store-adapter=%s 不该装配出任何下游端口", wrong).isEmpty();
+                assertThat(context.getBeanNamesForType(SalesPort.class))
+                        .as("store-adapter=%s 不该装配出任何下游端口", wrong).isEmpty();
                 // 上下文能起来（条件不匹配只是不建 bean，不是报错），**取用**时才炸——
                 // 这正是 application.yml 里写的那句「启动即报找不到 bean」，而非悄悄接单。
                 assertThatThrownBy(() -> context.getBean(GoodsQueryPort.class))
@@ -312,10 +320,11 @@ class OrderDomainWiringTest {
     }
 
     @Test
-    @DisplayName("开关真的指到了真实 store 域那份装配：容器里的两个端口就是 feign 适配器")
+    @DisplayName("开关真的指到了真实 store 域那份装配：容器里的三个端口就是 feign 适配器")
     void storeAdapterSwitchPointsToTheFeignAssembly() {
         assertThat(goodsQueryPort).isInstanceOf(GoodsQueryAdapter.class);
         assertThat(stockPort).isInstanceOf(StockAdapter.class);
+        assertThat(salesPort).isInstanceOf(SalesAdapter.class);
     }
 
     // ── 端到端：装配层与行为层没有断裂 ──────────────────────────────────────────

@@ -92,7 +92,10 @@ class OrderIdempotencyTest {
 
         OrderStatusFlow statusFlow = new OrderStatusFlow(OrderStatusChain.production());
         service = new OrderApplicationService(coordinator,
-                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock);
+                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock,
+                // 事件发布器：本用例只走下单（不收货），一个「订单完成」事件都不会发出去。
+                // ⚠ 真要发出去了也不该在这里被断言——销量的验证在推送那条链上，不在下单幂等上
+                event -> { });
     }
 
     private OrderCreateCommand command(Long customerId, OrderSource source, String requestId,

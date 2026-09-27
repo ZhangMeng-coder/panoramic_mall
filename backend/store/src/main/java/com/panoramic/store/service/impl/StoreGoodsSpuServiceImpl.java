@@ -38,6 +38,8 @@ import com.panoramic.store.entity.StoreGoodsSku;
 import com.panoramic.store.entity.StoreGoodsSkuStock;
 import com.panoramic.store.entity.StoreGoodsSpu;
 import com.panoramic.store.mapper.StoreGoodsSpuMapper;
+import com.panoramic.store.rank.RankCalculator;
+import com.panoramic.store.rank.RankDirtyEvent;
 import com.panoramic.store.service.StoreGoodsSkuService;
 import com.panoramic.store.service.StoreGoodsSkuStockService;
 import com.panoramic.store.service.StoreGoodsSpuService;
@@ -45,6 +47,7 @@ import com.panoramic.store.service.StoreShopService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -79,8 +82,16 @@ import java.util.stream.Collectors;
  * 只由 {@link #refreshDerived} 按名下 SKU 重算，保证 {@code SPU上架 ⟺ ≥1 SKU 上架} 与
  * {@code min_price = 上架且未删 SKU 的最低价}；
  * 锁定的级联下架也不破例——先下架 SKU，再由它推导 SPU。
- * ⚠ 第三个推导列是 {@code score}（该 SPU 全部评价的算术平均），它<b>不在</b> {@link #refreshDerived} 里：
- * 触发源是评价变动（不是 SKU 变动），由评价服务重算后经 {@link #updateScore} 回写。</p>
+ * ⚠ 另外三个推导列<b>不在</b> {@link #refreshDerived} 里，各自的触发源不同：
+ * {@code score}（该 SPU 全部评价的算术平均）由评价服务重算后经 {@link #updateScore} 回写；
+ * {@code sales_count}（累计销量）由订单完成时的域间推送经 {@link #addSales} 自增；
+ * {@code rank_score}（排序分）由 {@code RankCalculator} 按评分 / 销量 / 价格三维度算出，
+ * 唯一写入口是 {@link #recalculateRank}（<b>异步</b>执行，触发靠 {@link #markRankDirty} 置脏）。</p>
+ * <p><b>排序分是唯一「异步」的推导量</b>：它的一次变更要等三个维度的变更都提交后才算，
+ * 且算分本身不该拖慢写路径（需求：「尽量不要影响前端查询」）。故置脏只写一条 UPDATE + 发一个
+ * 域内事件，算分交给 {@code rank/RankRecalcListener}（提交后、线程池上）与 {@code rank/RankRecalcTask}
+ * （兜底扫描）——两者都调 {@link #recalculateRank}，算分口径只有 {@code RankCalculator} 一份。
+ * 最终一致靠 {@code rank_dirty} 这个持久标记，不靠事件的投递。</p>
  * <p><b>域间协作的方法</b>：{@link #platformSkuSnapshotBySkuIds} 供 <b>trade-center</b> 的订单流水线取
  * SKU 快照（cross-cutting 第 24 条）——按资源 id 操作、无作用域锚点，同样不判身份；查不到的 id 跳过不抛。</p>
  * <p><b>域内不做鉴权/审核判断</b>：店铺 {@code status == 2} 的门禁由端 BFF 前置（R9），
@@ -99,6 +110,11 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     /** 跨实体：店铺服务（跨店列表/详情回填 storeName，以及按审核状态取店铺 id 做过滤） */
     private final StoreShopService shopService;
     private final ObjectMapper objectMapper;
+    /**
+     * 域内事件发布器：置脏后发 {@link RankDirtyEvent}（接收方在<b>事务提交后</b>异步重算，见 {@link #markRankDirty}）。
+     * <p>不是跨服务调用，故不涉及 Feign / Seata；发布与订阅都在本域进程内。</p>
+     */
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public PageResult<StoreGoodsSpuPageItemVO> page(Long storeId, StoreGoodsSpuPageQueryDTO dto) {
@@ -418,12 +434,14 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
     }
 
     /**
-     * 施加排序：默认按 id 倒序；价格排序走 min_price。
+     * 施加排序：默认按 id 倒序；排序分走 rank_score；价格排序走 min_price。
      * <p>不处理 min_price 的 NULL 位置：C 端固定 shelf_status=1，而上架 SPU 必有上架 SKU（不变量），
-     * 故 C 端 min_price 必非 null；管理端出现下架商品时排序位置不作保证。</p>
+     * 故 C 端 min_price 必非 null；管理端出现下架商品时排序位置不作保证。
+     * ⚠ {@code rank_score} 无此问题：它是 {@code NOT NULL DEFAULT 50.00}。</p>
      *
      * @param wrapper 待施排序的查询条件
-     * @param sort    排序标识（{@code priceAsc} / {@code priceDesc}；其它值按默认 id 倒序）
+     * @param sort    排序标识（{@code default} / {@code rank} / {@code priceAsc} / {@code priceDesc}；
+     *                其它值按 {@code default} 处理——宽松容错，取值口径见 docs/contracts/store.md 第四节）
      */
     private void applySort(LambdaQueryWrapper<StoreGoodsSpu> wrapper, String sort) {
         if ("priceAsc".equals(sort)) {
@@ -431,7 +449,13 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
             wrapper.orderByAsc(StoreGoodsSpu::getMinPrice).orderByAsc(StoreGoodsSpu::getId);
         } else if ("priceDesc".equals(sort)) {
             wrapper.orderByDesc(StoreGoodsSpu::getMinPrice).orderByAsc(StoreGoodsSpu::getId);
+        } else if ("rank".equals(sort)) {
+            // 排序分倒序（越高越靠前）。⚠ 次级键 id 同样不能省：rank_score 是两位小数，同分是常态
+            wrapper.orderByDesc(StoreGoodsSpu::getRankScore).orderByDesc(StoreGoodsSpu::getId);
         } else {
+            // ⚠ default 分支**保持 id 倒序不动**：admin BFF 与本域共用这个入口，而 admin 从不传 sort
+            //   → 天然落在这里。新语义挂在新取值 rank 上（C 端由 mall-bff 把页面级 default 映射成 rank），
+            //   故 admin 侧一行都不用改。若把新语义直接挂到本分支，会连带改掉平台列表的顺序
             wrapper.orderByDesc(StoreGoodsSpu::getId);
         }
     }
@@ -662,6 +686,100 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
                 .set(StoreGoodsSpu::getScore, score)
                 .eq(StoreGoodsSpu::getId, spuId)
                 .update();
+        // 评分是算分维度之一 → 置脏（触发点 2）。
+        // ⚠ 这里**不**判「分有没有变」：与 refreshMinPrice 不同，本方法是「先算后写」的显式回写，
+        //   没有自带变更判据，而评分的写入频率低（一次提交评价一次），多算一次无妨——宁可多算，不可漏算。
+        // ⚠ 商品已软删时上面的更新命中 0 行，此处照样置脏（同一条件命中 0 行）：脏标记对不存在的行无害，
+        //   换来的是「不必为软删再多一次判断」
+        markRankDirty(spuId);
+    }
+
+    // ---- 销量与排序分协作（销量由 trade-center 推入、排序分是它的下游推导量；见 store README 的算分口径）----
+
+    @Override
+    public void addSales(Long spuId, int quantity) {
+        if (spuId == null || quantity <= 0) {
+            // 入参不合法：不动计数、不置脏。调用方（销量台账服务）已按件数为正校验过
+            return;
+        }
+        // 原子自增（单条 UPDATE，不带事务：语句自带隐式事务，不拉长持锁时间）；不做「先读后写」，
+        // 否则并发入账会丢更新。⚠ setSql 用 {0} 占位由 MP 做参数替换，不拼串（quantity 是外部入参）
+        lambdaUpdate()
+                .setSql("sales_count = sales_count + {0}", quantity)
+                .eq(StoreGoodsSpu::getId, spuId)
+                .update();
+        // 销量是算分维度之一 → 置脏（触发点 3）。
+        // ⚠ 同样不判「影响行数」：本仓 datasource 没开 useAffectedRows，回报的是匹配行数，
+        //   值没变（此处不可能不变）时照样是 1；且商品被软删时命中 0 行——照样置脏，无害
+        markRankDirty(spuId);
+    }
+
+    @Override
+    public boolean recalculateRank(Long spuId) {
+        if (spuId == null) {
+            return false;
+        }
+        StoreGoodsSpu spu = getById(spuId);
+        if (spu == null) {
+            // 商品已被软删（逻辑删除对 getById 生效）：没有行可回写，脏标记一并作废。
+            // ⚠ 这条也是兜底扫描的出口——已删商品的行不会被再捞到（见 listDirtyRankIds）
+            return false;
+        }
+        BigDecimal rankScore = RankCalculator.compute(spu.getSalesCount(), spu.getScore(), spu.getMinPrice());
+        // 版本守卫：算分期间该 SPU 若又变过（markRankDirty 会自增 rank_version），这次算出的分已经过期。
+        // ⚠ 版本从**读回的行**取、条件也用它，故「读—算—写」之间有任何新变更都会让本次命中 0 行，
+        //   于是**不清脏**（脏标记已被那次变更重新置 1），交给下一轮重算。没有这道守卫，
+        //   并发变更下会把过期的分连同「已清脏」一起落库，该商品此后永远停在旧分上
+        Integer version = spu.getRankVersion() == null ? 0 : spu.getRankVersion();
+        return lambdaUpdate()
+                .set(StoreGoodsSpu::getRankScore, rankScore)
+                .set(StoreGoodsSpu::getRankDirty, StoreGoodsSpu.RANK_DIRTY_OFF)
+                .eq(StoreGoodsSpu::getId, spuId)
+                .eq(StoreGoodsSpu::getRankVersion, version)
+                .update();
+    }
+
+    @Override
+    public List<Long> listDirtyRankIds(int limit) {
+        if (limit <= 0) {
+            return Collections.emptyList();
+        }
+        // 只取 id 列，避免整行回表；按 id 升序保证「积压时先到的先算」（也便于人工对账时判断进度）。
+        // ⚠ last("LIMIT ...") 的入参是配置读来的正数（调用方已断言），不是外部请求参数
+        return list(Wrappers.<StoreGoodsSpu>lambdaQuery()
+                .select(StoreGoodsSpu::getId)
+                .eq(StoreGoodsSpu::getRankDirty, StoreGoodsSpu.RANK_DIRTY_ON)
+                .orderByAsc(StoreGoodsSpu::getId)
+                .last("LIMIT " + limit))
+                .stream().map(StoreGoodsSpu::getId).collect(Collectors.toList());
+    }
+
+    /**
+     * 把该 SPU 的排序分<b>置脏</b>（并自增版本号），随后发布域内事件请异步侧重算。
+     * <p>三个触发点（价格变 / 评分变 / 销量变）的唯一置脏入口：只做一条
+     * {@code UPDATE ... SET rank_dirty = 1, rank_version = rank_version + 1}——廉价、不锁查询行，
+     * 且由数据库保证「置脏 + 版本自增」是一次原子写。</p>
+     *
+     * <p>⚠ <b>版本自增与置脏必须在同一条语句里</b>：分成两句会让「置脏」与「版本变化」之间出现窗口，
+     * 在途重算可能读到旧版本、清掉刚置的脏标记。</p>
+     *
+     * <p>⚠ 事件在<b>事务提交之后</b>才被处理（接收方是 {@code RankRecalcListener} 的
+     * {@code AFTER_COMMIT}）。这不是优化而是正确性要求：本方法常在同一业务事务内被调，
+     * 此刻算分会读到未提交的旧值。⚠ 事件投递不可靠（异步无重试），最终一致由 {@code rank_dirty}
+     * 标记 + 兜底扫描任务保证——本方法<b>不</b>关心重算是否成功。</p>
+     *
+     * @param spuId 店铺商品 id（正常非空；调用方透传，故仍做一次空值防御）
+     */
+    private void markRankDirty(Long spuId) {
+        if (spuId == null) {
+            return;
+        }
+        lambdaUpdate()
+                // setSql 里两列一次写完（MP 会做参数替换）；rank_version + 1 由库计算，不经应用读值
+                .setSql("rank_dirty = 1, rank_version = rank_version + 1")
+                .eq(StoreGoodsSpu::getId, spuId)
+                .update();
+        eventPublisher.publishEvent(new RankDirtyEvent(spuId));
     }
 
     // ---- 联动与规则辅助 ----
@@ -788,6 +906,12 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
                 .set(StoreGoodsSpu::getMinPrice, derived)
                 .eq(StoreGoodsSpu::getId, spu.getId())
                 .update();
+        // 价格是算分维度之一 → 置脏（触发点 1）。
+        // ⚠ 必须挂在**这里**（面价确实变了的那个分支之后），不能挂在外层 refreshDerived 上：
+        //   上面的 samePrice 会早退，挂外层会让「价没变也重算」。
+        // ⚠ 也不便用「影响行数 > 0」当判据：本仓 datasource URL 没有 useAffectedRows，
+        //   Connector/J 默认回报的是**匹配行数**，值没变时照样是 1——判据只能是上面的 samePrice。
+        markRankDirty(spu.getId());
     }
 
     /** 价格等值比较（都用 compareTo：BigDecimal.equals 对精度敏感，10.0 与 10.00 判定不等） */

@@ -271,4 +271,44 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      * @return 快照列表（不含查不到的 id；调用方按 {@code skuId} 索引，不依赖顺序）
      */
     List<StoreGoodsSkuSnapshotVO> platformSkuSnapshotBySkuIds(Collection<Long> skuIds);
+
+    // ---- 销量与排序分（销量由域间推送写入，排序分是它的下游推导量；均见 store README）----
+
+    /**
+     * 累计销量自增（{@code sales_count} 是<b>冗余列</b>：{@code store_goods_sales_log} 的汇总）。
+     * <p>调用方是销量推送入口（{@link StoreGoodsSalesLogService#pushSales}），它在<b>同一事务</b>里
+     * 先记台账再调本方法——台账是事实、计数是它的汇总，故「加了没记账」与「记了没加」都不允许。</p>
+     * <p>⚠ <b>只增不减</b>：本域没有销量回退通路（订单完成是终态）。⚠ 边角：商品已软删时更新命中 0 行
+     * ——照样记台账（历史事实不因现状缺行而丢），只是没有计数行可加。</p>
+     * <p>⚠ 本方法会**顺带把该 SPU 的排序分置脏**（销量是算分的一个维度）：置脏与自增同事务，
+     * 异步重算与兜底扫描的机制见 {@link #recalculateRank}。</p>
+     *
+     * @param spuId    店铺商品 id
+     * @param quantity 入账件数（≤0 直接忽略）
+     */
+    void addSales(Long spuId, int quantity);
+
+    /**
+     * 重算并回写该 SPU 的排序分（{@code rank_score} 是<b>推导量</b>：评分 / 销量 / 价格三维度加权）。
+     * <p>算分口径见 {@code com.panoramic.store.rank.RankCalculator}；调用方是<b>异步重算监听器</b>
+     * 与<b>兜底扫描任务</b>，两者都在事务之外（各自一句条件更新，自带事务）。</p>
+     * <p>⚠ <b>带版本守卫</b>：算完之后若该 SPU 又发生过变更（{@code rank_version} 变了），
+     * 这次算出的分已经过期 → <b>不清脏标记</b>、本方法返回 {@code false}，交给下一轮重算。
+     * 没有这道守卫，并发变更下会把「过期的分 + 已清脏」一起落库，该商品此后永远停在旧分上。</p>
+     *
+     * @param spuId 店铺商品 id
+     * @return true = 本次重算已落库（版本未变）；false = 跳过（算出的分已过期，或商品已不存在）
+     */
+    boolean recalculateRank(Long spuId);
+
+    /**
+     * 取一批待重算排序分的 SPU id（{@code rank_dirty = 1}，按 id 升序，最多 {@code limit} 条）。
+     * <p>调用方是<b>兜底扫描任务</b>——它是「最终一致」的最后一层：异步重算失败 / 进程重启 /
+     * 线程池打满时，脏标记是唯一还记得「这个商品的分要重算」的地方。⚠ 分批是为了让积压时的
+     * 单轮耗时与内存有界（任务幂等，脏标记没清就下一轮再扫，故分批不会漏）。</p>
+     *
+     * @param limit 单批上限（正数）
+     * @return 待重算的 SPU id 列表；没有则空列表
+     */
+    List<Long> listDirtyRankIds(int limit);
 }

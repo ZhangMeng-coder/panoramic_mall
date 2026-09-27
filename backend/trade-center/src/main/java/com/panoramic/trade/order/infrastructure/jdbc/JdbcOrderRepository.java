@@ -215,6 +215,17 @@ public class JdbcOrderRepository implements OrderRepository {
         // ⚠ 不写状态轨迹：状态没变（轨迹的语义与 seq 连续性依赖见 OrderRepository#updateAddress）
     }
 
+    @Override
+    public void markSalesPushed(String orderNo) {
+        // ⚠ 无条件写（不按状态收窄）：调用方已确认这笔单是 RECEIVED，而它是主链终点、不会再变。
+        //    加条件只会让「状态恰好被改」变成一次静默的漏标记（而漏标记 = 永久少记一笔销量）。
+        //    重复写 1 无害，故「推成功但标记失败」的下一轮重推链成立（口径见 OrderRepository）。
+        orderService.lambdaUpdate()
+                .eq(TradeOrder::getOrderNo, orderNo)
+                .set(TradeOrder::getSalesPushed, TradeOrder.SALES_PUSHED_ON)
+                .update();
+    }
+
     /**
      * 本次迁移的**来时状态** = 轨迹的倒数第二项（条件更新的前置条件就取它）
      *
@@ -404,6 +415,20 @@ public class JdbcOrderRepository implements OrderRepository {
                         .le(TradeOrder::getExpireTime, now)
                         // 先到期的先关；同一时刻按主键升序（顺序稳定、可断言）
                         .orderByAsc(TradeOrder::getExpireTime)
+                        .orderByAsc(TradeOrder::getId));
+        return assemble(page.getRecords());
+    }
+
+    @Override
+    public List<OrderModel> findReceivedUnpushed(int limit) {
+        // ⚠ 两个条件与 OrderRepository#findReceivedUnpushed 是同一句话：已完成 + 未推送。
+        //    只按 status 捞会把已推过的反复推（不错账，但白白打 store）；只按 sales_pushed 捞会把
+        //    没完成的单推出去（错账：销量只记完成的件数）。
+        Page<TradeOrder> page = orderService.page(new Page<>(1, limit),
+                Wrappers.<TradeOrder>lambdaQuery()
+                        .eq(TradeOrder::getStatus, OrderStatus.RECEIVED.name())
+                        .eq(TradeOrder::getSalesPushed, TradeOrder.SALES_PUSHED_OFF)
+                        // 主键升序 = 下单顺序（先完成的先推；顺序稳定、可断言）
                         .orderByAsc(TradeOrder::getId));
         return assemble(page.getRecords());
     }

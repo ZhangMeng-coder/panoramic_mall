@@ -5,6 +5,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -23,13 +24,20 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * （{@code OrderTimeoutCloseTask}）需要它才会真的被周期调用——少了这个注解，任务类照常注册成 bean、
  * 启动不报任何错，但那个方法**永远不会被执行**（任务的取数、关单、日志一条都不会发生，
  * 表现是「超时单一直挂着待支付」）。它落在这里而不是某个 {@code @Configuration} 上，是因为
- * 「本服务要不要调度」属于启动级的装配决策，与本域内部的步骤链 / 仓库选型无关。</p>
+ * 「本服务要不要调度」属于启动级的装配决策，与本域内部的步骤链 / 仓库选型无关。
+ * 销量补推任务（{@code OrderSalesPushTask}）同在这套调度下，**不需要**注解再开一次。</p>
+ *
+ * <p><b>⚠ {@code @EnableAsync} 是销量推送引入的</b>（{@code OrderSalesPushListener}）：少了它，
+ * 推送**照旧会执行**，但会跑在收货的请求线程上（{@code @Async} 被静默忽略——不报错、不开线程池），
+ * 表现是「顾客点完收货要等一次 store 域往返才拿到响应」，而下游挂住时这个等待长达熔断超时阈值。
+ * 池子的形状在 {@code SalesPushConfig}（本注解只管「要不要这套基础设施」）。</p>
  */
 @SpringBootApplication(scanBasePackages = "com.panoramic")
 @MapperScan({"com.panoramic.trade.mapper", "com.panoramic.trade.order.infrastructure.mapper"})
 @EnableDiscoveryClient
 @EnableFeignClients(basePackages = "com.panoramic.contract.store")
 @EnableScheduling
+@EnableAsync
 public class TradeCenterApplication {
 
     public static void main(String[] args) {

@@ -25,6 +25,7 @@ import com.panoramic.trade.order.domain.port.OrderRepository;
 import com.panoramic.trade.support.ScopeGuard;
 import lombok.RequiredArgsConstructor;
 import org.apache.seata.spring.annotation.GlobalTransactional;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,6 +91,14 @@ import java.util.StringJoiner;
  * READ COMMITTED，每条 SELECT 各取新快照，窗口会重新打开。Nacos 的 `datasource-mysql.yml` 未设
  * `isolation`，走的就是默认值——改隔离级别时要一并回头看这里。</p>
  *
+ * <h3>收货里那个「不参与事务成败」的副作用</h3>
+ * <p>{@code receiveOrder} 落库成功后另发一个 {@link OrderSalesPushEvent}——它**只登记「哪一笔要推」**，
+ * 真正的推送在事务提交后、于线程池上执行（见 {@link OrderSalesPushListener}）。
+ * 这是本类唯一一个刻意**不属于**本次事务的副作用：推送失败只 warn、收货照常成功
+ * （cross-cutting 第 24 条降级方向的第二处例外，理由见 {@code SalesPort}）。
+ * ⚠ 故它不在这里 try/catch，也不参与上面那条「落库顺序」——发布即返回，成败与本事务无关；
+ * 真正的失败兜底在下游（{@code sales_pushed} 未置位 → {@link OrderSalesPushTask} 重推）。</p>
+ *
  * <h3>契约里是字符串、域里是枚举</h3>
  * <p>{@code source} / {@code status} 在契约 DTO 里是 {@code String}（枚举在域内，契约包不另立一份）。
  * 解析只认枚举常量名（{@link OrderStatus#valueOf}），**不做大小写折叠**：契约值就是枚举名，
@@ -105,6 +114,8 @@ public class OrderApplicationService {
     private final OrderRepository orderRepository;
     private final OrderStatusFlow orderStatusFlow;
     private final Clock clock;
+    /** 发布「订单完成」事件（收货后推销量用，见 {@code receiveOrder} 与 {@link OrderSalesPushEvent}） */
+    private final ApplicationEventPublisher eventPublisher;
 
     // ── 写侧：作用域必填（在各自 DTO 上以 @NotNull 表达） ────────────────────────
 
@@ -187,6 +198,12 @@ public class OrderApplicationService {
         OrderModel order = requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), null));
         order.markReceived(orderStatusFlow);
         orderRepository.update(order);
+        // 销量推送（销量只记订单完成的件数）：这里**只登记一件事**，真正的推送在事务提交后、
+        // 于线程池上执行（见 OrderSalesPushEvent / OrderSalesPushListener）。
+        // ⚠ 它是本方法唯一一个**不参与事务成败**的副作用：推送失败只 warn、收货照常成功
+        //    （cross-cutting 第 24 条降级方向的第二处例外，理由见 SalesPort）。
+        //    故它刻意不在这里被 try/catch，也不影响上面的落库顺序——发布即返回，成败与本事务无关。
+        eventPublisher.publishEvent(new OrderSalesPushEvent(order.getOrderNo()));
     }
 
     /**

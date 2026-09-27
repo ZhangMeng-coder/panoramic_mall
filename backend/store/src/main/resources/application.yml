@@ -34,3 +34,23 @@ spring:
 # 数据源/mybatis-plus 由 Nacos 共享配置 datasource-mysql.yml 提供；
 # 本服务不依赖 common-auth，结构上拿不到认证链与 Redis，故不引入 datasource-redis.yml / auth.yml。
 # ⚠ 部署前提：8083 端口只在内网可达，否则可伪造 X-User-Id；这是「域服务去鉴权」的既有取舍。
+
+# ---- 排序分（rank_score）重算的运行参数（2026-09-26 新增；域内首次引入异步与调度）----
+# ⚠ 这一段全是**运维护栏**，没有算分口径：权重 / 饱和点 / 中性值写在 RankCalculator 的常量与 store README 里。
+#    调大调小只影响「算得多快、一批算几个」，最终算出的分完全相同（故改这些值不需要重新全量重算）。
+# ⚠ 三个开关的归属：@EnableAsync / @EnableScheduling 挂 StoreApplication（整个应用要不要这套基础设施），
+#    线程池怎么配在 RankRecalcConfig（pool-size / queue-capacity），扫描节奏由 RankRecalcTask 的
+#    @Scheduled 直接读下面这个键（注解只能吃一个字符串表达式，故它不在 StoreRankProperties 里）。
+panoramic:
+  store:
+    rank:
+      # 重算线程池的常驻线程数（同时最多算几个 SPU）。算分是单行读 + 单行条件 UPDATE，极轻，2 个线程够用。
+      pool-size: 2
+      # 重算线程池的排队上限。⚠ 必须有界：无界队列会让积压永远不显形（提交永不失败、重启全丢），
+      # 而脏标记仍在库里，兜底扫描会补——故有界 + CallerRunsPolicy 让压力显式回落到提交线程。
+      queue-capacity: 500
+      # 兜底扫描的节奏（毫秒，两次扫描之间的间隔；@Scheduled 的 fixedDelay，上一轮跑完才计时）。
+      # 它不是业务口径，只决定「最晚晚多久把脏行算完」；默认 30s。上线时存量全量置脏靠它逐批收敛。
+      sweep-interval-ms: 30000
+      # 兜底扫描的单批上限（一轮最多重算几个脏 SPU）：积压时先算一批、下一轮再算剩下的，任务幂等故不会漏。
+      sweep-batch-size: 200

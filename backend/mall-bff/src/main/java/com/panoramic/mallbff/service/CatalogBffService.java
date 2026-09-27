@@ -91,6 +91,15 @@ public class CatalogBffService {
     /** C 端固定展示口径：未被平台锁定（包内可见，理由同 {@link #SHELF_ON}） */
     static final Integer LOCK_OFF = 0;
 
+    /**
+     * 页面级排序值「综合」（也是不传时的默认）：<b>不下发到域</b>，由本层翻成 {@link #DOMAIN_SORT_RANK}。
+     * <p>⚠ 页面契约的取值集合不变（前端零改动），变的是这一层把「综合」重映射到域级排序分。
+     * 登记在 docs/contracts/mall-bff.md（跨端语义重映射，不登记的话读契约的人会以为综合 = id 倒序）。</p>
+     */
+    private static final String PAGE_SORT_DEFAULT = "default";
+    /** 域级排序值：按 {@code rank_score} 倒序（取值口径见 docs/contracts/store.md 第四节） */
+    private static final String DOMAIN_SORT_RANK = "rank";
+
     private final GoodsCenterClient goodsCenterClient;
     private final StoreClient storeClient;
 
@@ -121,7 +130,7 @@ public class CatalogBffService {
         query.setPageSize(dto.getPageSize());
         query.setKeyword(dto.getKeyword());
         query.setBrandIds(dto.getBrandIds());
-        query.setSort(dto.getSort());
+        query.setSort(toDomainSort(dto.getSort()));
         query.setCategoryIds(resolveCategoryIds(tree, dto.getCategoryId(), dto.getCategoryIds()));
         // C 端展示口径固定在本层（域侧不含 C 端隐含约束，漏传即漏出未过审店铺/锁定商品）
         query.setShopStatus(SHOP_STATUS_APPROVED);
@@ -134,6 +143,29 @@ public class CatalogBffService {
         result.setTotal(raw.getTotal());
         result.setRecords(raw.getRecords().stream().map(this::toMallItem).collect(Collectors.toList()));
         return result;
+    }
+
+    /**
+     * 页面级排序值 → 域级排序值：<b>唯一一处跨端语义重映射</b>（2026-09-26 新增）。
+     *
+     * <p>页面级「综合」（{@code default}，含不传）在本层翻成域级 {@code rank}（按 {@code rank_score} 倒序），
+     * 其余取值（{@code priceAsc} / {@code priceDesc}）原样透传。</p>
+     *
+     * <p>⚠ <b>为什么在这里翻、而不是让域侧把 {@code default} 改成排序分</b>：那个入口是
+     * <b>admin BFF 与 C 端共用</b>的（{@code pageStoreGoodsCrossShop}），改 {@code default} 会连带改掉
+     * 平台「店铺商品管理」列表的顺序。新语义挂在新取值 {@code rank} 上，两端各取所需、互不影响——
+     * 这也是「admin 零改动」的全部机制。</p>
+     * <p>⚠ 域侧对未知取值是宽松容错（落 {@code default} = id 倒序），故这里透传坏值不会报错、
+     * 只会静默退回 id 倒序；页面契约的取值集合由前端与 {@code MallGoodsPageQueryDTO} 约束。</p>
+     *
+     * @param pageSort 页面级排序值（可为 null / 空）
+     * @return 域级排序值（{@code rank} / {@code priceAsc} / {@code priceDesc}）
+     */
+    private String toDomainSort(String pageSort) {
+        if (pageSort == null || pageSort.isBlank() || PAGE_SORT_DEFAULT.equals(pageSort)) {
+            return DOMAIN_SORT_RANK;
+        }
+        return pageSort;
     }
 
     /**

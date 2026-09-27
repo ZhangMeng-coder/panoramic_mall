@@ -3,7 +3,7 @@
 全景商城**交易域**（Servlet 技术栈，2026-09-21 新建），端口 **8087**。
 
 本域持**购物车 `trade_cart_item`** 与**订单**（`trade_order` 等 5 张表，`com.panoramic.trade.order`，DDD 三层）。
-⚠ 订单**已落库**（2026-09-21 阶段一），商品 / 库存两个下游**已接真实 store 域**（2026-09-22，经内部 Feign：`infrastructure/feign` 的两个适配器）。
+⚠ 订单**已落库**（2026-09-21 阶段一），商品 / 库存 / 销量三个下游**已接真实 store 域**（2026-09-22 起，经内部 Feign：`infrastructure/feign` 的三个适配器）。
 结账与评价**不在本期**；**Seata 全局事务已接入**（2026-09-22 T12，见「三、订单领域」的 Seata 条目）。
 
 > 接口清单与**实现进度不在这份文件里维护**——见 [`docs/contracts/trade-center.md`](../../docs/contracts/trade-center.md)：
@@ -17,7 +17,7 @@
 |---|---|---|
 | 被谁调（购物车） | mall-bff（**C 端顾客自助购物车**），已接 | `trade-center-interface` 的 `TradeCenterClient`，带熔断降级 |
 | 被谁调（订单） | **三端 BFF 都要调**：mall-bff（顾客侧）/ store-bff（商户侧）/ admin（管理端全量只读）——**三端订单编排均已落地**，各端页面级那几条见 `docs/contracts/{mall-bff,store-bff,admin}.md` 的订单表 | 同上 |
-| 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；调用点是订单流水线的两个适配器 `GoodsQueryAdapter` / `StockAdapter`（`infrastructure/feign`），⚠ **域间调用不做降级**——store 不可达即整次下单失败 |
+| 本域调谁 | **store 域**（下单流水线的 `goods-check` 取 SKU 快照 / `stock-check` 扣减库存 / 失败回补 / 收货后推销量）——**全仓唯一的跨域调用边**，登记在 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 24 条 | `store-interface` 的 `StoreClient`（`@EnableFeignClients(basePackages = "com.panoramic.contract.store")`），带熔断（本域是**唯一加载 `feign-circuitbreaker.yml` 的域**）；调用点是订单流水线的三个适配器 `GoodsQueryAdapter` / `StockAdapter` / `SalesAdapter`（`infrastructure/feign`），⚠ **域间调用不做降级**——store 不可达即整次下单失败（**唯一例外**是销量推送：见「三、8」） |
 
 ⚠ 订单接口**按能力通用**（不按端分侧）：三端调的是同一批端点，差别只在**传不传作用域**
 （cross-cutting 第 22 条）；写侧的作用域必填，**域内还有一道 400 断言**（`ScopeGuard`，绕过 MVC 时兜住）。
@@ -39,7 +39,7 @@
 | 表 | 归属 | 说明 |
 |---|---|---|
 | `trade_cart_item` | **trade-center（本域）** | 购物车行（`customer_id` + `spu_id` / `sku_id` + `quantity` + `selected`；**唯一键 `uk_customer_sku (customer_id, sku_id)`**，即同一顾客同一 SKU 至多一行） |
-| `trade_order` | **trade-center（本域）** | 订单主表（一笔订单一店；`order_no` 唯一，地址四项为快照，`fingerprint` 为 L2 幂等键） |
+| `trade_order` | **trade-center（本域）** | 订单主表（一笔订单一店；`order_no` 唯一，地址四项为快照，`fingerprint` 为 L2 幂等键，`sales_pushed` 为销量推送标记——见「三、8」） |
 | `trade_order_item` | **trade-center（本域）** | 订单明细（一行 = 一个 SKU；快照字段下单即冻结；`uk_order_sku (order_no, sku_id)`） |
 | `trade_order_submission` | **trade-center（本域）** | 订单提交记录（**唯一键 `uk_customer_request (customer_id, request_id)` = L1 幂等键**，先占键的落点） |
 | `trade_order_submission_order` | **trade-center（本域）** | 提交记录 ↔ 订单关联（一次请求落了哪几笔；纯关联表，无审计列、物理删除） |
@@ -48,7 +48,9 @@
 | `customer_profile` / `customer_address` | customer-center | 顾客资料 / 收货地址（**不在本域**） |
 | `store_goods_spu` / `store_goods_sku` | store | 店铺商品（**不在本域**；本域只存 id） |
 
-建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行，纯新增）。
+建表脚本：`src/main/resources/db/schema.sql`（`CREATE TABLE IF NOT EXISTS`，可重复执行；前面几张表是纯新增，
+**尾部另有一段对存量表加列**——`trade_order.expire_time` + `idx_status_expire`（2026-09-23）、
+`trade_order.sales_pushed`（2026-09-26），那段走 `information_schema` 探测 + `PREPARE`，重复执行安全且都是纯新增、不销数据）。
 
 实体沿用 common `BaseEntity`（审计字段自动填充，代码不得显式赋值；取值格式见 [cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 8 条）。
 
@@ -126,6 +128,9 @@
 - **不加购时校验商品存在性**：域不持商品、不调 store（加购不做跨域调用）；商品下架 / 不存在由 BFF 与页面处理
 - **不做结账 / 评价**：订单**已落库、已有接口**（**按能力 7 条**，见 `docs/contracts/trade-center.md`）；结账（选地址以外的结算编排、运费、优惠）与评价**不在本期**
 - **不做页面编排**（商品详情拼装、失效标记、汇总金额都在 mall-bff）
+- **不做销量的回退 / 修正 / 时间窗统计**：销量是**单调不减**的累计推导量——本域只推「订单完成」这一个动作带来的增量，
+  不做退货退销量（已完成为主链终点，没有回退通路，见「三、8」）、不做「本月销量」这类按窗口重算的口径。
+  ⚠ 更不做「查询时顺手补推」：销量对不对不影响任何一笔订单的读取结果，把它挂进查询路径只会让读变慢且多一条失败路径
 
 ### 6. 信任与防线
 
@@ -145,15 +150,16 @@
 
 ⚠ **订正一句早期说法**：曾写过「落库只换适配器，`domain` / `application` 一行都不用动」。那句话**是错的**——落库期实际动了三处且都是必需的：收货地址进模型、快递单号进模型、支付金额校验进聚合（理由见 `OrderModel` 的类注释）。适配器能替换的只是**外部依赖**（仓库 / 商品 / 库存），订单**自己有什么**必须由聚合说完。
 
-三个**端口**就是「换适配器不动业务」的接缝：
+四个**端口**就是「换适配器不动业务」的接缝：
 
 | 端口 | 当前实现 | 说明 |
 |---|---|---|
 | `GoodsQueryPort`（商品快照 + 可见性） | `GoodsQueryAdapter` → store 域 `StoreClient`（`/internal/store/goods/trade/sku/batch` 批量快照，**逐字段手工映射**成四个开关） | 域间调用，**不做降级**（cross-cutting 第 24 条）：store 不可达 / 熔断打开即整次下单失败 |
 | `StockPort`（扣减 + 按单回补） | `StockAdapter` → store 域 `StoreClient`（`deductStock` / `revertStockByOrder`）；原子性在那边的一条 `UPDATE ... WHERE stock >= ?` 影响行数 + 同事务写流水上 | 同上；唯一「不抛」的是 `deduct` 返回 `false`——那是库存不足（HTTP 200），由 stock-check 翻成 400 |
+| `SalesPort`（订单完成后推销量） | `SalesAdapter` → store 域 `StoreClient`（`addSalesByOrder`）；**按 `spuId` 把订单明细合计成一行**再推（明细是一行一个 SKU，而那边台账的唯一键是 `(order_no, spu_id)`） | ⚠ 同一条跨域边但**失败处置相反**：推失败只 warn、收货照常成功（第 24 条的第二处降级例外，见「三、8」） |
 | `OrderRepository`（订单 + **提交记录**，两级幂等的落点） | `JdbcOrderRepository`（5 张表，MyBatis-Plus 基类，**无自定义 SQL**） | 无需更换 |
 
-⚠ 商品 / 库存的**真适配器**在 `infrastructure/feign`（`StoreFeignAdapterConfiguration` 条件装配，两个适配器类本身不是 `@Component`——否则开关就管不住它们）；阶段一的内存商品 / 库存脚手架（`infrastructure/mock`、`mock-store-data.json`）与从 main 移出的两个内存端口**已随 T4b 处理**，故 `infrastructure/inmemory` 如今只剩订单仓库的内存实现 `InMemoryOrderRepository`（供 `repository=memory` 那条**无数据源**的装配层单测）。开关是 `panoramic.trade.order.store-adapter=feign`（**只剩这一个取值**，带 `matchIfMissing`——键缺失也落到它上面；写错一个值则一个 bean 都不装配、启动即报「找不到 GoodsQueryPort / StockPort 的 bean」）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
+⚠ 商品 / 库存 / 销量的**真适配器**在 `infrastructure/feign`（`StoreFeignAdapterConfiguration` 条件装配，三个适配器类本身不是 `@Component`——否则开关就管不住它们）；阶段一的内存商品 / 库存脚手架（`infrastructure/mock`、`mock-store-data.json`）与从 main 移出的两个内存端口**已随 T4b 处理**，故 `infrastructure/inmemory` 如今只剩订单仓库的内存实现 `InMemoryOrderRepository`（供 `repository=memory` 那条**无数据源**的装配层单测）。开关是 `panoramic.trade.order.store-adapter=feign`（**只剩这一个取值**，带 `matchIfMissing`——键缺失也落到它上面；写错一个值则一个 bean 都不装配、启动即报「找不到 GoodsQueryPort / StockPort / SalesPort 的 bean」）。订单仓库另有 `panoramic.trade.order.repository=jdbc|memory` **不设默认值**（「缺失该按哪个」没有唯一答案，故二选一必须显式写、缺失即启动失败；`memory` 供无数据源的装配层单测）。
 
 - **状态机**：六态 `PENDING_PAYMENT` / `PAID` / `SHIPPED` / `RECEIVED`，外加两个**结束过程的落点** `CANCELLED` / `REFUNDED`。枚举常量名即 todo 说的 `name`，两侧文案分别是 `mallLabel`（C 端）与 `storeAdminLabel`（商户 / 管理端）——同名状态两端叫法不同（`PAID` 在 C 端是「已支付」、商户端是「待发货」；`RECEIVED` 是「已收货 / 完成」；两个结束过程的落点两侧同口径）
 - **流转 = 一条线性主链（来自配置）+ 两个结束过程（写死在动作里）**——判据分两处，各只有一条：
@@ -187,6 +193,47 @@
 - **Seata 全局事务（已接入，2026-09-22 T12）**：`@GlobalTransactional` 在**用例入口**的方法上（四个：`OrderApplicationService#create` / `#cancelOrder` / `#refundOrder`、`OrderTimeoutCloseService#close`），**不在编排器方法上**——⚠ Seata 的 `GlobalTransactionScanner` 按 `BeanDefinition.getBeanClassName()` 挑要增强的 bean，**取不到类名即跳过**，而编排器由装配类（`OrderDomainConfiguration`）的 `@Bean` 方法产出、类名**恒为空**，挂在它那里会被**静默忽略**（不报错、不告警，事务根本不开；2026-09-22 复评发现后改的形状，落点由 `GlobalTransactionalPlacementTest` 守）。与编排器上的本地 `@Transactional` **并存**（本地事务仍管本地库那一半：先占键 + 订单落库；去掉它并不会被全局事务补上）。⚠ **一批全是复用笔时没有跨服务写**：全局事务里只剩本域自己那一个分支（AT 数据源代理由 `seata.yml` 的 `enable-auto-data-source-proxy` 开着），它不比本地事务多保护什么。真实库存写入方在 store 域、其扣减 / 回补是**分支事务**，回滚依据是 store 库里的 `undo_log`；客户端配置在 Nacos 共享配置 `seata.yml`（`trade-center` 与 `store` 是两个加载它的域，见 cross-cutting 第 12 / 24 条）。⚠ 本域**仍不加载 `auth.yml`**：seata 只是事务协调客户端，与认证链无关
 - **验证**：`mvn -pl trade-center -am clean test`。纯 JUnit：`domain` / `application` 层**不启 Spring**；只有装配层用 `@SpringJUnitConfig`。⚠ 本域**不能写 `@SpringBootTest`**——`spring.config.import` 不带 `optional:`，没有 Nacos 时上下文启动即失败，不是可绕过的选项
 
+### 8. 销量推送（订单完成后的跨域写，2026-09-26）
+
+商品销量是 **store 域**的事实（`store_goods_spu.sales_count`，进而是那边排序分 `rank_score` 的一个维度），
+本域**不存第二份**：订单完成时把「该单各 SPU 的合计件数」推过去。它与库存扣减 / 回补走**同一条跨域边**
+（cross-cutting 第 24 条，全仓唯一的那条），但失败处置相反。
+
+- **口径：销量只记订单完成的件数**（`RECEIVED`，主链末项）。已支付 / 已发货**不计**——推早了会把还没走完的单
+  记成销量，而销量是**单调不减**的推导量，记多了纠不回来。⚠ 判据落在两处且必须一致：补推扫描的 `WHERE`
+  （`status = RECEIVED AND sales_pushed = 0`）与 `OrderSalesPushService#push` 开头的状态校验；
+  后者在正常路径上恒不触发（捞出来的一定是已完成态），留着是因为它是那条口径的**最后一道**
+  ——只写进 SQL 的话，换个调用方就会把没完成的单记成销量。
+- **没有销量回退通路**（有意，不是漏了）：已完成是主链终点、两个结束过程（取消 / 仅退款）的来源都在它**之前**，
+  故「已推的销量」不可能需要撤回。日后若新增「已完成退货」，这里要连带加回退（届时另走需求门）。
+- **推送时点 = 收货事务提交之后、线程池上**：`receiveOrder` 落库成功后只发一个 `OrderSalesPushEvent`（只带单号），
+  `OrderSalesPushListener` 以 `@TransactionalEventListener(AFTER_COMMIT)` + `@Async("salesPushExecutor")` 接住它。
+  ⚠ 两个注解各解决一件事，缺一不可：**AFTER_COMMIT 是正确性**（在事务里推会读到未提交的行、且把一次
+  Feign 往返包进 DB 事务）、**@Async 是要求**（需求原话「推送失败不得阻塞收货」——收货回调跑在请求线程上，
+  不异步就是「顾客点完收货还要等一次 store 域往返」）。⚠ 两者都需要启动类的 `@EnableAsync`
+  （缺了它推送照旧执行、只是跑在请求线程上，不报错）。
+- **失败只 warn，收货照常成功**——cross-cutting 第 24 条降级方向的**第二处例外**（第一处是库存回补「宁可不做也不能炸」）。
+  ⚠ 同一条边**同向不同命**：扣库存失败 = 下单失败，推销量失败 = 只记一行日志。理由：货已收到、钱已付，
+  为记一个统计口径把顾客的动作判成失败，是把推导量凌驾于业务事实之上。⚠ 但**端口与适配器照常抛**
+  （`SalesPort` / `SalesAdapter` 不吞异常），「只 warn」只落在调用处（监听器 / 补推任务）——
+  端口层替调用方决定吞不吞，就没人能一眼看出哪条边的失败会被吞掉。
+- **两层兜底，缺一不可**：快路径（收货后立即推）**不保证送达**（进程内事件，提交后 JVM 挂掉就没了），
+  故另有补推扫描 `OrderSalesPushTask`（节奏 `sales-push.interval-ms`、单批上限 `sales-push.batch-size`；
+  逐笔独立处理，单笔失败只记日志、继续下一笔）。**持久性由 `trade_order.sales_pushed` 提供、不由事件提供**
+  ——故不需要事务性发件箱那一套（那要一张表 + 一个投递器，而同一个「重推」能力补推扫描已经有了）。
+- **幂等 = 「至少推一次」**：store 域台账唯一键 `(order_no, spu_id)`，重复推送在那边是 no-op 成功，
+  故本域允许快路径与补推撞同一笔单，也允许「推成功但标记失败 → 下一轮重推」。
+  ⚠ **关键顺序：推成功之后才置 `sales_pushed = 1`**。反过来（先标记再推）时推送失败就永久丢一笔销量
+  ——标记已立在库里、补推再也不会重捞它，而 store 域什么都没收到。⚠ 同理，适配器遇到「订单没有任何明细」
+  **必须抛**、不能静默跳过：跳过会让标记被置上，一笔销量永久丢失。
+- **`sales_pushed` 上线时全部历史已完成单都是 0 —— 这就是销量的一次性回填机制**：补推任务第一次跑会把它们
+  逐批推过去。故不另写回填脚本（另写一份就有两处口径），也**不能**把它回填成 1（那等于宣称历史上的销量
+  都推过了，而实际一笔都没推）。
+- **一处口径一处实现**：快路径与补推**走同一条推送逻辑**（`OrderSalesPushService`），补推**不自己拼 DTO、
+  不自己判状态**——那样兜底就成了第二份口径，与快路径分岔时不会有任何东西报错。
+- ⚠ 补推扫描**不另加索引**：既有的 `idx_status_expire` 以 `status` 为前导列已能收窄（`RECEIVED` 是终态、只增不减），
+  再过滤 `sales_pushed` 的代价很小；真出现积压时再加 `(status, sales_pushed)`。
+
 ## 四、配置说明
 
 - **数据源**：连接信息由 Nacos 共享配置 `datasource-mysql.yml` 提供；**Redis** 由 `datasource-redis.yml` 提供
@@ -198,5 +245,6 @@
 - MyBatis-Plus：主键 `IdType.AUTO`（`trade_cart_item.id` 自增）；**本表 `is_delete` 恒 0**（物理删除，
   见上文「为什么走物理删除」）；驼峰映射
 - 启动类扫描 `com.panoramic` 以加载 common 的全局异常处理、分页插件、字段自动填充与安全链
-- 异常语义（内部）：业务失败以 **HTTP 200 + `{code,msg}`** 返回（域侧不抛异常，故调用方 Feign 的 `ErrorDecoder` 不会被调用）；只有兜底异常才由 common 的 `GlobalExceptionHandler` 返 **HTTP 500** `{code:500,msg:"系统内部错误，请联系管理员"}` —— 那是熔断唯一的失败信号（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 13 条）
+- **销量推送的运行参数**：`panoramic.trade.order.sales-push.*`（`pool-size` / `queue-capacity` / `batch-size` / `interval-ms`，见 `application.yml`）。⚠ 这四个都是**运维护栏**，**不含推送口径**（推什么、何时推、失败怎么办在「三、8」）——改它们只影响「多久补推一轮 / 一批几笔 / 线程池多大」，最终推过去的销量完全相同。⚠ 本域自 2026-09-26 起有**异步**：`@EnableAsync` 挂启动类（与 `@EnableScheduling` 并列），线程池在 `application/config/SalesPushConfig`（拒绝策略 `CallerRuns`）——⚠ 缺 `@EnableAsync` 时 `@Async` 被静默忽略、推送照旧执行只是跑在请求线程上，**不报任何错**
+- 异常语义（内部）：业务失败以 **HTTP 200 + `{code,msg}`** 返回；⚠ **全仓已无 `ErrorDecoder`**（`InternalApiErrorDecoder` 已于 2026-09-26 随信封化删除，且列入反向哨兵——业务失败没有可解码的错误体，挂回去等于把业务错误重新变成熔断信号）。只有兜底异常才由 common 的 `GlobalExceptionHandler` 返 **HTTP 500** `{code:500,msg:"系统内部错误，请联系管理员"}` —— 那是熔断唯一的失败信号（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 2 / 13 条）
 - 响应结构：**本域内部接口出参包 `RespData<T>`**（[cross-cutting.md](../../docs/contracts/cross-cutting.md) 第 2 条），与端 BFF 的对外接口同一形状；调用方解包走 `DomainResp#unwrap`

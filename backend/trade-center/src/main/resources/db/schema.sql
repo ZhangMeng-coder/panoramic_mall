@@ -7,8 +7,8 @@
 --       全域共用同一个库故全仓只需这一份，trade-center 与 store 都是它的读写方。
 --       列名与 common BaseEntity 字段对应（create_user/update_user/is_delete）。
 --       可重复执行（CREATE TABLE IF NOT EXISTS）；前面几张表是纯新增、不改任何存量行，
---       **尾部另有一段对存量表加列 / 加索引**（trade_order.expire_time 与 idx_status_expire，2026-09-23），
---       那段才是动存量表结构的（且都是纯新增，不销数据）。
+--       **尾部另有一段对存量表加列 / 加索引**（trade_order.expire_time 与 idx_status_expire，2026-09-23；
+--       trade_order.sales_pushed，2026-09-26），那段才是动存量表结构的（且都是纯新增，不销数据）。
 -- 执行方式：mysql -uroot -p < schema.sql
 -- ============================================================
 CREATE DATABASE IF NOT EXISTS panoramic_mall
@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS trade_order (
   receiver_detail VARCHAR(255)    NOT NULL COMMENT '详细地址（下单时地址快照）',
   ship_no         VARCHAR(64)     DEFAULT NULL COMMENT '快递单号（发货时录入）',
   expire_time     DATETIME        DEFAULT NULL COMMENT '支付截止时刻（=下单时刻+payment-timeout-minutes 分钟）；NULL=无超时（本列上线前的历史行）',
+  -- ⚠ 0 是**未推送**，不是「推失败」：收货成功与推送成功是两件事（推送在提交后异步发、失败只 warn 不拦收货），
+  --    本列记的是「store 域收到过这单的销量吗」。0 的单由 OrderSalesPushTask 周期性重推。
+  --    ⚠ 本列上线时**全部历史已完成单都是 0** —— 这就是销量的一次性回填机制（见 OrderRepository#findReceivedUnpushed）。
+  sales_pushed    TINYINT         NOT NULL DEFAULT 0 COMMENT '销量是否已推给 store 域：0未推送（兜底扫描会重推），1已推送（推成功之后才置）',
   create_user     VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user     VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -186,3 +190,21 @@ SET @trade_order_expire_idx_ddl := IF(@trade_order_has_expire_idx = 0,
 PREPARE trade_order_expire_idx_stmt FROM @trade_order_expire_idx_ddl;
 EXECUTE trade_order_expire_idx_stmt;
 DEALLOCATE PREPARE trade_order_expire_idx_stmt;
+
+-- 销量推送标记（2026-09-26 商品销量与排序分）：本域把「已完成订单的销量推给 store 域」这件事的
+--   落点。⚠ DEFAULT 0 且**不回填**：0 的语义就是「还没推」，兜底扫描（OrderSalesPushTask）
+--   会把它们逐批推过去（派生的效果正是「历史已完成单的销量一次性回填」）。回填成 1 才是错的
+--   ——那等于宣称历史上所有销量都推过了，而实际一笔都没推。
+SET @trade_order_has_sales_pushed := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'trade_order'
+                                        AND COLUMN_NAME = 'sales_pushed');
+SET @trade_order_sales_pushed_ddl := IF(@trade_order_has_sales_pushed = 0,
+  'ALTER TABLE trade_order ADD COLUMN sales_pushed TINYINT NOT NULL DEFAULT 0 COMMENT ''销量是否已推给 store 域：0未推送（兜底扫描会重推），1已推送（推成功之后才置）'' AFTER expire_time',
+  'SELECT 1');
+PREPARE trade_order_sales_pushed_stmt FROM @trade_order_sales_pushed_ddl;
+EXECUTE trade_order_sales_pushed_stmt;
+DEALLOCATE PREPARE trade_order_sales_pushed_stmt;
+
+-- ⚠ 补推任务的扫描（status + sales_pushed）**不另加索引**：既有的 idx_status_expire 以 status 为
+--   前导列，已能把「已完成」那一小段收窄（RECEIVED 是终态、只增不减），再过滤 sales_pushed 的代价很小。
+--   本轮范围只到「加这一列」；真出现积压时可再加 (status, sales_pushed)。

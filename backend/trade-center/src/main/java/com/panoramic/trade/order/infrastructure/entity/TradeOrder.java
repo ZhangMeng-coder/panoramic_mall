@@ -23,6 +23,11 @@ import java.time.LocalDateTime;
 @TableName("trade_order")
 public class TradeOrder extends BaseEntity {
 
+    /** 销量推送标记：未推送（兜底扫描会重推） */
+    public static final int SALES_PUSHED_OFF = 0;
+    /** 销量推送标记：已推送（推**成功之后**才置它，见 {@code OrderRepository#markSalesPushed}） */
+    public static final int SALES_PUSHED_ON = 1;
+
     /**
      * 主键（IdType.AUTO：由 DB 自增生成）
      */
@@ -110,4 +115,15 @@ public class TradeOrder extends BaseEntity {
      * <p>⚠ {@code null} = 无超时：本列上线前创建的历史行没有值，不视为「已过期」（不重算、不回填）。</p>
      */
     private LocalDateTime expireTime;
+
+    /**
+     * 销量是否已推给 store 域：{@link #SALES_PUSHED_OFF} 未推送 / {@link #SALES_PUSHED_ON} 已推送
+     *
+     * <p>收货成功**不**等于推送成功：推送是提交后异步发的、还可能失败（失败只 warn，不拦收货）。
+     * 本列就是「推成功了吗」的唯一落点——兜底扫描按它捞漏推的单（见 {@code OrderRepository#findReceivedUnpushed}）。</p>
+     *
+     * <p>⚠ 本列是**本域自己的一笔账**，不是 trade 侧的销量事实（销量在 store 域）：它只说
+     * 「这单的销量我推过了」，重复推一次不会错账（store 侧台账幂等），少推一次才会永久少记。</p>
+     */
+    private Integer salesPushed;
 }

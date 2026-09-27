@@ -76,7 +76,10 @@ class OrderApplicationServiceScopeGuardTest {
 
         OrderStatusFlow statusFlow = new OrderStatusFlow(OrderStatusChain.production());
         service = new OrderApplicationService(coordinator,
-                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock);
+                new OrderCancelService(orderRepository, stockPort, statusFlow), orderRepository, statusFlow, clock,
+                // 事件发布器：本用例断言的是「护栏在方法第一句就把调用挡住」，一个事件都发不出去，
+                // 故用空实现即可（真发布器在这里会被调用到才说明护栏漏了）
+                event -> { });
     }
 
     @Test

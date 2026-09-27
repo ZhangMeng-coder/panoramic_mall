@@ -10,6 +10,7 @@ import com.panoramic.contract.store.dto.StoreGoodsEvaluationReplyDTO;
 import com.panoramic.contract.store.dto.StoreGoodsEvaluationStatQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsEvaluationSubmitDTO;
 import com.panoramic.contract.store.dto.StoreGoodsLockDTO;
+import com.panoramic.contract.store.dto.StoreGoodsSalesPushDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuBatchQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuReplaceDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSkuShelfDTO;
@@ -56,8 +57,9 @@ import java.util.List;
  *   <li>方法一律返回 {@code RespData<T>}（无返回值用 {@code RespData<Void>}）：业务结果——含业务失败
  *       {@code code=400/403/404}——都是 <b>HTTP 200 + {code,msg,data}</b>，只有兜底异常才是 HTTP 500；
  *       解包在调用方（{@code DomainResp#unwrap} / 端 BFF 的 {@code BffFeignCall#call}）；</li>
- *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份 + 错误解码；熔断由<b>调用方</b>经 Nacos
- *       {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
+ *   <li>调用经 {@link StoreFeignConfiguration} 附带信任头 + 透传主身份（⚠ <b>不再有错误解码器</b>：
+ *       业务失败是 HTTP 200 + {@code code}，没有非 2xx 的错误体可解码，见 cross-cutting 第 2、13 条）；
+ *       熔断由<b>调用方</b>经 Nacos {@code feign-circuitbreaker.yml} 配置提供，不在本类。</li>
  * </ul>
  * <b>接口按能力通用、不按端分侧</b>（cross-cutting 第 22/23 条）：同一能力只有一条路径，路径段与方法名里
  * 不出现端别子段；数据作用域（{@code storeId}）**不进路径段**，只是入参 DTO 的一个字段——
@@ -350,4 +352,24 @@ public interface StoreClient {
      */
     @PostMapping("/goods/trade/stock/revert-by-order/{orderNo}")
     RespData<Void> revertStockByOrder(@PathVariable("orderNo") String orderNo);
+
+    /**
+     * 按订单号入账销量（订单**完成**后推送，域间协作第 4 条用例）。
+     * <p>调用方是 <b>trade-center</b>：订单走到终态 {@code RECEIVED} 之后，把该单各 SPU 的合计件数推过来，
+     * 本域记一条台账（{@code store_goods_sales_log}）并把 {@code store_goods_spu.sales_count} 加上去；
+     * 销量变动会触发该 SPU 的排序分重算（异步，见 store README）。</p>
+     * <p>⚠ <b>只加不减</b>：本域没有「销量回退」通路——订单完成是主链终点，已完成的单不能再取消 / 退款
+     * （{@code markCancelled} 的来源是待支付、{@code markRefunded} 的来源是已支付），故台账不带方向列，
+     * 也没有回补接口。日后若新增「已完成退货」，这里要连带加回退（届时另走需求门）。</p>
+     * <p>⚠ <b>幂等</b>：台账唯一键 {@code (order_no, spu_id)}；<b>重复推送 = no-op 成功</b>（补推会重放）。
+     * 与 {@link #revertStockByOrder} 的「宁可不做也不能炸」形似而神不同：回补是**补偿**路径，
+     * 本方法是**正常**路径，重复只是浪费一次调用、不会错账。</p>
+     * <p>⚠ <b>调用方侧的失败处置与本域无关，但别照抄下单流水线</b>：推送失败不得阻塞收货
+     * （只 warn），属 cross-cutting 第 24 条降级方向的**第二处例外**——理由写在那一条里，
+     * ⚠ 但形态上仍**不用** {@code BffFeignCall}（会把失败降级成 500 文案），由调用处自己 catch。</p>
+     * <p>⚠ 路径变量的 {@code orderNo} 是资源标识、不并入 DTO（cross-cutting 第 23 条）。</p>
+     */
+    @PostMapping("/goods/trade/sales/{orderNo}")
+    RespData<Void> addSalesByOrder(@PathVariable("orderNo") String orderNo,
+                                   @RequestBody StoreGoodsSalesPushDTO dto);
 }

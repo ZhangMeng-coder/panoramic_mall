@@ -40,7 +40,11 @@ public class MallGoodsPageQueryDTO extends BasePageVO {
     private List<Long> brandIds;
 
     /**
-     * 排序：default / priceAsc / priceDesc
+     * 排序：{@code default}（综合，也是不传时的默认）/ {@code priceAsc} / {@code priceDesc}。
+     * <p>⚠ 这三个值是**页面级**取值，与域级取值不是一套：{@code default} 由本层
+     * {@code CatalogBffService#toDomainSort} 翻成域级 {@code rank}（按排序分倒序），
+     * 其余原样透传。故本字段的取值集合**没有变**，前端零改动——重映射口径登记在
+     * docs/contracts/mall-bff.md，各域级取值的排序见 docs/contracts/store.md 第四节。</p>
      */
     private String sort;
 }

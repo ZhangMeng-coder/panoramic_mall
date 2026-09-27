@@ -1,6 +1,8 @@
 package com.panoramic.store.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.panoramic.common.vo.BaseEntity;
@@ -37,6 +39,11 @@ public class StoreGoodsSpu extends BaseEntity {
     public static final int LOCK_OFF = 0;
     /** 锁定状态：已锁定（平台锁定） */
     public static final int LOCK_ON = 1;
+
+    /** 待重算标记：已收敛（排序分与三个维度一致，无需重算） */
+    public static final int RANK_DIRTY_OFF = 0;
+    /** 待重算标记：待重算（三个维度之一在置脏之后又变过，排序分可能已过期） */
+    public static final int RANK_DIRTY_ON = 1;
 
     /**
      * 主键
@@ -144,4 +151,54 @@ public class StoreGoodsSpu extends BaseEntity {
      * 对外展示名就叫「评分」（商品列表 / 商品详情）。</p>
      */
     private BigDecimal score;
+
+    /**
+     * 累计销量：该 SPU 在**已完成**订单里的合计件数（只加不减）。
+     * <p>事实源不在这里——它是 {@code store_goods_sales_log} 的汇总冗余列，由
+     * {@code StoreGoodsSalesLogService#pushSales}（域间推送入口）在记台账的同一事务内自增；
+     * 商品自身的写路径不得赋值。</p>
+     * <p>⚠ <b>口径是「订单完成」（{@code OrderStatus.RECEIVED}），不是支付</b>；且**没有回退通路**
+     * ——收货是主链终点，已完成的单不能再取消 / 退款，故无需减。</p>
+     * <p>⚠ {@code updateStrategy = NEVER}（本列与下面三个推导列同）：三种触发点都靠显式
+     * {@code lambdaUpdate().set(...)} 写，而 {@code updateById(entity)} 走的是 MP 默认的 {@code NOT_NULL}
+     * 策略——非空字段一律进 {@code SET}。商品编辑 / 上下架联动都是「读回整行 → 改业务字段 → 写回」，
+     * 那个快照里的本列是**读的那一刻**的旧值，写回即把并发自增的销量**静默抹回旧值**（销量少记、
+     * 且没有任何报错）。加了它，实体写路径碰不到这四列——不是我漏了，是刻意让它们只能被显式写。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer salesCount;
+
+    /**
+     * 排序分（0.00 ~ 100.00，越高越靠前）：评分 / 销量 / 价格三维度的加权和。
+     * <p>推导量，由 {@code StoreGoodsSpuServiceImpl#recalculateRank} 唯一写入（算分口径见
+     * {@code rank/RankCalculator} 与 store README）。<b>纯内部排序量，不进任何 VO</b>——
+     * C 端列表用它排序，但不把分数下发给页面。</p>
+     * <p>⚠ {@code updateStrategy = NEVER}：理由同 {@link #salesCount}——写回旧快照会把刚算出的新分抹掉。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private BigDecimal rankScore;
+
+    /**
+     * 待重算标记：1 = 该 SPU 的排序分可能已过期，等待异步重算；0 = 已收敛。
+     * <p>由 {@code StoreGoodsSpuServiceImpl#markRankDirty} 置 1（三个触发点：价格变 / 评分变 / 销量变），
+     * 由 {@code #recalculateRank} 清 0。⚠ <b>它是「兜底重算」的扫描条件</b>：异步任务失败 / 进程重启 /
+     * 线程池打满时，这个标记是最后一次重算机会的凭据（见 store README 的最终一致口径）。</p>
+     * <p>⚠ {@code updateStrategy = NEVER}：写回旧快照会把 {@code markRankDirty} 刚置上的 1 **清回 0**
+     * ——该商品从此再也进不了兜底扫描，永久停在旧分上（这正是脏标记要防的静默错）。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer rankDirty;
+
+    /**
+     * 排序分版本号：每次置脏自增，用于**重算结果的新旧判定**。
+     * <p>算分与清脏在一条 UPDATE 里完成，条件是 {@code rank_version} 与读取时相等
+     * （{@code where id = ? and rank_version = ?}）：不相等说明读完之后又有新变更、算出的分已经过期，
+     * 此时**不清脏**（脏标记已由那次变更置 1），交给下一轮重算。</p>
+     * <p>⚠ 只有这一处会自增（{@code markRankDirty}）；重算侧只读不写。若不用版本号，就只有
+     * 「先算后写」的竞态：并发变更下会把脏标记连同过期的分一起落库，该商品此后**永远**停在旧分上。</p>
+     * <p>⚠ {@code updateStrategy = NEVER}：写回旧快照会把版本号**倒退**，版本守卫随即失效——
+     * 在途重算拿旧版本比对会意外命中，把过期的分当成新分落库（守卫形同虚设）。</p>
+     */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer rankVersion;
 }

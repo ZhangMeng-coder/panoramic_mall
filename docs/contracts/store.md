@@ -14,7 +14,7 @@ respEnvelope: RespData
 > **不暴露公网路由**，只被 store-bff、admin BFF 与 mall-bff 经内部 Feign 调用。
 > 域内**不做任何鉴权、不做权限判断**（见 [cross-cutting.md](./cross-cutting.md) 第 6、7、14 条）。
 
-**共 29 个接口**（有作用域维度 13 + 无作用域维度 13 + 交易协作 3）。
+**共 30 个接口**（有作用域维度 13 + 无作用域维度 13 + 交易协作 4）。
 ⚠ 条数**不按端分侧**统计：同一能力只有一条路径，端别差异只体现在「传不传作用域」上（见第三节）。
 
 ## 一、前缀怎么拼上的
@@ -50,6 +50,7 @@ respEnvelope: RespData
 | tradeSkuSnapshotBatch | POST | /goods/trade/sku/batch | StoreGoodsSkuBatchQueryDTO | `RespData<List<StoreGoodsSkuSnapshotVO>>` | `StoreClient#tradeSkuSnapshotBatch` | `GoodsTradeController#tradeSkuSnapshotBatch` | GoodsQueryAdapter(trade-center) |  |
 | deductStock | POST | /goods/trade/stock/deduct | StoreStockDeductDTO | `RespData<Boolean>` | `StoreClient#deductStock` | `GoodsTradeController#deductStock` | StockAdapter(trade-center) |  |
 | revertStockByOrder | POST | /goods/trade/stock/revert-by-order/{orderNo} | String | `RespData<Void>` | `StoreClient#revertStockByOrder` | `GoodsTradeController#revertStockByOrder` | StockAdapter(trade-center) |  |
+| addSalesByOrder | POST | /goods/trade/sales/{orderNo} | String, `StoreGoodsSalesPushDTO` | `RespData<Void>` | `StoreClient#addSalesByOrder` | `GoodsTradeController#addSalesByOrder` | SalesAdapter(trade-center) |  |
 | submitEvaluation | POST | /goods/evaluation | `StoreGoodsEvaluationSubmitDTO` | `RespData<Void>` | `StoreClient#submitEvaluation` | `EvaluationController#submitEvaluation` | EvaluationBffService(mall-bff) |  |
 | pageEvaluations | POST | /goods/evaluation/page | `StoreGoodsEvaluationPageQueryDTO` | `RespData<PageResult<StoreGoodsEvaluationPageItemVO>>` | `StoreClient#pageEvaluations` | `EvaluationController#pageEvaluations` | EvaluationBffService(mall-bff), StoreEvaluationBffService(store-bff) |  |
 | evaluationStat | GET | /goods/evaluation/stat | `StoreGoodsEvaluationStatQueryDTO` | `RespData<StoreGoodsEvaluationStatVO>` | `StoreClient#evaluationStat` | `EvaluationController#evaluationStat` | EvaluationBffService(mall-bff) |  |
@@ -74,6 +75,19 @@ respEnvelope: RespData
 >   由**条件更新（`reply_content is null`）+ 影响行数**承担，不是先读后写。
 > ⚠ 评价**不新增任何域间调用边**（store 域不调 trade 取订单）：第 24 条与第 12 条 Nacos 矩阵**均不变**。
 
+> ⚠ **销量入账 `addSalesByOrder`**（2026-09-26 落契约并实现本域侧）—— 交易协作组第 4 条，**不新增域间边**
+> （复用既有 `trade-center` → `store` 那一条，[cross-cutting.md](./cross-cutting.md) 第 24 条）。
+> 用途：`trade-center` 在**订单完成**（`OrderStatus.RECEIVED`）后，把该单各 SPU 的销量推入本域
+> （销量是 `store_goods_spu` 上的事实，交易域不存第二份）。
+> - **形状**：`orderNo` 是**资源标识**（路径变量，不并入 DTO，第 23 条）；body 只有 `items`——
+>   `spuId` + `quantity` **必须由调用方给**，因为本域不持订单、拿不到订单项。
+> - **幂等**：台账唯一键 `(order_no, spu_id)`；**重复推送 = no-op 成功**（补推会重放，这是正常路径）。
+>   ⚠ 与库存回补 `revertStockByOrder` 的「撞唯一键即 fail-closed」**刻意相反**，别照那条抄。
+> - **无作用域锚点**（调用方是域、按资源 id 操作）—— 与同组其余三条一致。
+> - ⚠ 调用方侧的失败策略是第 24 条的**第二处例外**（推送失败只 `warn`、**不阻塞收货**）：理由在那一条里写。
+> - 销量**口径**（只记订单完成、单调不减、无回退）属**业务规则**，见 [`backend/store/README.md`](../../backend/store/README.md)；
+>   本文件只登记接口与形状。
+
 > ⚠ **「入参」列不再有位置约定**（cross-cutting 第 23 条）：除路径变量外最多只有一个 DTO，
 > 作用域是**该 DTO 的字段**，不是位置裸参——`storeGoodsDetail` 的 `Long, StoreGoodsSpuDetailQueryDTO`
 > 是「路径变量 id + 作用域查询 DTO」，`updateStoreGoods` 的 `Long, StoreGoodsSpuUpdateDTO` 同理。
@@ -91,7 +105,7 @@ respEnvelope: RespData
 |---|:--:|---|---|
 | **有作用域维度**（作用域必填，无全量视角） | 13 | saveShop, submitShop, pageStoreGoods, saveStoreGoods, updateStoreGoods, deleteStoreGoods, replaceStoreGoodsSkus, updateStoreGoodsSkuShelf, pageSkuStock, updateSkuStock, batchUpdateSkuStock, submitEvaluation, replyEvaluation | 锚点（店主的 `storeId` / 评价人的 `customerId`）进 DTO，**必填**。⚠ 校验组分两档，见下 |
 | **无作用域维度**（该能力存在合法全量视角） | 13 | getShop, pageShops, auditShop, listShopOptions, storeGoodsDetail, pageStoreGoodsCrossShop, crossShopFacets, batchSpuDetail, lockStoreGoods, unlockStoreGoods, pageEvaluations, evaluationStat, listEvaluatedSpuIds | 无字段，或**可空**（`storeGoodsDetail` 与评价三条：传了就按它筛，没传就是不限定） |
-| **交易协作**（域间调用，非端 BFF） | 3 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder | 无锚点（按资源 id 操作：skuId / orderNo）；调用方是**域**不是端，见 [cross-cutting.md](./cross-cutting.md) 第 24 条（`trade-center` → `store` 是唯一的跨域调用边） |
+| **交易协作**（域间调用，非端 BFF） | 4 | tradeSkuSnapshotBatch, deductStock, revertStockByOrder, addSalesByOrder | 无锚点（按资源 id 操作：skuId / orderNo）；调用方是**域**不是端，见 [cross-cutting.md](./cross-cutting.md) 第 24 条（`trade-center` → `store` 是唯一的跨域调用边） |
 
 **作用域值只能来自调用方的登录态**（端 BFF 取 `LoginUser.getId()`，**禁止**从前端入参透传）：
 域侧只做「传了就按 `store_id` 筛，没传就是不限定」，**不判身份、不按端分流**——
@@ -141,6 +155,20 @@ respEnvelope: RespData
 - ⚠ **`deleteStoreGoods` 的双条件不变量**：它是唯一保留裸参的方法（`(Long id, Long storeId)`，
   位置约定不进类型），故删除语句本身写成 `where id = ? and store_id = ?`——
   传参写反时命中 0 行、报「商品不存在」，而不是删掉别人的商品。
+- **`pageStoreGoodsCrossShop` 的 `sort` 取值**（`StoreGoodsSpuCrossShopPageQueryDTO`，2026-09-26 起登记；
+  此前只写在 Java javadoc 里）：
+
+  | 取值 | 排序 | 谁传 |
+  |---|---|---|
+  | `default`（含不传 / 其它值） | `id DESC` —— **未变**，等同改动前 | **admin BFF**（其页面 DTO `ShopGoodsPageQueryDTO` **没有 `sort` 字段**——admin 结构上就无法表达排序，天然落这一档） |
+  | `rank`（**新增**） | `rank_score DESC, id DESC` | **mall-bff** —— 把页面级「综合」的 `default` **映射**成本值（见 [mall-bff.md](./mall-bff.md)），域侧不认识「综合」 |
+  | `priceAsc` / `priceDesc` | `min_price` 升 / 降 | **mall-bff 原样透传**（C 端排序 UI 的两个显式项；页面级取值不变） |
+
+  ⚠ **默认语义挂在新取值上、不挂在 `default` 上**：`default` 是 admin 与 C 端共用的域方法入口，
+  改它就等于改 admin 的列表顺序。⚠ `rank` 的**次级键 `id` 不可省**（与 `priceAsc` / `priceDesc` 同惯例），
+  无 tiebreaker 时同分商品在翻页间会重复 / 漏行。⚠ `rank_score` 是 `NOT NULL DEFAULT`，
+  不存在 `min_price` 那种「NULL 排哪」的问题。
+  ⚠ 「取其它值一律按 `default` 处理」是**宽松容错**：打错的取值不报错、静默退化成 `id DESC`。
 - 商品写操作的**作用域必填**靠域入口的 `@Validated({Default.class, StoreScopeGroup.class})` 守：
   缺 `storeId` 的请求得 **`code=400`**，而不是 NPE 或静默写库。
 
@@ -150,7 +178,7 @@ respEnvelope: RespData
 
 | 包 | 类型 |
 |---|---|
-| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsSkuBatchQueryDTO, StoreStockDeductDTO；评价：StoreGoodsEvaluationSubmitDTO, StoreGoodsEvaluationPageQueryDTO, StoreGoodsEvaluationStatQueryDTO, StoreGoodsEvaluationOrderQueryDTO, StoreGoodsEvaluationReplyDTO |
+| `dto` | ShopAuditDTO, ShopPageQueryDTO, ShopSaveDTO, StoreGoodsLockDTO, StoreGoodsSkuDTO, StoreGoodsSkuReplaceDTO, StoreGoodsSkuShelfDTO, StoreGoodsSpuBatchQueryDTO, StoreGoodsSpuCrossShopPageQueryDTO, StoreGoodsSpuDetailQueryDTO, StoreGoodsSpuFacetQueryDTO, StoreGoodsSpuPageQueryDTO, StoreGoodsSpuSaveDTO, StoreGoodsSpuUpdateDTO, StoreGoodsStockPageQueryDTO, StoreGoodsStockUpdateDTO, StoreGoodsStockBatchUpdateDTO, StoreGoodsSkuBatchQueryDTO, StoreStockDeductDTO；销量：StoreGoodsSalesPushDTO, StoreGoodsSalesItemDTO；评价：StoreGoodsEvaluationSubmitDTO, StoreGoodsEvaluationPageQueryDTO, StoreGoodsEvaluationStatQueryDTO, StoreGoodsEvaluationOrderQueryDTO, StoreGoodsEvaluationReplyDTO |
 | `vo` | PageResult, ShopOptionVO, ShopVO, StoreGoodsFacetItemVO, StoreGoodsSkuVO, StoreGoodsSpuCrossShopPageItemVO, StoreGoodsSpuDetailVO, StoreGoodsSpuFacetVO, StoreGoodsSpuPageItemVO, StoreGoodsSpuPlatformDetailVO, StoreGoodsStockPageItemVO, StoreGoodsSkuSnapshotVO；评价：StoreGoodsEvaluationSkuVO, StoreGoodsEvaluationPageItemVO, StoreGoodsEvaluationStatVO, StoreGoodsEvaluationScoreCountVO |
 
 > `dto` 包里另有校验组 `StoreScopeGroup`（**不是数据形状**，只标记「作用域字段只在域入口必填」，故不在上表）。

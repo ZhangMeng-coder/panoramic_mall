@@ -1,7 +1,8 @@
 -- ============================================================
 -- 全景商城 store 业务域（下沉纯域）建表脚本（MySQL 8）
 -- 说明：store 域持 store_shop（店铺）+ store_goods_spu/store_goods_sku（店铺在售商品）
---       + store_goods_sku_stock/_log（SKU 库存与变动流水）+ store_goods_evaluation（商品评价）；
+--       + store_goods_sku_stock/_log（SKU 库存与变动流水）+ store_goods_evaluation（商品评价）
+--       + store_goods_sales_log（销量台账）；
 --       店主账号表 store_user 已随 BFF 化下沉到 store-bff（店主端 BFF），见 store-bff 模块 schema。
 --       列名与 common BaseEntity 字段对应（create_user/update_user/is_delete）。
 --       可重复执行（CREATE TABLE IF NOT EXISTS）。
@@ -54,6 +55,12 @@ CREATE TABLE IF NOT EXISTS store_shop (
 --   lock_*：平台锁定（管理后台「店铺商品管理」）。锁定 → 名下 SKU 全部下架、SPU 随之推导为下架；
 --   锁定期 owner 侧整行只读（编辑/上下架/增删改 SKU/删除 全部拒绝）；仅平台可解锁，解锁不自动恢复上架。
 --   lock_user 是业务列（非审计列），存 UserType:UserId 原串（如 admin:1），仅管理端展示，店铺端不展示。
+--   sales_count / rank_score / rank_dirty / rank_version：销量与排序分（2026-09-26 新增）。
+--   sales_count 口径是**订单完成**（RECEIVED），事实源是 store_goods_sales_log，本列是它的汇总冗余列，只加不减。
+--   rank_score 是「评分 / 销量 / 价格」三维度加权的推导量（0.00~100.00），算分口径见 store README 与
+--   RankCalculator；它**不在写路径上同步算**：三个维度的变更只把 rank_dirty 置 1（并自增 rank_version），
+--   由异步监听器（提交后）与定时兜底任务重算——rank_dirty 就是「最终一致」的凭据（进程重启也不丢）。
+--   rank_version 用于重算结果的新旧判定：重算的 UPDATE 带版本条件，不符即认定「算出的分已过期」、不清脏。
 CREATE TABLE IF NOT EXISTS store_goods_spu (
   id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   store_id       BIGINT UNSIGNED NOT NULL                COMMENT '所属店铺 id（=店主账号 id，账号店同 ID）',
@@ -75,6 +82,10 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   lock_time      DATETIME        DEFAULT NULL            COMMENT '锁定时间',
   min_price      DECIMAL(10,2)   DEFAULT NULL            COMMENT '在售SKU最低价（推导量，由SKU联动维护）',
   score          DECIMAL(2,1)    DEFAULT NULL            COMMENT '商品评分（推导量：全部评价的算术平均，1位小数；NULL=尚无评价）',
+  sales_count    INT             NOT NULL DEFAULT 0      COMMENT '累计销量（订单完成口径的合计件数，只加不减；事实源是 store_goods_sales_log）',
+  rank_score     DECIMAL(5,2)    NOT NULL DEFAULT 50.00  COMMENT '排序分（推导量：评分/销量/价格三维度加权，0.00~100.00；越高越靠前）',
+  rank_dirty     TINYINT         NOT NULL DEFAULT 0      COMMENT '待重算标记：0已收敛，1待重算（排序分可能已过期；兜底扫描按它捞行）',
+  rank_version   INT             NOT NULL DEFAULT 0      COMMENT '排序分版本号：每次置脏自增，用于重算结果的新旧判定',
   create_user    VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
   create_time    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   update_user    VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
@@ -84,7 +95,9 @@ CREATE TABLE IF NOT EXISTS store_goods_spu (
   KEY idx_store_id (store_id),
   KEY idx_goods_spu_id (goods_spu_id),
   KEY idx_shelf_status (shelf_status),
-  KEY idx_lock_status (lock_status)
+  KEY idx_lock_status (lock_status),
+  KEY idx_rank_score (rank_score),
+  KEY idx_rank_dirty (rank_dirty)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺在售商品 SPU';
 
 -- 店铺在售商品 SKU 表
@@ -160,6 +173,32 @@ SET @shop_score_ddl := IF(@shop_has_score = 0,
      ADD COLUMN score DECIMAL(2,1) DEFAULT NULL COMMENT ''店铺评分（推导量：本店全部评价的算术平均，1位小数；NULL=尚无评价）'' AFTER audit_remark',
   'SELECT 1');
 PREPARE shop_score_stmt FROM @shop_score_ddl; EXECUTE shop_score_stmt; DEALLOCATE PREPARE shop_score_stmt;
+
+-- 3.6 幂等加列：为已存在的 store_goods_spu 表补充销量与排序分四列 + 两个索引（可重复执行）。
+--     新建库走上面的 CREATE TABLE 即已含，本块只对「早于排序分功能建表」的存量库生效。
+--     ⚠ 四列一起加：rank_score 是 sales_count / score / min_price 的下游推导量，
+--       rank_dirty / rank_version 是它的重算与并发守卫，缺一个功能都不完整。
+SET @spu_has_rank := (SELECT COUNT(*) FROM information_schema.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'store_goods_spu' AND COLUMN_NAME = 'rank_score');
+SET @spu_rank_ddl := IF(@spu_has_rank = 0,
+  'ALTER TABLE store_goods_spu
+     ADD COLUMN sales_count INT NOT NULL DEFAULT 0 COMMENT ''累计销量（订单完成口径的合计件数，只加不减；事实源是 store_goods_sales_log）'' AFTER score,
+     ADD COLUMN rank_score DECIMAL(5,2) NOT NULL DEFAULT 50.00 COMMENT ''排序分（推导量：评分/销量/价格三维度加权，0.00~100.00；越高越靠前）'' AFTER sales_count,
+     ADD COLUMN rank_dirty TINYINT NOT NULL DEFAULT 0 COMMENT ''待重算标记：0已收敛，1待重算（排序分可能已过期；兜底扫描按它捞行）'' AFTER rank_score,
+     ADD COLUMN rank_version INT NOT NULL DEFAULT 0 COMMENT ''排序分版本号：每次置脏自增，用于重算结果的新旧判定'' AFTER rank_dirty,
+     ADD INDEX idx_rank_score (rank_score),
+     ADD INDEX idx_rank_dirty (rank_dirty)',
+  'SELECT 1');
+PREPARE spu_rank_stmt FROM @spu_rank_ddl; EXECUTE spu_rank_stmt; DEALLOCATE PREPARE spu_rank_stmt;
+
+-- 3.7 存量置脏：把全部未删商品标记为「待重算排序分」（可重复执行）。
+--     ⚠ 必须做这一步，否则存量商品会**永远停在**加列默认值 50.00 —— 脏标记为 0 时兜底扫描不捞它，
+--       50.00 只是一个占位值而不是真值（`sort=rank` 会退化成近似随机序）。
+--     置脏后由 RankRecalcTask 逐批收敛出真值（单批上限 + fixedDelay 已限流），无需另写全量重算 SQL。
+--     ⚠ 重跑本文件会把已收敛的行重新置脏（再算一遍，结果相同）——与 3.3 的存量回填同款口径。
+--     ⚠ `rank_version` 与本语句**一次写上**（与 Java 侧 markRankDirty 同形）：置脏而不动版本，
+--       会让「迁移前读过该行」的在途重算仍满足版本条件、把过期结果连同「已清脏」一起落库。
+UPDATE store_goods_spu SET rank_dirty = 1, rank_version = rank_version + 1 WHERE is_delete = 0;
 
 -- 4. SKU 库存表（与 store_goods_sku 1:1，**独立成表**）
 --   独立成表的理由：库存若加成 store_goods_sku 的一列，改库存的 UPDATE 会锁住该 SKU 行，
@@ -250,3 +289,28 @@ CREATE TABLE IF NOT EXISTS store_goods_evaluation (
   KEY idx_store_time (store_id, create_time),
   KEY idx_order_no (order_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品评价（含商家回复；商品/店铺评分的唯一来源）';
+
+-- 7. 店铺商品销量台账表（只增不改、只加不减）
+--   一行 = 一次入账，语义是「**这笔单的这个商品，销量已经算过了**」；故 (order_no, spu_id) 是唯一键，
+--   它同时是**推送幂等**的落库兜底（trade-center 的补推任务会重放同一笔）。
+--   store_goods_spu.sales_count 是本表的**汇总冗余列**：入账时先插本表、再在同一事务里自增那一列。
+--   ⚠ 与 store_goods_sku_stock_log **刻意不同构**：那张表有 kind（OUT / REVERT 两个方向），本表<b>只有入账一个方向</b>
+--     ——销量口径是「订单完成」，而已完成的订单不能再取消 / 退款（取消的来源是待支付、退款的来源是已支付），
+--     故没有回退通路。照抄一个恒为 ADD 的 kind 等于给不存在的场景留一列。
+--   ⚠ 不设业务发生时间列（不同于库存流水的 occurred_at）：入账时点就是订单完成时推送的那一刻，
+--     审计列 create_time 即入账时间；补推的延迟只影响这一列精度，对账主键是 (order_no, spu_id)。
+--   ⚠ 本表不参与可见性判断，也不判店铺归属：推送方是**域**（trade-center），按资源 id 操作（cross-cutting 第 24 条）。
+CREATE TABLE IF NOT EXISTS store_goods_sales_log (
+  id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  order_no    VARCHAR(32)     NOT NULL COMMENT '订单号（入账来源；与 spu_id 构成唯一键）',
+  spu_id      BIGINT UNSIGNED NOT NULL COMMENT '被计入销量的店铺商品 SPU id',
+  quantity    INT             NOT NULL COMMENT '入账件数（恒正；方向只有一个，故不存负数、不设 kind）',
+  create_user VARCHAR(32)     DEFAULT NULL COMMENT '创建人（UserType:UserId）',
+  create_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（= 入账时间）',
+  update_user VARCHAR(32)     DEFAULT NULL COMMENT '更新人（UserType:UserId）',
+  update_time DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  is_delete   TINYINT         NOT NULL DEFAULT 0 COMMENT '逻辑删除：0 正常，1 已删除',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_order_no_spu (order_no, spu_id),
+  KEY idx_spu_id (spu_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='店铺商品销量台账（订单完成时入账；只增不改、只加不减）';

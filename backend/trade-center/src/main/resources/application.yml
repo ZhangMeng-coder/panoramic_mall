@@ -9,8 +9,8 @@ spring:
     # ⚠ 本域**是全仓库唯一加载 datasource-redis.yml 的域服务**（购物车加购去重 + 行数读穿透缓存的
     #    旁路缓存），属 cross-cutting.md 第 12 条「Nacos 加载矩阵」的登记例外；
     #    其余域服务（goods-center / store / customer-center）都不引它。
-    # ⚠ 本域**也是唯一加载 feign-circuitbreaker.yml 的域服务**：下单要经 Feign 调 store 域
-    #    （商品快照 / 扣库存），域间调用同样要熔断与 4xx-5xx 分野，见 cross-cutting 第 24 条。
+    # ⚠ 本域**也是唯一加载 feign-circuitbreaker.yml 的域服务**：下单 / 收货要经 Feign 调 store 域
+    #    （商品快照 / 扣库存 / 收货后推销量），域间调用同样要熔断与 4xx-5xx 分野，见 cross-cutting 第 24 条。
     # ⚠ 域服务不做鉴权、不碰登录态，故**仍不引入 auth.yml**——「调域」与「被鉴权」是两件事：
     #    本域拿不到认证链、也不做任何权限判断，身份头只读来填 UserContext / 透传下游。
     # ⚠ 本域**也是发起全局事务（TM）的域**：seata.yml 提供 TC 地址与事务分组，
@@ -64,7 +64,7 @@ panoramic:
       # stock-check 扣减库存）；阶段一的 mock 内存脚手架已随 T4b 删除（todo 残留 9），故本键只剩这一个取值。
       # ⚠ matchIfMissing 已在 T4b 翻到 feign 侧（原先在 mock 侧）：本行仍是**显式**写下的，缺了它也只是
       #    回到「当前唯一存在的装配」。写错一个值（feigned / 已作废的 mock / 空串）则一个 bean 都不装配，
-      #    启动即报「找不到 GoodsQueryPort / StockPort 的 bean」——起不来，而不是悄悄接单。
+      #    启动即报「找不到 GoodsQueryPort / StockPort / SalesPort 的 bean」——起不来，而不是悄悄接单。
       store-adapter: feign
       # 订单仓库：jdbc = 真实落库 / memory = 内存实现（无数据源场景，如装配层单测）。
       # ⚠ 与上面的 store-adapter 刻意不同：本键**不设默认值**——「缺失时该按哪个」在这里没有唯一答案，
@@ -102,3 +102,21 @@ panoramic:
       timeout-close-interval-ms: 60000
       # 超时关单任务的单批上限（一次扫描最多关几笔；积压时先关一批、下一轮再关剩下的，任务幂等故不会漏）。
       timeout-close-batch-size: 200
+      # 销量推送（订单完成后把该单各 SPU 的合计件数推给 store 域）——**三项运维参数，不是业务口径**。
+      # ⚠ 业务口径只有一条「销量只记订单完成的件数」（在 OrderSalesPushService），这里只管「推得多快、占几个线程、一轮捞几笔」。
+      # ⚠ 这一组是全仓第二条跨域写边的运行参数（第一条是库存扣减 / 回补）：
+      #    推送失败**只 warn、不拦收货**（见 cross-cutting 第 24 条的降级例外），故这些值调小了只影响「销量多久对上」，不影响下单 / 收货。
+      sales-push:
+        # 推送线程池并发度：推送一笔一次 Feign 调用，且只在收货时发生——给 2 是为了某一笔卡住时不堵住后面的，不是为提高吞吐。
+        pool-size: 2
+        # 排队上限（必须有界：无界队列会以 OOM 收场，且是在「推送慢」这个已不正常的状态下悄悄恶化）。
+        # 池满时走 CallerRuns（回落到提交线程同步推一次）——永不丢任务、永不抛，见 SalesPushConfig。
+        queue-capacity: 500
+        # 补推任务的单批上限：⚠ 积压是预期的——本列上线时**全部历史已完成单都是未推送**（这就是销量回填的机制），
+        # 故第一次跑会把它们逐批推过去。不限量则一轮扫描的耗时与内存随积压量线性增长。
+        batch-size: 200
+        # 补推任务的扫描节奏（毫秒，@Scheduled 的 fixedDelay，上一轮跑完才计时）。
+        # ⚠ 它不是业务口径，只决定「最晚晚多久补上」——收货时的快路径推成功时它什么都不做。
+        # ⚠ 由 OrderSalesPushTask 的 @Scheduled 直接读本键（注解只能吃一个字符串表达式），
+        #    故它不在 SalesPushProperties 里；单批上限才走配置类（batch-size，有装配期断言）。
+        interval-ms: 60000

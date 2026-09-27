@@ -32,7 +32,7 @@ import java.util.function.Supplier;
  *       避免下游故障拖垮调用方。</li>
  * </ul></p>
  *
- * <p>⚠ <b>域间调用不用本类</b>：trade-center 的两个适配器直接 {@link DomainResp#unwrap}、
+ * <p>⚠ <b>域间调用不用本类</b>：trade-center 的三个适配器直接 {@link DomainResp#unwrap}、
  * <b>不降级</b>——store 不可达时下单必须整体失败，降级会产出「没扣库存的订单」（第 24 条）。</p>
  */
 @Slf4j
