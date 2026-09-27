@@ -1,6 +1,7 @@
 package com.panoramic.trade.order.infrastructure.jdbc;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -18,6 +19,8 @@ import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderPageQuery;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
+import com.panoramic.trade.order.domain.port.OrderStats;
+import com.panoramic.trade.order.domain.port.OrderStatsPoint;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrder;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrderItem;
 import com.panoramic.trade.order.infrastructure.entity.TradeOrderStatusLog;
@@ -30,7 +33,9 @@ import com.panoramic.trade.order.infrastructure.service.TradeOrderSubmissionOrde
 import com.panoramic.trade.order.infrastructure.service.TradeOrderSubmissionService;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -42,13 +47,16 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * {@link OrderRepository} 的落库实现（真实适配器）：5 张表 + MyBatis-Plus 基类，**不写一句自定义 SQL**。
+ * {@link OrderRepository} 的落库实现（真实适配器）：5 张表 + MyBatis-Plus 基类，**不写自定义 mapper 方法**。
  *
  * <h3>为什么不需要自定义 mapper 方法</h3>
  * <p>本类要的四类动作，恰好都在 {@code IService} 的能力里：插一行（{@code save}）、按条件取一批
  * （{@code list} / {@code page}）、判存在（{@code exists}）、改一列（{@code updateById}）。
  * 唯一「非基类」的地方是 {@link #occupy} 的重复键捕获与回查——那也不是 SQL，是异常语义。
  * 少一层手写 SQL，就少一层「列名写错了但编译通过」的地方。</p>
+ * <p>⚠ <b>唯一的例外是订单统计</b>（{@link #getStats}）：它要一条<b>跨表</b>聚合（窗口按轨迹表的支付时刻算，
+ * 金额与状态在主表上），基类表达不了。那里用 {@code QueryWrapper} 的聚合列 + {@code inSql} 子查询写，
+ * 值走占位符参数——**仍不新增 mapper 方法**，代价是那两处 SQL 片段是字符串，改列名时编译器不会帮你。</p>
  *
  * <h3>并发口径：靠唯一索引的行锁，不靠应用层判断</h3>
  * <p>{@link #occupy} 往 {@code trade_order_submission} 插一行，其 {@code (customer_id, request_id)}
@@ -449,6 +457,94 @@ public class JdbcOrderRepository implements OrderRepository {
     @Override
     public OrderPage pageOrders(OrderPageQuery query) {
         return page(query);
+    }
+
+    // ── 读侧：平台统计（无作用域，见 OrderRepository#getStats） ──────────────────
+
+    /**
+     * 「窗口内发生过支付」的订单集合，作为**子查询**嵌在三个聚合里。
+     * <p>⚠ 支付时刻的唯一来源是轨迹表（主表刻意不存 {@code pay_time}，见 {@code db/schema.sql} 的 DDL 注释），
+     * 故窗口条件落在 {@code trade_order_status_log.create_time} 上。</p>
+     * <p>⚠ 用子查询而不是「先查出单号、再拼 {@code IN (...)}」：后者的 IN 列表长度跟着窗口里的订单数走，
+     * 窗口一大就变成一条超长 SQL 并把单号搬进内存。{0}/{1}/{2} 是 MP 的占位符，值仍走
+     * {@code PreparedStatement} 参数（不是字符串拼接），订单状态也由枚举名带进来，不在 SQL 里手写。</p>
+     * <p>⚠ 这段是**子查询体**，不含 {@code IN} —— 由 {@link #paidInWindow} 用 {@code apply} 包成
+     * {@code order_no IN (...)}。不用 {@code inSql} 是因为本仓的 MP 3.5.16 只提供
+     * {@code inSql(column, inValue)} 两参重载、**没有**收占位符值的重载，
+     * 而占位符替换只发生在 {@code apply} / {@code having} / {@code exists} 上。</p>
+     */
+    private static final String PAID_IN_WINDOW_SUBQUERY =
+            "SELECT order_no FROM trade_order_status_log WHERE status = {0} AND create_time >= {1} AND create_time < {2}";
+
+    @Override
+    public OrderStats getStats(LocalDate start, LocalDate end) {
+        LocalDateTime from = start.atStartOfDay();
+        // 闭区间 [start, end]：上界取「end 次日 00:00」并用 < 排除，故 end 当天整天都算在窗口内
+        LocalDateTime to = end.plusDays(1).atStartOfDay();
+
+        // ⚠ 三个数分三条聚合，而不是一条 CASE WHEN：三者的**筛选条件本就不同**（分母不排退款、
+        //    分子只认已收货、营业额要排退款），塞进一条 SQL 只能靠 CASE 里手写状态字面量——
+        //    那样「状态叫什么」就有了两处（枚举与 SQL 串）。三条各自带类型化的 eq/ne，
+        //    状态名仍只有枚举一个来源。⚠ 三条都是**定数**查询（条数不随窗口大小变），不是 N+1。
+        long paidOrderCount = countOrders(paidInWindow(from, to));
+        long dealOrderCount = countOrders(paidInWindow(from, to).eq("status", OrderStatus.RECEIVED.name()));
+
+        QueryWrapper<TradeOrder> revenueQw = paidInWindow(from, to)
+                // 退款是终态（PAID → REFUNDED）、且恒为整单退，故「当前状态 = REFUNDED」等价于「退过款」，
+                // 扣减就是整单扣 total_amount（本仓没有部分退款，别为此造一个半额口径）
+                .ne("status", OrderStatus.REFUNDED.name());
+        revenueQw.select("COALESCE(SUM(total_amount), 0) AS revenue");
+        Map<String, Object> revenueRow = orderService.getMap(revenueQw);
+        Object revenueValue = revenueRow == null ? null : revenueRow.get("revenue");
+        // COALESCE 保证非 null；这里再兜一次是为了不把「驱动返回了别的数值类型」变成一次 ClassCastException
+        BigDecimal revenue = revenueValue == null ? BigDecimal.ZERO : new BigDecimal(revenueValue.toString());
+
+        return new OrderStats(revenue, dealOrderCount, paidOrderCount, newOrderSeries(from, to));
+    }
+
+    /**
+     * 窗口内的计数（{@code SELECT COUNT(*)}）：调用方各自追加选人的条件（不追 = 全数）。
+     */
+    private long countOrders(QueryWrapper<TradeOrder> wrapper) {
+        wrapper.select("COUNT(*) AS cnt");
+        Map<String, Object> row = orderService.getMap(wrapper);
+        return row == null || row.get("cnt") == null ? 0L : ((Number) row.get("cnt")).longValue();
+    }
+
+    /**
+     * 「窗口内发生过支付」的订单条件（三个聚合共用一份，避免三处各写一遍子查询）
+     */
+    private static QueryWrapper<TradeOrder> paidInWindow(LocalDateTime from, LocalDateTime to) {
+        QueryWrapper<TradeOrder> wrapper = new QueryWrapper<>();
+        // ⚠ 轨迹表不写 is_delete 条件：该表**不删行**（is_delete 恒 0，仅为对齐 BaseEntity 而留），
+        //    而这条是原生 SQL 片段，MP 的逻辑删除拼接不会深入子查询内部
+        wrapper.apply("order_no IN (" + PAID_IN_WINDOW_SUBQUERY + ")",
+                OrderStatus.PAID.name(), from, to);
+        return wrapper;
+    }
+
+    /**
+     * 窗口内**每日新增下单数**（按 {@code create_time} 落日）。
+     * <p>⚠ 含后来被取消 / 退款的单：它数的是「下了多少单」，不是「留下了多少单」。</p>
+     * <p>⚠ 只回「有数据的日期」（{@code GROUP BY} 的自然结果），缺日不补 0——补 0 到「哪天到哪天」
+     * 需要知道窗口边界，而窗口是调用方的概念；调用方按「该日不在列表里 = 0」处理。</p>
+     */
+    private List<OrderStatsPoint> newOrderSeries(LocalDateTime from, LocalDateTime to) {
+        QueryWrapper<TradeOrder> wrapper = new QueryWrapper<>();
+        // ⚠ select 收的是裸 SQL 片段（MP 只做 String.join 原样拼进 SELECT、从不加反引号），
+        //    故 "DATE(create_time) AS d" 能直接写；代价是改列名编译器不拦
+        wrapper.select("DATE(create_time) AS d", "COUNT(*) AS c")
+               .ge("create_time", from)
+               .lt("create_time", to)
+               .groupBy("DATE(create_time)");
+        List<OrderStatsPoint> points = new ArrayList<>();
+        for (Map<String, Object> row : orderService.listMaps(wrapper)) {
+            Object raw = row.get("d");
+            // DATE() 列按 JDBC 规范回 java.sql.Date；个别驱动会直接给 LocalDate，两种都认
+            LocalDate date = raw instanceof LocalDate ld ? ld : ((java.sql.Date) raw).toLocalDate();
+            points.add(new OrderStatsPoint(date, ((Number) row.get("c")).longValue()));
+        }
+        return points;
     }
 
     // ── 内部：查询与组装 ────────────────────────────────────────────────────────

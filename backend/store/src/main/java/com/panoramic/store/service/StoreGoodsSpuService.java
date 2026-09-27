@@ -186,6 +186,20 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
     StoreGoodsSpuFacetVO facets(StoreGoodsSpuFacetQueryDTO dto);
 
     /**
+     * <b>全部未删除的店铺商品数</b>（平台首页看板「商家商品数量」用）。
+     * <p>⚠ 口径<b>刻意从宽</b>，三点都不筛：<b>不分上架/下架</b>（{@code shelf_status}）、
+     * <b>不分店铺审核状态</b>（草稿店的商品照样计入）、<b>不分是否被平台锁定</b>（{@code lock_status}）。
+     * 它回答的是「平台上一共有多少件商品」，不是「有多少件在卖」。</p>
+     * <p>⚠ 口径钉在本域（本方法是该定义的唯一落点），调用方不再重述：将来要改成「仅在售」，
+     * 只有这一处要动。</p>
+     * <p>逻辑删除的 SPU 由 MP 的 {@code @TableLogic} 自动排除，不必手写条件。无作用域参数：
+     * 这是平台全量视角的计数，域内不做身份判断（调用方是 admin BFF）。</p>
+     *
+     * @return 未删除的店铺商品数（无则 0，不返回 null）
+     */
+    long countAllGoods();
+
+    /**
      * 店铺商品<b>批量</b>详情（跨店，不校验归属；含 SKU 列表与锁定信息），逐条回填所属店铺名。
      * <p>调用方是 <b>mall-bff 的购物车列表</b>：一次调用取回多个 SPU，替代逐行调单条 {@link #detail}。
      * <b>SQL 条数与 {@code spuIds} 个数无关</b>（SPU / SKU / 可用库存 / 店铺名 各一次批量查询），

@@ -12,7 +12,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > `/auth/**`、`/roles/**`、`/users/**`、`/permissions/**`、`/shop/**`、`/goods/**`、`/orders/**`）。
 > 签发 `type=admin` 的登录令牌；是本仓库**接口最多的服务**，也是 `@PreAuthorize` 授权的**唯一位置**。
 
-**共 57 个接口 / 10 个 Controller**。
+**共 58 个接口 / 11 个 Controller**。
 
 ## 一、接口清单
 
@@ -123,6 +123,27 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 | GET | /orders/page | trade:order:list | OrderPageQueryDTO | RespData<PageResult<TradeOrderVO>> | `OrderController#page` |  |
 | GET | /orders/{orderNo} | trade:order:list | String | RespData<TradeOrderVO> | `OrderController#detail` |  |
 
+### stats/StatsController — `/stats`（1）
+
+| 方法 | 路径 | 权限串 | 入参 | 出参 | 声明位置 | 状态 |
+|---|---|---|---|---|---|---|
+| GET | /stats/overview | — | AdminStatsQueryDTO | RespData<AdminStatsVO> | `StatsController#overview` |  |
+
+> ⚠ **平台首页数据看板 `GET /stats/overview`**（2026-09-27 落契约）—— 8 个指标挤在**一个**接口里，是**有意**的：
+> 首页一次加载要么全有要么全无，拆成 4 个接口只会带来 4 次往返、4 份 loading 态。
+> - **无 `@PreAuthorize`**，与 `/permissions/menus` 同类（登录后必得）——理由见第三节。
+> - ⚠ **这是本层第一次调 customer-center**（此前只调 goods-center / store / trade-center），
+>   也是 admin **首次读取顾客侧数据**：需在 `AdminApplication` 的 `@EnableFeignClients` 加扫
+>   `com.panoramic.contract.customer` 包、并在 `pom.xml` 加 `customer-center-interface` 依赖。
+> - ⚠ **时间窗口与分桶粒度只在本层解析**（`AdminStatsQueryDTO.window` → 显式 `start` / `end`）：
+>   三个域**只收显式时间、一律按天出点**，「本月 / 上季 / 今年」的日历算术与「按天 → 按月」的归并
+>   **全在这一处**。⚠ 别把窗口枚举沉到域里——那会让月/季/年算术在每个域各存一份、各自漂移。
+> - ⚠ **指标的时间基准分两类**：`userCount` / `shopCount` / `goodsCount` 是**当前累计快照**（不受窗口影响）；
+>   其余 5 个按窗口算。⚠ 前一类的口径是**近似**——`userCount` 数的是顾客资料行，**不等于**注册用户数
+>   （偏差两个方向都有，见 [customer-center.md](./customer-center.md)）；对外文案不得写成「注册用户数」。
+> - **成交比例由本层算**：域只回分子分母两个计数（域不产出「已经除过的数」），除零处置也在本层。
+> - 前端 `v-perm` 与本行**都不挂权限串**（本接口不进 `sys_permission` 种子），故第 16 条的三方一致**不适用**。
+
 > ⚠ **管理端对订单只读**——只有这两个查询端点，**没有任何写动作**（改状态 / 改单 / 删单都不做）。
 > 订单的状态流转入口只在两端：C 端 `pay` / `receive` / `cancel` / `refund`、商户端 `ship`（见 [mall-bff.md](./mall-bff.md) 与 [store-bff.md](./store-bff.md)）。
 
@@ -143,16 +164,17 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 各权限串已在上一节逐行登记；族分组即各 Controller 小节。三方一致（`@PreAuthorize` 字面量 ↔
 `sys_permission.perms` 种子 ↔ 前端 `v-perm`）由检查器第 2、3 项核对，见 [cross-cutting.md](./cross-cutting.md) 第 16 条。
 
-## 三、**无 `@PreAuthorize`** 的接口（2 类 / 5 个端点，属预期）
+## 三、**无 `@PreAuthorize`** 的接口（3 类 / 6 个端点，属预期）
 
 | 接口 | 为何无授权 |
 |---|---|
 | `/auth/login`、`/auth/logout`、`/auth/me`、`/auth/password` | 登录链本身；`/auth/login` 在网关与服务两处白名单内免鉴权，其余靠"已登录"门槛 |
 | `/permissions/menus` | 当前登录用户渲染**自己的**侧栏菜单，属登录后必得数据，不设权限串 |
+| `/stats/overview` | 平台首页数据看板。⚠ **主页刻意不入权限表**（`admin/src/main/resources/db/schema.sql:103`：主页 `/home` 不再入权限表，由前端写死置顶菜单），故其数据接口也必须是「登录后必得」——给本接口挂权限串，会让**没有该权限的管理员落到一个取不到数的首页**。⚠ 若将来要限制看板可见范围，两边要**同时**改（主页入权限表 + 本接口挂权限串），只改一边就是坏的主页 |
 
 ## 四、形状规则
 
-- ✅ **必包 `RespData`**（57/57）；✅ 授权**只在此层**（`@PreAuthorize`）——见 [cross-cutting.md](./cross-cutting.md) 第 1、2 条。
+- ✅ **必包 `RespData`**（58/58）；✅ 授权**只在此层**（`@PreAuthorize`）——见 [cross-cutting.md](./cross-cutting.md) 第 1、2 条。
 - ⚠ 本层**只编排，不持域实体**（`/goods/**` 与 `/shop/**` 全部经内部 Feign 下沉到 goods-center / store）。
 - ⚠ 本层编排与出口口径：分类子树展开、分类全路径补全、锁定人渲染、店铺商品描述消毒、身份类型绑定 ——
   规则本体见 [`backend/admin/README.md`](../../backend/admin/README.md) 与
@@ -162,7 +184,7 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 来源 | 类型 |
 |---|---|
-| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO |
+| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO；首页看板：AdminStatsQueryDTO, AdminStatsVO, AdminStatsPointVO |
 | `trade-center-interface`（`com.panoramic.contract.trade.vo`） | 订单：TradeOrderVO |
 | 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺类型清单见 [store.md](./store.md) 第五节 |
 
@@ -175,7 +197,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 |---|---|---|
 | goods-center(8081) | Feign `GoodsCenterClient` | 分类 / 品牌 / 标准 SPU-SKU 模板的 CRUD；分类树与分类全路径 |
 | store(8083) | Feign `StoreClient`（跨店通用能力：**不传作用域 = 全量**） | 店铺分页 / 详情 / 审核；店铺商品跨店分页 / 详情 / 锁定 / 解锁；店铺下拉。⚠ 店铺详情走 `getShop`（域侧**查不到返空**，404 文案由本层定）；商品详情走 `storeGoodsDetail`，跨店视角**不传** `storeId` |
-| trade-center(8087) | Feign `TradeCenterClient` | 平台侧订单分页 / 详情（**只读**，无写动作） |
+| trade-center(8087) | Feign `TradeCenterClient` | 平台侧订单分页 / 详情（**只读**，无写动作）；首页看板的订单统计（`getOrderStats`，2026-09-27 起） |
+| customer-center(8086) | Feign `CustomerCenterClient` | 首页看板的顾客资料计数与新增顾客折线（`getCustomerStats`）。⚠ **本层 2026-09-27 起才开始调它**（此前只调前三个域），需同步加扫 `com.panoramic.contract.customer` 包与 `customer-center-interface` 依赖 |
 
 全部经 `common` 的 `BffFeignCall` 包装。降级口径见 [cross-cutting.md](./cross-cutting.md) 第 13 条。
 `ShopGoodsBffService` 与 `StoreShopBffService` 是本层两个主要编排类。

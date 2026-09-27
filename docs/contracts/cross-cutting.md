@@ -24,7 +24,7 @@ layer: cross-cutting
 |---|---|
 | 契约 | 页面级接口一律返回 `RespData{code,msg,data}`；成功 `code=200`、业务失败 `code=400`（带中文提示）、系统异常 `code=500` |
 | 定义位置 | `common/src/main/java/com/panoramic/common/vo/RespData.java`；形状规则见本目录 `README.md` 的「三层的形状规则不同」 |
-| 消费位置 | admin 9 个 Controller、store-bff 3 个 Controller、mall-bff 1 个 Controller；前端 axios 拦截器按此解包 |
+| 消费位置 | admin 11 个 Controller、store-bff 3 个 Controller、mall-bff 1 个 Controller；前端 axios 拦截器按此解包 |
 | 破坏后果 | 前端统一解包与统一异常提示全部失效 |
 | 核对方式 | 检查器第 6 项：页面级 Controller **必须**出现 `RespData` |
 
@@ -329,6 +329,19 @@ layer: cross-cutting
 | 消费位置 | `store` 域 `GoodsTradeController` 的 `/goods/trade/**` 4 条 + `StoreGoodsSpuService#platformSkuSnapshotBySkuIds` / `StoreGoodsSkuStockService#deduct|revertByOrder` / **销量入账**（第 4 条，`StoreGoodsSalesLogService#pushSales`）（⚠ 是**新建的** `GoodsTradeController`，不是既有的 `GoodsController`） |
 | 破坏后果 | ① 新增第二条域间边却**不在此登记** → 绕过「别域实体不进本域」的编译期守卫，静默长出跨域耦合；② 域间调用学端 BFF 做降级 → **静默产出未扣库存的订单**（超卖）；③ 反向：把 `store` 的表连进 `trade-center` → 绕过对方域的全部不变量（上下架推导 / 锁定只读 / 库存守卫），且两域从此不能再独立演进；④ 域端口一旦暴露公网 → 与第 15 条同罪（本边不引入新的公网路由，`/internal/**` 仍只在内网可达） |
 | 核对方式 | 哨兵 `store-interface`（出现在 `backend/trade-center/pom.xml`）与 `com.panoramic.contract.store`（出现在 `TradeCenterApplication`）。⚠ 域侧端点形状按 [store.md](./store.md) 第二节核对 |
+
+### 25. 统计类接口：窗口解析与分桶粒度**只在发起调用的端 BFF**
+
+| | |
+|---|---|
+| 契约 | 统计 / 聚合类**域**接口只收**显式时间范围**（`start` / `end`），**不收**窗口枚举（「本月」「上季」）、**不收**分桶粒度（`grain`）；域一律**按天出点**。日历算术（本月 / 上月 / 本季 / 上季 / 今年 / 去年 / 自定义起止）与「按天 → 按月」的归并，**只在发起调用的端 BFF 一处**完成。⚠ 本条只约束**域**接口；页面级接口的入参形状由该端自定（admin 看板用的是 `window` 枚举，那是页面契约的自由） |
+| 为什么 | 同一套月 / 季 / 年算术若下沉到域，就会**在每个域各存一份、各自漂移**——与第 3 条（同名孪生类型）、第 24 条（不制造第二个真相源）是同一条理由：**同一规则不写两遍**。且域接口的调用方可能不止一个：窗口枚举一旦进域，域就要去理解「这个端说的本季是哪一季」 |
+| ⚠ 快照类指标不受本条约束 | 「当前累计」的计数（用户总数 / 商家数 / 商品数）**没有时间维度**，域接口就**不该收**时间参数——别为了「和统计接口对称」硬塞 `start` / `end`，那会造出一个永远被忽略的参数 |
+| ⚠ 比值不在域内算 | 域只回**分子分母两个计数**，比率与除零处置是**展示层的派生量**，由 BFF 算。域不产出「已经除过的数」 |
+| 定义位置 | admin BFF：窗口解析与归并（`AdminStatsBffService` + 页面入参 `AdminStatsQueryDTO`）；域侧只有 `TradeOrderStatsQueryDTO` / `CustomerStatsQueryDTO`（各含 `start` / `end`，无窗口枚举、无粒度） |
+| 消费位置 | 2026-09-27 落地的平台首页看板：admin BFF → `trade-center#getOrderStats` / `store#getShopStats` / `customer-center#getCustomerStats`，形状见 [trade-center.md](./trade-center.md) / [store.md](./store.md) / [customer-center.md](./customer-center.md) 与 [admin.md](./admin.md) |
+| 破坏后果 | 域侧收窗口枚举 → 同一个「本季」在不同卡片上算出不同区间，且改一处漏一处；域侧收 `grain` → 归并规则同样分叉。**两种都不报错**，只是首页几个数字彼此对不上——最难被发现的一类 |
+| 核对方式 | **人工核对**（「域接口入参不得出现窗口枚举 / 粒度」无法静态表达）。`drift-check.mjs` 只比对路径 / 方法 / 权限串，**看不见入参字段**。形状信号：域侧 `*QueryDTO` 里出现 `window` / `grain` / `period` 字段 = 本条违规 |
 
 ---
 

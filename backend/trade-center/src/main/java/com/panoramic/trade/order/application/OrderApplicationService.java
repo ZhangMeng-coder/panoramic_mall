@@ -11,7 +11,10 @@ import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
 import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
+import com.panoramic.contract.trade.dto.TradeOrderStatsQueryDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
+import com.panoramic.contract.trade.vo.TradeOrderStatsPointVO;
+import com.panoramic.contract.trade.vo.TradeOrderStatsVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
 import com.panoramic.trade.order.domain.OrderAddress;
 import com.panoramic.trade.order.domain.OrderItem;
@@ -22,6 +25,7 @@ import com.panoramic.trade.order.domain.OrderStatusFlow;
 import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
+import com.panoramic.trade.order.domain.port.OrderStats;
 import com.panoramic.trade.support.ScopeGuard;
 import lombok.RequiredArgsConstructor;
 import org.apache.seata.spring.annotation.GlobalTransactional;
@@ -35,9 +39,9 @@ import java.util.List;
 import java.util.StringJoiner;
 
 /**
- * 订单用例入口（按能力九条：下单、分页、详情、支付、发货、收货、改收货地址、取消、仅退款）：{@code create} /
- * {@code pageOrders} / {@code getOrder} / {@code payOrder} / {@code shipOrder} / {@code receiveOrder} /
- * {@code updateAddress} / {@code cancelOrder} / {@code refundOrder}。
+ * 订单用例入口（按能力十条：下单、分页、详情、支付、发货、收货、改收货地址、取消、仅退款、平台统计）：
+ * {@code create} / {@code pageOrders} / {@code getOrder} / {@code payOrder} / {@code shipOrder} /
+ * {@code receiveOrder} / {@code updateAddress} / {@code cancelOrder} / {@code refundOrder} / {@code getStats}。
  *
  * <p>控制器（{@code controller/OrderController}）只做参数绑定与校验，其余全在这里；
  * 编排（拆单 / 两级幂等 / 失败回滚）在 {@link OrderCreateCoordinator}，本类**不重复它的逻辑**——
@@ -275,6 +279,26 @@ public class OrderApplicationService {
         return toVo(requireOrder(OrderQuery.forDetail(orderNo, dto.getCustomerId(), dto.getStoreId())));
     }
 
+    /**
+     * <b>平台订单统计</b>（首页看板用）：窗口内营业额 / 成交数 / 已支付数 + 每日新增下单数。
+     *
+     * <p>⚠ 与上面两个读路径<b>形态不同</b>：它<b>没有作用域这一维</b>（数全平台），调用方是 admin BFF。
+     * 域内仍不做鉴权——「谁能看全平台」由 admin 侧的路由与权限决定。</p>
+     *
+     * <p>⚠ <b>只收显式起止，不收窗口枚举、不收粒度</b>（cross-cutting 第 25 条）：月 / 季 / 年与
+     * 日→月归并只在 admin BFF；本方法原样把两个日期交给仓储，<b>不做任何日历运算</b>。</p>
+     *
+     * <p>⚠ 也 <b>readOnly 事务</b>：本方法要发四条 SQL（三个聚合 + 一条分组），它们共同描述同一个窗口，
+     * 理应在同一个读视图上——理由与分页 / 详情那两条相同（见类注释），不是为了回滚。</p>
+     *
+     * @param dto 窗口起止（两个字段都必填，由 DTO 上的 {@code @NotNull} 守）
+     * @return 四个部件（营业额恒非 null、系列不返回 null）
+     */
+    @Transactional(readOnly = true)
+    public TradeOrderStatsVO getStats(TradeOrderStatsQueryDTO dto) {
+        return toStatsVo(orderRepository.getStats(dto.getStart(), dto.getEnd()));
+    }
+
     // ── 内部：按作用域取单（取不到一律 404） ────────────────────────────────────
 
     /**
@@ -355,6 +379,27 @@ public class OrderApplicationService {
         TradeOrderPageVO vo = new TradeOrderPageVO();
         vo.setTotal(page.total());
         vo.setRecords(page.records().stream().map(OrderApplicationService::toVo).toList());
+        return vo;
+    }
+
+    /**
+     * 统计数据 → 出参。
+     * <p>⚠ 这里<b>只翻译形状、不动口径</b>：比率不在域内算（域只回分子分母），粒度也不在域内归并
+     * （域只回每日点）——两者都在 admin BFF。</p>
+     */
+    private static TradeOrderStatsVO toStatsVo(OrderStats stats) {
+        TradeOrderStatsVO vo = new TradeOrderStatsVO();
+        vo.setRevenue(stats.revenue());
+        vo.setDealOrderCount(stats.dealOrderCount());
+        vo.setPaidOrderCount(stats.paidOrderCount());
+        vo.setNewSeries(stats.newSeries().stream()
+                .map(point -> {
+                    TradeOrderStatsPointVO item = new TradeOrderStatsPointVO();
+                    item.setDate(point.date());
+                    item.setCount(point.count());
+                    return item;
+                })
+                .toList());
         return vo;
     }
 

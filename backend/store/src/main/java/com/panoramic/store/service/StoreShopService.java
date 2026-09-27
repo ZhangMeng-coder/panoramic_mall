@@ -104,6 +104,16 @@ public interface StoreShopService extends IService<StoreShop> {
      */
     List<ShopOptionVO> options();
 
+    /**
+     * <b>审核已通过</b>（{@code STATUS_APPROVED}）的店铺数（平台首页看板「商家数量」用）。
+     * <p>⚠ 口径<b>钉在本域</b>：店铺的审核状态机是 {@link StoreShop} 自己的事，故「哪些店算数」
+     * 只在这里写一次，调用方不再重述——将来「通过」的定义变了，只有这一处要动。</p>
+     * <p>无作用域参数：这是平台全量视角的计数，域内不做身份判断（调用方是 admin BFF）。</p>
+     *
+     * @return 已通过的店铺数（无则 0，不返回 null）
+     */
+    long countApproved();
+
     // ---- 评价协作（跨实体只走 owner service：评价服务调本方法，不持店铺 Mapper）----
 
     /**

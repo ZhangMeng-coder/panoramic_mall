@@ -14,8 +14,10 @@ import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
 import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
+import com.panoramic.contract.trade.dto.TradeOrderStatsQueryDTO;
 import com.panoramic.contract.trade.vo.TradeCartItemVO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
+import com.panoramic.contract.trade.vo.TradeOrderStatsVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
@@ -57,7 +59,9 @@ import java.util.List;
  * （抄一份就是制造第二个会漂移的地方）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表某行的 {@code 待实现} 标记、在此声明该方法、域侧补上实现，
  * 三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前购物车 8 条 + 订单 9 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
+ * 当前购物车 8 条 + 订单 10 条**全部落地**（契约表 {@code 待实现} 归零）。</p>
+ * <p>⚠ 唯一的例外形态是 {@link #getOrderStats}：上面订单 9 条的形态是「作用域字段可选或必填」，
+ * 而它<b>根本没有锚点这一维</b>（数全平台），调用方是 <b>admin BFF</b> 而非 C 端 / 商户端编排。</p>
  */
 @FeignClient(name = "trade-center", contextId = "tradeCenterClient",
         path = "/internal/trade", configuration = TradeFeignConfiguration.class)
@@ -264,4 +268,24 @@ public interface TradeCenterClient {
     @PostMapping("/order/{orderNo}/refund")
     RespData<Void> refundOrder(@PathVariable("orderNo") String orderNo,
                                @RequestBody TradeOrderRefundDTO dto);
+
+    /**
+     * <b>订单统计</b>（平台首页数据看板用）：窗口内营业额 / 成交订单数 / 已支付订单数 + 每日新增下单数。
+     * <p>⚠ 与上面订单 9 条的形态<b>根本不同</b>：本接口<b>无作用域锚点</b>，统计的是全平台订单，
+     * 不按 {@code customerId} / {@code storeId} 过滤——<b>不是</b>「作用域可选」，而是本就没有锚点这一维。
+     * 调用方是 <b>admin BFF</b>（{@code AdminStatsBffService}）。</p>
+     * <p>⚠ <b>只收显式起止、不收窗口枚举、不收粒度</b>，且<b>一律按天出点</b>：{@code 本月/上季/去年}
+     * 与「日→月归并」都只在 admin BFF 里做（cross-cutting 第 25 条）。两个字段都<b>必填</b>
+     * ——本接口四个部件全是窗口量，没有「不传窗口也能回的快照部件」。</p>
+     * <p>⚠ 四个部件<b>时间基准不同</b>：前三个按<b>支付时间</b>归属（支付时间的唯一来源是轨迹表
+     * {@code trade_order_status_log}，主表<b>刻意不存</b> {@code pay_time}），{@code newSeries} 按下单时间。</p>
+     * <p>⚠ <b>比率不在出参里</b>：域只回分子分母两个计数，比率与除零由 admin BFF 处理。</p>
+     * <p>⚠ 与 {@code @GetMapping("/order/{orderNo}")} 同段同方法（都是 GET），全靠 Spring 的
+     * <b>字面量模式优先于模板模式</b>撑着——{@code {orderNo}} 是 {@code String}，不靠类型转换兜底。</p>
+     *
+     * @param dto 窗口起止（两个字段都必填，见 {@link TradeOrderStatsQueryDTO}）
+     * @return 营业额 + 成交数 + 已支付数 + 每日新增点（不返回 null）
+     */
+    @GetMapping("/order/stats")
+    RespData<TradeOrderStatsVO> getOrderStats(@SpringQueryMap TradeOrderStatsQueryDTO dto);
 }

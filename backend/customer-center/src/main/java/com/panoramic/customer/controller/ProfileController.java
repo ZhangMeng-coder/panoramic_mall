@@ -3,7 +3,9 @@ package com.panoramic.customer.controller;
 import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
+import com.panoramic.contract.customer.dto.CustomerStatsQueryDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
+import com.panoramic.contract.customer.vo.CustomerStatsVO;
 import com.panoramic.customer.service.CustomerProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -25,6 +27,8 @@ import java.util.List;
  * <p><b>域内不做任何鉴权、不做权限判断、不校验 token</b>：路径上的 {@code customerId} 就是数据权限锚点，
  * 它是否等于「本人」由 mall-bff 从登录态取，域侧不校验（防线在 BFF）。身份头只由
  * {@code CustomerUserIdentityFilter} 填 {@code UserContext} 供审计留痕，缺头即留空、不回 401。</p>
+ * <p>⚠ {@link #getCustomerStats} 的调用方是 <b>admin BFF</b>（平台首页看板）而非 mall-bff，且<b>无锚点</b>：
+ * 上一条「路径上的 customerId 就是数据权限锚点」只适用于其余三个方法。</p>
  */
 @RestController
 @RequestMapping("/internal/customer/profile")
@@ -61,5 +65,19 @@ public class ProfileController {
     @PostMapping("/batch")
     public RespData<List<CustomerProfileVO>> listProfilesByIds(@Validated @RequestBody CustomerProfileBatchQueryDTO dto) {
         return RespData.success(customerProfileService.listProfilesByIds(dto.getCustomerIds()));
+    }
+
+    /**
+     * <b>顾客统计</b>（平台首页数据看板）：累计资料数 + 窗口内每日新增。调用方是 admin BFF。
+     * <p>⚠ 与 {@code @GetMapping("/{customerId}")} 同段不冲突：Spring 的<b>字面量模式优先于模板模式</b>，
+     * {@code /profile/stats} 落到本方法、不会去匹配那个 {@code Long} 变量（否则会因类型转换失败回 400）。
+     * 与 {@code /profile/batch} 之于 {@code @PostMapping("/{customerId}")} 是同一种共存，不是新引入的风险。</p>
+     * <p>⚠ 本方法<b>无锚点、不按顾客过滤</b>——它数全平台（域内仍不鉴权，「谁能看全平台」由 admin 侧决定）。</p>
+     * <p>⚠ 只收显式起止，<b>没有窗口枚举、没有粒度</b>：月/季/年与日→月归并只在 admin BFF
+     * （cross-cutting 第 25 条）。两个起止都可省（省了只回快照），只给一端 → 400。</p>
+     */
+    @GetMapping("/stats")
+    public RespData<CustomerStatsVO> getCustomerStats(@Validated CustomerStatsQueryDTO query) {
+        return RespData.success(customerProfileService.getCustomerStats(query));
     }
 }

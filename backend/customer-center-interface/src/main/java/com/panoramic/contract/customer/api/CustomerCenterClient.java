@@ -4,9 +4,12 @@ import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.customer.dto.CustomerAddressSaveDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileBatchQueryDTO;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
+import com.panoramic.contract.customer.dto.CustomerStatsQueryDTO;
 import com.panoramic.contract.customer.vo.CustomerAddressVO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
+import com.panoramic.contract.customer.vo.CustomerStatsVO;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.cloud.openfeign.SpringQueryMap;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,8 +38,11 @@ import java.util.List;
  * 服务端路径与映射需与 customer-center 域内部控制器一一对应（前缀 /internal/customer）。</p>
  * <p>⚠ 方法<b>按行分批补齐</b>：摘掉契约表（docs/contracts/customer-center.md）某行的 {@code 待实现} 标记、
  * 在此声明该方法、域侧补上实现，三者必须落在同一个提交里（否则 drift-check 的标记腐烂反向哨兵会报错）。
- * 当前已补齐「顾客资料」三条（getProfile / saveProfile / listProfilesByIds）与「收货地址」六条
- * （list/get/save/update/delete/setDefault），契约表 9 条**全部落地**（{@code 待实现} 归零）。</p>
+ * 当前已补齐「顾客资料」四条（getProfile / saveProfile / listProfilesByIds / getCustomerStats）与
+ * 「收货地址」六条（list/get/save/update/delete/setDefault），契约表 10 条**全部落地**（{@code 待实现} 归零）。</p>
+ * <p>⚠ 唯一的例外形态是 {@link #getCustomerStats}：上表其余 9 条要么以 {@code {customerId}} 为路径标识、
+ * 要么在 DTO 里带锚点，而它数的是<b>全平台</b>顾客、<b>无作用域锚点</b>，调用方是 <b>admin BFF</b>
+ * （不是 mall-bff 的自助路径）——数据权限一节那条「所有方法全按传入锚点过滤」对它不适用。</p>
  */
 @FeignClient(name = "customer-center", contextId = "customerCenterClient",
         path = "/internal/customer", configuration = CustomerFeignConfiguration.class)
@@ -136,4 +142,23 @@ public interface CustomerCenterClient {
     @PostMapping("/addresses/{customerId}/{id}/default")
     RespData<Void> setDefaultAddress(@PathVariable("customerId") Long customerId,
                                      @PathVariable("id") Long id);
+
+    /**
+     * <b>顾客统计</b>（平台首页数据看板用）：累计顾客资料数 + 窗口内每日新增。
+     * <p>⚠ 与上表其余方法的形态<b>根本不同</b>：本接口<b>无作用域锚点</b>，数的是全平台顾客，
+     * 不按 {@code customerId} 过滤；调用方是 <b>admin BFF</b>（{@code AdminStatsBffService}），
+     * 不是 C 端自助路径。域内仍不做鉴权——「谁能看全平台」由 admin 侧的路由与权限决定。</p>
+     * <p>⚠ <b>只收显式起止、不收窗口枚举、不收粒度</b>，且<b>一律按天出点</b>：{@code 本月/上季/去年}
+     * 与「日→月归并」都只在 admin BFF 里做（cross-cutting 第 25 条）。别在本方法上加 {@code grain}
+     * 参数——那会让同一套日历算术在多个域里各存一份。</p>
+     * <p>⚠ 两个出参部件的时间基准不同（{@code totalCount} 是快照、不受入参影响；{@code newSeries}
+     * 是窗口内的每日新增），故不传窗口时 {@code totalCount} 照样有值、{@code newSeries} 为空列表。</p>
+     * <p>⚠ 无窗口参数可用 {@code @SpringQueryMap} 是因为本 DTO 无集合字段（有集合就得像
+     * {@link #listProfilesByIds} 那样走 POST + body，见 store 域同名纪律）。</p>
+     *
+     * @param query 窗口起止（两个字段都可省，省略即只要快照；只填一个 → {@code code=400}）
+     * @return 累计数 + 每日新增点（不返回 null）
+     */
+    @GetMapping("/profile/stats")
+    RespData<CustomerStatsVO> getCustomerStats(@SpringQueryMap CustomerStatsQueryDTO query);
 }

@@ -469,6 +469,14 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         return vo;
     }
 
+    @Override
+    public long countAllGoods() {
+        // 口径从宽：不加 shelf_status / 店铺状态 / lock_status 任何条件——「平台一共有多少件商品」，
+        // 不是「多少件在售」。口径的说明在接口方法上，改动只许改那处。
+        // ⚠ 逻辑删除条件（is_delete=0）由 MP 基类自动拼上，不手写
+        return count();
+    }
+
     /**
      * 按某一维度的列做 GROUP BY 聚合。
      *

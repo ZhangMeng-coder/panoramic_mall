@@ -1,8 +1,13 @@
 package com.panoramic.customer.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.panoramic.common.exception.ServiceException;
 import com.panoramic.contract.customer.dto.CustomerProfileSaveDTO;
+import com.panoramic.contract.customer.dto.CustomerStatsQueryDTO;
 import com.panoramic.contract.customer.vo.CustomerProfileVO;
+import com.panoramic.contract.customer.vo.CustomerStatsPointVO;
+import com.panoramic.contract.customer.vo.CustomerStatsVO;
 import com.panoramic.customer.entity.CustomerProfile;
 import com.panoramic.customer.mapper.CustomerProfileMapper;
 import com.panoramic.customer.service.CustomerProfileService;
@@ -12,8 +17,10 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 顾客资料服务实现（customer-center 域下沉纯域）。
@@ -113,6 +120,59 @@ public class CustomerProfileServiceImpl extends ServiceImpl<CustomerProfileMappe
             result.add(toVO(entity));
         }
         return result;
+    }
+
+    /**
+     * 顾客统计：累计快照 + 窗口内每日新增。
+     * <p>⚠ <b>不做月/季/年粒度，也不做日历算术</b>：域只认收到的 start/end 并按天出点，窗口枚举与
+     * 日→月归并只在 admin BFF（cross-cutting 第 25 条）。</p>
+     * <p>⚠ 两个部件各一次 SQL、互不依赖：{@code count()} 是<b>当前累计</b>（不传窗口也照样要算），
+     * 折线的 {@code GROUP BY} 才吃 start/end。故「只要快照」时省掉第二次查询。</p>
+     */
+    @Override
+    public CustomerStatsVO getCustomerStats(CustomerStatsQueryDTO query) {
+        CustomerStatsVO vo = new CustomerStatsVO();
+        // 走 MP 基类：逻辑删除条件（is_delete=0）由框架自动拼上，与手写 wrapper 同口径
+        vo.setTotalCount(count());
+
+        LocalDate start = query.getStart();
+        LocalDate end = query.getEnd();
+        if (start == null && end == null) {
+            // 只要快照：折线是窗口概念，没窗口就没有点（不猜边界、不默认「今天」）
+            vo.setNewSeries(List.of());
+            return vo;
+        }
+        if (start == null || end == null) {
+            // 只给一端多半是调用方拼错了参数，就地报 400 比替它猜另一个边界安全
+            throw new ServiceException("统计窗口必须同时给出起止日期");
+        }
+        if (end.isBefore(start)) {
+            throw new ServiceException("统计窗口不合法：结束日期早于开始日期");
+        }
+
+        // 单条 GROUP BY 聚合，不逐条取回内存再算。⚠ 按**表达式**分组是本仓首例——store 域评价统计分的是列。
+        // ⚠ 实体带 @TableLogic，MP 会自动补 is_delete=0（与上面的 count() 同口径），此处不必手写
+        QueryWrapper<CustomerProfile> qw = new QueryWrapper<>();
+        // ⚠ select 收的是裸 SQL 片段：MP 只做 String.join(",", …) 就原样拼进 SELECT、**从不**加反引号，
+        //    故 "DATE(create_time) AS d" 这类表达式能直接写；代价是它只是字符串，改列名编译器不拦
+        qw.select("DATE(create_time) AS d", "COUNT(*) AS c")
+          // 闭区间 [start, end]：create_time 是 DATETIME，上界取「end 次日 00:00」并用 < 排除
+          .ge("create_time", start.atStartOfDay())
+          .lt("create_time", end.plusDays(1).atStartOfDay())
+          .groupBy("DATE(create_time)");
+        List<CustomerStatsPointVO> series = new ArrayList<>();
+        for (Map<String, Object> row : listMaps(qw)) {
+            Object raw = row.get("d");
+            // DATE() 列按 JDBC 规范回 java.sql.Date；个别驱动会直接给 LocalDate，两种都认
+            LocalDate date = raw instanceof LocalDate ld ? ld : ((java.sql.Date) raw).toLocalDate();
+            CustomerStatsPointVO point = new CustomerStatsPointVO();
+            point.setDate(date);
+            point.setCount(((Number) row.get("c")).longValue());
+            series.add(point);
+        }
+        // ⚠ 出参顺序不承诺（不写 ORDER BY）：调用方按「日期 → 桶」查表归并，不按顺序消费
+        vo.setNewSeries(series);
+        return vo;
     }
 
     /**

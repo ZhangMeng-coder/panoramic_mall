@@ -201,6 +201,12 @@ public class StoreShopServiceImpl extends ServiceImpl<StoreShopMapper, StoreShop
                 .collect(Collectors.toList());
     }
 
+    @Override
+    public long countApproved() {
+        // 口径钉在本域：调用方只说「要已通过的店数」，不重述 STATUS_APPROVED 是几
+        return lambdaQuery().eq(StoreShop::getStatus, StoreShop.STATUS_APPROVED).count();
+    }
+
     // ---- 评价协作（跨实体只走 owner service：评价服务调本方法，本域不把店铺 Mapper 递出去）----
 
     @Override

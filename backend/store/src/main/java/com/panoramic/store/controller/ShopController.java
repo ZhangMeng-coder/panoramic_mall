@@ -7,7 +7,9 @@ import com.panoramic.common.vo.RespData;
 import com.panoramic.contract.store.dto.StoreScopeGroup;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
+import com.panoramic.contract.store.vo.ShopStatsVO;
 import com.panoramic.contract.store.vo.ShopVO;
+import com.panoramic.store.service.StoreGoodsSpuService;
 import com.panoramic.store.service.StoreShopService;
 import jakarta.validation.groups.Default;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,11 @@ import java.util.List;
 public class ShopController {
 
     private final StoreShopService storeShopService;
+
+    /**
+     * ⚠ 仅 {@link #stats} 用：店铺商品数的 owner service（口径在它的 {@code countAllGoods} 上）
+     */
+    private final StoreGoodsSpuService storeGoodsSpuService;
 
     /**
      * 保存草稿（{@code dto.storeId} 必填：无店则建 id=storeId 的店；已驳回回草稿并清审核留痕）
@@ -94,5 +101,23 @@ public class ShopController {
     @GetMapping("/options")
     public RespData<List<ShopOptionVO>> options() {
         return RespData.success(storeShopService.options());
+    }
+
+    /**
+     * <b>店铺规模统计</b>（平台首页数据看板）：审核已通过的店铺数 + 未删除的店铺商品数。
+     * <p>⚠ <b>两个数字来自两个 owner service，拼装留在本方法</b>（本域第一条跨实体的聚合能力）：
+     * 各自的<b>口径钉在各自的 service 上</b>（{@code countApproved} / {@code countAllGoods}），
+     * 此处只做组装、不重述任何筛选条件。之所以不在 service 里组装：商品服务已依赖店铺服务
+     * （回填店铺名、按店铺状态过滤），反向注入立刻成环，为一个计数去 {@code @Lazy} 断环不值当。</p>
+     * <p>⚠ 无入参、无窗口：两个数都是当前累计快照（详见 {@link ShopStatsVO}）。
+     * 与 {@code @GetMapping("/{id}")} 不冲突：Spring 的字面量模式优先于模板模式
+     * （同 {@code /shops/page}、{@code /shops/options}）。</p>
+     */
+    @GetMapping("/stats")
+    public RespData<ShopStatsVO> stats() {
+        ShopStatsVO vo = new ShopStatsVO();
+        vo.setShopCount(storeShopService.countApproved());
+        vo.setGoodsCount(storeGoodsSpuService.countAllGoods());
+        return RespData.success(vo);
     }
 }

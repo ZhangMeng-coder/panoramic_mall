@@ -3,6 +3,7 @@ package com.panoramic.trade.order.domain.port;
 import com.panoramic.trade.order.domain.OrderModel;
 import com.panoramic.trade.order.domain.OrderStatus;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -270,4 +271,20 @@ public interface OrderRepository {
      * @return 总数 + 当页订单
      */
     OrderPage pageOrders(OrderPageQuery query);
+
+    /**
+     * 平台订单统计（首页看板用）：窗口内的营业额 / 成交数 / 已支付数 + 每日新增下单数，见 {@link OrderStats}。
+     *
+     * <p>⚠ <b>它是本端口的第三条读路径，也是唯一没有作用域的一条</b>：统计的是全平台订单，
+     * 没有 {@code customerId} / {@code storeId} 这一维可传——与 {@link #pageOrders} 的「作用域可选」
+     * 不是一回事（那里是「不限定」，这里是「本就没有这一维」）。</p>
+     *
+     * <p>⚠ <b>窗口是闭区间 {@code [start, end]} 的整天</b>；<b>粒度由调用方归并</b>，本方法一律按天出点
+     * （cross-cutting 第 25 条）。</p>
+     *
+     * @param start 窗口起（含当天）
+     * @param end   窗口止（含当天整天）
+     * @return 四个部件（营业额恒非 null、系列不返回 null；只含有数据的日期）
+     */
+    OrderStats getStats(LocalDate start, LocalDate end);
 }

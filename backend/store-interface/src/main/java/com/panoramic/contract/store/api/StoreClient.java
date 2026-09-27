@@ -27,6 +27,7 @@ import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
 import com.panoramic.contract.store.dto.StoreStockDeductDTO;
 import com.panoramic.contract.store.vo.PageResult;
 import com.panoramic.contract.store.vo.ShopOptionVO;
+import com.panoramic.contract.store.vo.ShopStatsVO;
 import com.panoramic.contract.store.vo.ShopVO;
 import com.panoramic.contract.store.vo.StoreGoodsEvaluationPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsEvaluationStatVO;
@@ -115,6 +116,22 @@ public interface StoreClient {
      */
     @GetMapping("/shops/options")
     RespData<List<ShopOptionVO>> listShopOptions();
+
+    /**
+     * <b>店铺规模统计</b>（平台首页数据看板用）：审核已通过的店铺数 + 未删除的店铺商品数。
+     * <p>⚠ <b>无入参、无窗口</b>：两个数都是<b>当前累计快照</b>，没有时间范围概念——别为了
+     * 「和订单统计对称」给它加 {@code start}/{@code end}（加了也没有对应语义）。</p>
+     * <p>⚠ <b>两个数合并成一个接口</b>：店铺商品是店铺的二级资源，一次往返拿全，不拆两条。</p>
+     * <p>⚠ 与 {@code @GetMapping("/shops/{id}")} 同段不冲突：Spring 的<b>字面量模式优先于模板模式</b>，
+     * {@code /shops/stats} 落到本方法、不会去匹配那个 {@code Long} 变量；与 {@code /shops/page}、
+     * {@code /shops/options} 是同一种共存（本表既有惯例，不是新引入的风险）。</p>
+     * <p>⚠ 调用方是 <b>admin BFF</b>（{@code AdminStatsBffService}）；本能力仍是<b>无作用域维度</b>的
+     * 平台全量视角，域内判不了、也不判身份。</p>
+     *
+     * @return 店铺数 + 店铺商品数（口径见 {@link com.panoramic.contract.store.vo.ShopStatsVO} 与 store README）
+     */
+    @GetMapping("/shops/stats")
+    RespData<ShopStatsVO> getShopStats();
 
     // ---- 店铺在售商品（店主侧写读：作用域 storeId 必填，无全量视角）----
     // 作用域在 DTO 字段里（不进路径段）；值由端 BFF 从登录态取并无条件覆盖（cross-cutting 第 22 条）。

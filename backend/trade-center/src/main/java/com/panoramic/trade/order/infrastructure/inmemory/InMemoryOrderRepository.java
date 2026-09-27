@@ -7,7 +7,9 @@ import com.panoramic.trade.order.domain.port.OrderPage;
 import com.panoramic.trade.order.domain.port.OrderPageQuery;
 import com.panoramic.trade.order.domain.port.OrderQuery;
 import com.panoramic.trade.order.domain.port.OrderRepository;
+import com.panoramic.trade.order.domain.port.OrderStats;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -214,6 +216,26 @@ public class InMemoryOrderRepository implements OrderRepository {
     @Override
     public synchronized OrderPage pageOrders(OrderPageQuery query) {
         return page(query);
+    }
+
+    /**
+     * ⚠ <b>本实现不支持订单统计，直接抛</b>（不是一个「大概能算」的近似值）。
+     *
+     * <p>原因在数据模型上，不在懒：统计的归属基准是**支付时刻**，而支付时刻在真实实现里只存在于
+     * 轨迹表（{@code trade_order_status_log.create_time}）。本类持有的是
+     * {@link OrderModel}（只有下单时刻 {@code createTime} 与一串状态，**不带各次变更的时间**），
+     * 拿 {@code createTime} 顶替支付时刻会算出一个**看着对、口径错**的营业额。</p>
+     *
+     * <p>本类只服务「无数据源的单测 / 切片」（{@code panoramic.trade.order.repository=memory}），
+     * 而统计是**没有作用域的平台级编排**，不在那些用例的范围内。真要用内存实现跑出这些数，
+     * 得先让 {@code OrderModel} 记住每次状态变更的时刻——那是改域模型，不是补一个方法。</p>
+     *
+     * @throws UnsupportedOperationException 恒抛
+     */
+    @Override
+    public OrderStats getStats(LocalDate start, LocalDate end) {
+        throw new UnsupportedOperationException(
+                "内存实现不支持订单统计：支付时刻只在轨迹表里，本类持有的 OrderModel 不带各次变更的时间");
     }
 
     // ── 内部 ────────────────────────────────────────────────────────────────────

@@ -10,7 +10,9 @@ import com.panoramic.contract.trade.dto.TradeOrderQueryDTO;
 import com.panoramic.contract.trade.dto.TradeOrderReceiveDTO;
 import com.panoramic.contract.trade.dto.TradeOrderRefundDTO;
 import com.panoramic.contract.trade.dto.TradeOrderShipDTO;
+import com.panoramic.contract.trade.dto.TradeOrderStatsQueryDTO;
 import com.panoramic.contract.trade.vo.TradeOrderPageVO;
+import com.panoramic.contract.trade.vo.TradeOrderStatsVO;
 import com.panoramic.contract.trade.vo.TradeOrderVO;
 import com.panoramic.trade.order.application.OrderApplicationService;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 订单内部领域接口（trade-center 域下沉纯域）· **按能力九条**，不按端分侧。
+ * 订单内部领域接口（trade-center 域下沉纯域）· **按能力十条**，不按端分侧。
  *
  * <p>仅供端 BFF 经内部 Feign（{@code /internal/trade/order/...}）调用，不向页面暴露公网路由。
  * 出参一律包 {@code RespData<T>}（cross-cutting 第 2 条）：业务结果（含业务失败，如状态机拒重复动作）
@@ -75,6 +77,21 @@ public class OrderController {
     public RespData<TradeOrderVO> getOrder(@PathVariable("orderNo") String orderNo,
                                            @Validated TradeOrderQueryDTO dto) {
         return RespData.success(orderApplicationService.getOrder(orderNo, dto));
+    }
+
+    /**
+     * <b>订单统计</b>（平台首页数据看板）：窗口内营业额 / 成交订单数 / 已支付订单数 + 每日新增下单数。
+     * <p>⚠ <b>无锚点、不按顾客 / 店铺过滤</b>——它数全平台（本域第一条聚合能力，调用方是 admin BFF）。</p>
+     * <p>⚠ <b>本方法比本类其余方法更依赖「字面量模式优先于模板模式」</b>：它与
+     * {@code @GetMapping("/{orderNo}")} <b>同段、同方法（GET）</b>，全靠 Spring 把字面量 {@code stats}
+     * 排在模板 {@code {orderNo}} 之前；而 {@code {orderNo}} 是 {@code String}，匹配错了不会报类型错，
+     * 只会把 {@code "stats"} 当一个单号去查、回一个 404。⚠ 改动本类的路径映射前先想清楚这一条。</p>
+     * <p>⚠ 只收显式起止，<b>没有窗口枚举、没有粒度</b>：月 / 季 / 年与日→月归并只在 admin BFF
+     * （cross-cutting 第 25 条）。两个字段都必填。</p>
+     */
+    @GetMapping("/stats")
+    public RespData<TradeOrderStatsVO> getOrderStats(@Validated TradeOrderStatsQueryDTO dto) {
+        return RespData.success(orderApplicationService.getStats(dto));
     }
 
     /**
