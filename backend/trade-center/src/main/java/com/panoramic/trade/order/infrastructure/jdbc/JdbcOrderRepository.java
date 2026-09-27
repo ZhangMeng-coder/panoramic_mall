@@ -459,7 +459,7 @@ public class JdbcOrderRepository implements OrderRepository {
         return page(query);
     }
 
-    // ── 读侧：平台统计（无作用域，见 OrderRepository#getStats） ──────────────────
+    // ── 读侧：订单统计（作用域 storeId 可选，见 OrderRepository#getStats） ────────
 
     /**
      * 「窗口内发生过支付」的订单集合，作为**子查询**嵌在三个聚合里。
@@ -477,7 +477,7 @@ public class JdbcOrderRepository implements OrderRepository {
             "SELECT order_no FROM trade_order_status_log WHERE status = {0} AND create_time >= {1} AND create_time < {2}";
 
     @Override
-    public OrderStats getStats(LocalDate start, LocalDate end) {
+    public OrderStats getStats(LocalDate start, LocalDate end, Long storeId) {
         LocalDateTime from = start.atStartOfDay();
         // 闭区间 [start, end]：上界取「end 次日 00:00」并用 < 排除，故 end 当天整天都算在窗口内
         LocalDateTime to = end.plusDays(1).atStartOfDay();
@@ -486,10 +486,11 @@ public class JdbcOrderRepository implements OrderRepository {
         //    分子只认已收货、营业额要排退款），塞进一条 SQL 只能靠 CASE 里手写状态字面量——
         //    那样「状态叫什么」就有了两处（枚举与 SQL 串）。三条各自带类型化的 eq/ne，
         //    状态名仍只有枚举一个来源。⚠ 三条都是**定数**查询（条数不随窗口大小变），不是 N+1。
-        long paidOrderCount = countOrders(paidInWindow(from, to));
-        long dealOrderCount = countOrders(paidInWindow(from, to).eq("status", OrderStatus.RECEIVED.name()));
+        // ⚠ storeId 三个部件一起筛（含下面的折线）：本店看板上四个数必须同源，否则加总对不上。
+        long paidOrderCount = countOrders(paidInWindow(from, to, storeId));
+        long dealOrderCount = countOrders(paidInWindow(from, to, storeId).eq("status", OrderStatus.RECEIVED.name()));
 
-        QueryWrapper<TradeOrder> revenueQw = paidInWindow(from, to)
+        QueryWrapper<TradeOrder> revenueQw = paidInWindow(from, to, storeId)
                 // 退款是终态（PAID → REFUNDED）、且恒为整单退，故「当前状态 = REFUNDED」等价于「退过款」，
                 // 扣减就是整单扣 total_amount（本仓没有部分退款，别为此造一个半额口径）
                 .ne("status", OrderStatus.REFUNDED.name());
@@ -499,7 +500,7 @@ public class JdbcOrderRepository implements OrderRepository {
         // COALESCE 保证非 null；这里再兜一次是为了不把「驱动返回了别的数值类型」变成一次 ClassCastException
         BigDecimal revenue = revenueValue == null ? BigDecimal.ZERO : new BigDecimal(revenueValue.toString());
 
-        return new OrderStats(revenue, dealOrderCount, paidOrderCount, newOrderSeries(from, to));
+        return new OrderStats(revenue, dealOrderCount, paidOrderCount, newOrderSeries(from, to, storeId));
     }
 
     /**
@@ -513,13 +514,18 @@ public class JdbcOrderRepository implements OrderRepository {
 
     /**
      * 「窗口内发生过支付」的订单条件（三个聚合共用一份，避免三处各写一遍子查询）
+     *
+     * <p>⚠ 作用域 {@code storeId} 收在这里：三个聚合都经本方法起手，条件写一处即三处同筛
+     * （漏一处就会出现「营业额是本店的、成交数是全平台的」这种对不上的组合）。</p>
      */
-    private static QueryWrapper<TradeOrder> paidInWindow(LocalDateTime from, LocalDateTime to) {
+    private static QueryWrapper<TradeOrder> paidInWindow(LocalDateTime from, LocalDateTime to, Long storeId) {
         QueryWrapper<TradeOrder> wrapper = new QueryWrapper<>();
         // ⚠ 轨迹表不写 is_delete 条件：该表**不删行**（is_delete 恒 0，仅为对齐 BaseEntity 而留），
         //    而这条是原生 SQL 片段，MP 的逻辑删除拼接不会深入子查询内部
         wrapper.apply("order_no IN (" + PAID_IN_WINDOW_SUBQUERY + ")",
                 OrderStatus.PAID.name(), from, to);
+        // 作用域与分页同款：传了就筛、不传就是不限定（判据见 OrderRepository#getStats）
+        wrapper.eq(storeId != null, "store_id", storeId);
         return wrapper;
     }
 
@@ -529,13 +535,15 @@ public class JdbcOrderRepository implements OrderRepository {
      * <p>⚠ 只回「有数据的日期」（{@code GROUP BY} 的自然结果），缺日不补 0——补 0 到「哪天到哪天」
      * 需要知道窗口边界，而窗口是调用方的概念；调用方按「该日不在列表里 = 0」处理。</p>
      */
-    private List<OrderStatsPoint> newOrderSeries(LocalDateTime from, LocalDateTime to) {
+    private List<OrderStatsPoint> newOrderSeries(LocalDateTime from, LocalDateTime to, Long storeId) {
         QueryWrapper<TradeOrder> wrapper = new QueryWrapper<>();
         // ⚠ select 收的是裸 SQL 片段（MP 只做 String.join 原样拼进 SELECT、从不加反引号），
         //    故 "DATE(create_time) AS d" 能直接写；代价是改列名编译器不拦
         wrapper.select("DATE(create_time) AS d", "COUNT(*) AS c")
                .ge("create_time", from)
                .lt("create_time", to)
+               // 与上面三个聚合同一个作用域（本店看板四个数必须同源）
+               .eq(storeId != null, "store_id", storeId)
                .groupBy("DATE(create_time)");
         List<OrderStatsPoint> points = new ArrayList<>();
         for (Map<String, Object> row : orderService.listMaps(wrapper)) {

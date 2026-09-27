@@ -142,11 +142,16 @@ public class StoreGoodsEvaluationServiceImpl extends ServiceImpl<StoreGoodsEvalu
 
     @Override
     public StoreGoodsEvaluationStatVO stat(StoreGoodsEvaluationStatQueryDTO dto) {
+        // 可选时间范围：闭区间含首尾整天 → 上界取 end 次日 00:00 用 `<` 排除（与另两处统计同口径）
+        LocalDateTime from = dto.getStart() == null ? null : dto.getStart().atStartOfDay();
+        LocalDateTime to = dto.getEnd() == null ? null : dto.getEnd().plusDays(1).atStartOfDay();
         QueryWrapper<StoreGoodsEvaluation> qw = new QueryWrapper<>();
         // 单条 GROUP BY 聚合（与商品筛选聚合 facetBy 同一手法），不逐条取回内存再算
         qw.select("score", "COUNT(*) AS cnt")
           .eq(dto.getSpuId() != null, "spu_id", dto.getSpuId())
           .eq(dto.getStoreId() != null, "store_id", dto.getStoreId())
+          .ge(from != null, "create_time", from)
+          .lt(to != null, "create_time", to)
           .groupBy("score");
         Map<Integer, Long> counts = new HashMap<>();
         for (Map<String, Object> row : listMaps(qw)) {

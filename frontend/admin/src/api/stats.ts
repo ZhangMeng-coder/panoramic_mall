@@ -1,11 +1,11 @@
 import request from './request'
 
 /**
- * 时间窗口取值，与 admin BFF 的 `AdminStatsQueryDTO.Window` 同枚举。
+ * 时间窗口取值，与后端 `com.panoramic.common.stats.StatsWindow` 同枚举（两端的页面契约共用它）。
  *
- * ⚠ 这是**页面级**枚举，只到本端为止：BFF 把它解析成显式的 `start` / `end` 再传给三个域，
+ * ⚠ 这是**页面级**枚举，只到端 BFF 为止：BFF 把它解析成显式的 `start` / `end` 再传给三个域，
  * 域接口**不收**窗口枚举、**不收**粒度（cross-cutting 第 25 条）。故本文件的枚举值必须与后端
- * `Window` **逐字同名**，改一处要同步另一处。
+ * `com.panoramic.common.stats.StatsWindow` **逐字同名**，改一处要同步另一处。
  */
 export type StatsWindow =
   | 'THIS_MONTH'
@@ -17,7 +17,7 @@ export type StatsWindow =
   | 'CUSTOM'
 
 /**
- * 折线粒度，与 admin BFF 的 `AdminStatsVO.Grain` 同枚举。
+ * 折线粒度，与后端 `com.panoramic.common.stats.StatsGrain` 同枚举。
  *
  * ⚠ **别在页面里按窗口天数重算这条规则**（≤180 天按天，>180 天按月）：那会让规则有第二处实现、
  * 各自漂移。响应给了哪个粒度就按哪个格式化 x 轴标签。
@@ -40,7 +40,7 @@ export interface StatsOverviewQuery {
 }
 
 /**
- * 折线图的一个数据点，与 admin BFF 的 `AdminStatsPointVO` 同构。
+ * 折线图的一个数据点，与后端 `com.panoramic.common.stats.StatsPointVO` 同构。
  *
  * ⚠ 窗口内**每个桶都有点**（没数据的桶是 0，不是缺项）——零填充在 BFF 做，页面不需要自己补。
  * ⚠ `date` 的语义随 `grain` 变：按天是那一天，按月是**那个月的 1 号**。

@@ -183,9 +183,11 @@
 
 > ⚠ 本域**不做鉴权是有意设计，不是疏漏**。安全性完全依赖 `8083` 端口只在内网可达。
 
-### 9. 首页看板两个计数的口径
+### 9. 首页看板计数的口径
 
-平台首页看板的「商家数量」「商家商品数量」取自本域的 `getShopStats`（一条接口两个数，见 [store.md](../../docs/contracts/store.md)）。两者**都无时间窗、都是当前累计快照**，口径钉在两个 owner service 上，调用方不重述：
+两个端的首页看板都从本域取数：**平台端**（admin）取「商家数量 / 商家商品数量」，**店主端**（store）取「上架 / 下架商品数 + 库存异常数」。五个数**都无时间窗、都是当前累计快照**，口径钉在各自的 owner service 方法上，调用方只组装、不重述条件。
+
+#### 平台首页（admin）：`getShopStats` 一条两个数
 
 - **商家数量** = **审核已通过**（`status = 2`）的店铺数，即 `StoreShopService#countApproved`（口径出处：§2 状态机）。
   ⚠ 草稿(0) / 待审核(1) / 已驳回(3) **都不计**。
@@ -194,6 +196,18 @@
   它回答的是「平台上一共有多少件商品」，**不是**「有多少件在卖」。
 
 ⚠ 两个数**互不对齐**是正常的：`store_goods_spu` 允许草稿店建商品，故「商品数」可能大于「已通过店铺的商品数」之和；不要把两个数的关系当校验条件。
+
+#### 店主端首页（store）：`getGoodsStats` 一条三个数
+
+作用域 `storeId` **必填**（本店视角，无全量视角）；三个数**粒度不同、不可相加、不可比**：
+
+- **上架 / 下架商品数** = 本店未删除 SPU 中 `shelf_status = 1 / 0` 的条数，即 `StoreGoodsSpuService#countOnShelf` / `#countOffShelf`（SPU 粒度，口径出处：§3 的推导不变量——「SPU 上架 ⟺ ≥1 SKU 上架」）。
+  ⚠ 粒度是 **SPU 不是 SKU**，与下面的「库存异常」不是同一层；平台锁定的商品落在「下架」里，**不另立一档**（锁定只是把名下 SKU 级联下架）。
+- **库存异常数** = 本店未删除 SKU 中库存异常的**行数**，即 `StoreGoodsSpuService#countAbnormalStock`。
+  判据：`stock = 0 OR (warn_stock IS NOT NULL AND stock <= warn_stock)`（**含相等**）；**库存行缺失按 0 计**，故「未设阈值且无库存行」同样计入。
+  ⚠ 店级过滤在本域的**商品编排**里做（库存 service 不认识 `store_id`，归属链 `sku_id → sku.spu_id → spu.store_id`），与 §3 的 `pageStock` 同一手法。
+
+⚠ **「库存异常」与库存页「仅看低库存」（`StoreGoodsStockPageQueryDTO.lowStockOnly`）不是同一条件**——后者只认 `stock <= warn_stock`，故「未设阈值 + 库存 0」的 SKU **只进首页计数、在库存页筛不出来**。两处名字不同（低库存 / 库存异常）、判据不同，要对齐属另一个需求（现登记为残留）。
 
 ## 四、配置说明
 

@@ -25,9 +25,10 @@ respEnvelope: RespData
 - **按能力通用，不分侧**（[cross-cutting.md](./cross-cutting.md) 第 22 条）：同一能力**不分端**，
   路径段与方法名里不出现 `customer` / `store` / `platform` 之类端别子段，也**没有**成对的
   「顾客侧方法 / 商户侧方法」。⚠ 购物车 8 条的 `customerId` **一直必填**；
-  订单 10 条里**读侧（分页 / 详情）的作用域可选**（管理端本就是合法全量视角），
+  订单 10 条里**读侧（分页 / 详情 / 统计）的作用域可选**（管理端本就是合法全量视角），
   **写侧（下单 / 支付 / 发货 / 收货 / 改地址 / 取消 / 仅退款）必填**——写没有「合法全量视角」，省掉作用域就是「能改任意一笔单」。
-  第 10 条 `getOrderStats` 属**第三种**：它连「可选的作用域」都没有（无锚点的平台级统计，见下文）。
+  ⚠ 第 10 条 `getOrderStats` **2026-09-27 起归入读侧可选**（此前是无锚点的平台级统计，为平台首页看板而落）：
+  不传 = 全平台（admin 首页），传 `storeId` = 本店（店主端首页）——**同一个端点、同一条路径**，差别只在传不传锚点。
 - **作用域是入参 DTO 的字段，不进路径段**（同 §22 / §23）：单参能力收裸 `customerId`，
   其余并进各自 DTO。⚠ **路径变量是资源标识**（`{id}` / `{orderNo}`），不并入 DTO。
 - **域内不做任何身份判断**：不判 `X-User-Type`、不校验 token、无 `@PreAuthorize`；
@@ -86,7 +87,7 @@ respEnvelope: RespData
 | receiveOrder | POST | /order/{orderNo}/receive | `String`, `TradeOrderReceiveDTO` | `RespData<Void>` | `TradeCenterClient#receiveOrder` | `OrderController#receiveOrder` | `mall-bff/OrderBffService` |  |
 | cancelOrder | POST | /order/{orderNo}/cancel | `String`, `TradeOrderCancelDTO` | `RespData<Void>` | `TradeCenterClient#cancelOrder` | `OrderController#cancelOrder` | `mall-bff/OrderBffService` |  |
 | refundOrder | POST | /order/{orderNo}/refund | `String`, `TradeOrderRefundDTO` | `RespData<Void>` | `TradeCenterClient#refundOrder` | `OrderController#refundOrder` | `mall-bff/OrderBffService` |  |
-| getOrderStats | GET | /order/stats | `TradeOrderStatsQueryDTO` | `RespData<TradeOrderStatsVO>` | `TradeCenterClient#getOrderStats` | `OrderController#getOrderStats` | AdminStatsBffService(admin) |  |
+| getOrderStats | GET | /order/stats | `TradeOrderStatsQueryDTO` | `RespData<TradeOrderStatsVO>` | `TradeCenterClient#getOrderStats` | `OrderController#getOrderStats` | AdminStatsBffService(admin)、StoreStatsBffService(store-bff) |  |
 
 > ⚠ **新增 2 条动作：取消（`cancelOrder`）/ 仅退款（`refundOrder`）**
 > 形状与三个既有动作同形：`POST` 命令语义、出参 `void`（页面改完重拉详情 / 列表）、
@@ -96,16 +97,17 @@ respEnvelope: RespData
 > ⚠ 各自「从哪个状态可做、库存怎么还」属**业务规则**，见
 > [`backend/trade-center/README.md`](../../backend/trade-center/README.md) 第 7 节，**本文件不写**。
 
-> ⚠ **订单统计 `getOrderStats`**（2026-09-27 落契约，平台首页数据看板用）—— 本域**第一条聚合能力**：
-> - **无作用域锚点**：统计的是**全平台**订单，不按 `customerId` / `storeId` 过滤。与上表其余 9 条
->   「读侧作用域可选」的形态不同——**它不是「不限定」，而是本就没有锚点这一维**。
+> ⚠ **订单统计 `getOrderStats`**（2026-09-27 落契约，平台首页 / 店主端首页两个数据看板用）—— 本域**第一条聚合能力**：
+> - **作用域 `storeId` 可选**（2026-09-27 为店主端首页加，此前无锚点）：不传 = **全平台**（管理端本来就是合法全量视角）、
+>   传了就只看**本店**。⚠ 与写侧的必填锚点不是一回事——**读侧才有「不限定」这一档**。
+>   `customerId` **不收**：本能力没有「某顾客的营业额」这种语义，别为了对称加一个。
 > - **四个部件挤在一个接口里，时间基准刻意不同**，别当成不一致去「修」：
 >   `revenue` / `dealOrderCount` / `paidOrderCount` 按**支付时间**归属；`newSeries` 按**下单时间**（`create_time`）分桶。
 >   「钱动了才算营业额」与「新下了多少单」本就是两个口径。
 > - **比例不在域内算**：域只回**分子分母两个计数**（`dealOrderCount` / `paidOrderCount`），
->   比率与除零由 **admin BFF** 处理——比率是展示层的派生量，域不产出「已经除过的数」。
-> - **分桶粒度由调用方归并，本域一律按天出点**：域只回 `yyyy-MM-dd` 粒度的点，**按月归并由 admin BFF 做**
->   （窗口解析与粒度规则在整个系统里只有一处，见 [admin.md](./admin.md)）。⚠ 别在域侧加 `grain` 参数。
+>   比率与除零由**发起调用的端 BFF** 处理——比率是展示层的派生量，域不产出「已经除过的数」。
+> - **分桶粒度由调用方归并，本域一律按天出点**：域只回 `yyyy-MM-dd` 粒度的点，**按月归并由端 BFF 做**
+>   （窗口解析与粒度规则见 [cross-cutting.md](./cross-cutting.md) 第 25 条）。⚠ 别在域侧加 `grain` 参数。
 > - ⚠ **支付时间的唯一来源是 `trade_order_status_log`**：`trade_order` 主表**没有** `pay_time` 列，是**刻意不存**的
 >   （[`db/schema.sql`](../../backend/trade-center/src/main/resources/db/schema.sql) 那行注释：不另存 pay_time/ship_time/receive_time，
 >   避免同一事实存两份）。故按支付时间归属 = join 轨迹表取 `status='PAID'` 那行的 `create_time`。⚠ **不得**为了「查询方便」在主表补一列 `pay_time`。
@@ -173,8 +175,8 @@ respEnvelope: RespData
 > `contract.store.vo` / admin 本地三份同形同名的 `PageResult`（「别引错包」清单见 [cross-cutting.md](./cross-cutting.md) 第 3 条），
 > 第四个只会把那份清单继续撑大。各端 BFF 收到后**自行映射**成自己那份 `PageResult<…>`。
 
-> ⚠ **作用域字段只有一个来源、只有一种语义**：读侧的可选锚点在 `TradeOrderPageQueryDTO` / `TradeOrderQueryDTO`
-> 上（`customerId?` / `storeId?`，不填即不限定），写侧的必填锚点在各自动作 DTO 上（`@NotNull`）。
+> ⚠ **作用域字段只有一个来源、只有一种语义**：读侧的可选锚点在 `TradeOrderPageQueryDTO` / `TradeOrderQueryDTO` /
+> `TradeOrderStatsQueryDTO` 上（`customerId?` / `storeId?`，不填即不限定），写侧的必填锚点在各自动作 DTO 上（`@NotNull`）。
 > 已**删除**早先的 `TradeOrderPlatformPageQueryDTO`（端别子类）——端别差异是**调用方传不传**，不是类型差异
 > （[cross-cutting.md](./cross-cutting.md) 第 22 条）。⚠ 写侧**不得**复用读侧那两份可选锚点 DTO：
 > 省掉锚点就是「能改任意一笔单」，且**不报错、只写错**。

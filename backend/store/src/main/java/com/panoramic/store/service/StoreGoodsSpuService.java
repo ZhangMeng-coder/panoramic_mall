@@ -160,6 +160,46 @@ public interface StoreGoodsSpuService extends IService<StoreGoodsSpu> {
      */
     void batchUpdateSkuStock(Long storeId, StoreGoodsStockBatchUpdateDTO dto);
 
+    // ---- 有作用域维度：本店商品与库存规模（当前累计快照，无窗口；店主端首页看板用）----
+    // 三个计数各自的口径就是下面三个方法的定义处，调用方（store-bff）只组装、不重述条件。
+
+    /**
+     * <b>本店上架商品数</b>（SPU 口径）。
+     * <p>⚠ 粒度是 <b>SPU</b> 不是 SKU：数的是「本店有多少件商品在卖」，等价于
+     * 「至少一个 SKU 上架」（R2/R3 的不变量保证 {@code shelf_status} 与 SKU 联动，见 store README）。
+     * 与 {@link #countAbnormalStock} 的 SKU 粒度<b>不可相加、不可比</b>。</p>
+     * <p>逻辑删除的 SPU 由 MP 的 {@code @TableLogic} 自动排除，不必手写条件。</p>
+     *
+     * @param storeId 店主账号 id（== 店铺主键）
+     * @return 本店未删除且已上架的 SPU 数（无则 0，不返回 null）
+     */
+    long countOnShelf(Long storeId);
+
+    /**
+     * <b>本店下架商品数</b>（SPU 口径；含从未上架过的新品）。
+     * <p>⚠ 它与 {@link #countOnShelf} 之和 = 本店未删除的 SPU 总数；两者不受平台锁定影响
+     * （锁定只是把 SKU 级联下架，那之后 SPU 自然落在「下架」里，不另立一档）。</p>
+     *
+     * @param storeId 店主账号 id
+     * @return 本店未删除且为下架态的 SPU 数（无则 0，不返回 null）
+     */
+    long countOffShelf(Long storeId);
+
+    /**
+     * <b>本店库存异常 SKU 数</b>（SKU 行口径）。
+     * <p>判据：{@code stock = 0 OR (warn_stock IS NOT NULL AND stock <= warn_stock)}，含相等；
+     * <b>库存行缺失按 0 计</b>，故「未设阈值且无库存行」同样计入（与库存分页的展示口径一致）。</p>
+     * <p>⚠ <b>与库存页「仅看低库存」（{@code StoreGoodsStockPageQueryDTO.lowStockOnly}）不是同一条件</b>：
+     * 后者只认 {@code stock <= warn_stock}，故「未设阈值 + 库存 0」的 SKU 只在本计数里出现、
+     * 在库存页筛不出来。两处名字不同（低库存 / 库存异常）、判据不同，要对齐属另一个需求。</p>
+     * <p>⚠ 本方法在<b>商品编排</b>里做店级过滤（库存 service 不认识 {@code store_id}，
+     * 归属链是 {@code sku_id → sku.spu_id → spu.store_id}）——与 {@link #pageStock} 同一手法。</p>
+     *
+     * @param storeId 店主账号 id
+     * @return 本店未删除 SKU 中库存异常的条数（无则 0，不返回 null）
+     */
+    long countAbnormalStock(Long storeId);
+
     // ---- 跨店通用（不带 storeId 锚点：分页/聚合/批量详情为 admin BFF 与 mall-bff 共用，锁定解锁为 admin 专有）----
 
     /**

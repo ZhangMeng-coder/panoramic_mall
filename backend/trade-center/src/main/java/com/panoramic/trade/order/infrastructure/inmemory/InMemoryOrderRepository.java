@@ -227,13 +227,15 @@ public class InMemoryOrderRepository implements OrderRepository {
      * 拿 {@code createTime} 顶替支付时刻会算出一个**看着对、口径错**的营业额。</p>
      *
      * <p>本类只服务「无数据源的单测 / 切片」（{@code panoramic.trade.order.repository=memory}），
-     * 而统计是**没有作用域的平台级编排**，不在那些用例的范围内。真要用内存实现跑出这些数，
+     * 而统计是**首页看板的编排**（平台或本店视角），不在那些用例的范围内。真要用内存实现跑出这些数，
      * 得先让 {@code OrderModel} 记住每次状态变更的时刻——那是改域模型，不是补一个方法。</p>
+     *
+     * <p>⚠ 作用域 {@code storeId} 在本实现里无意义（它恒抛），签名保留只为与端口一致。</p>
      *
      * @throws UnsupportedOperationException 恒抛
      */
     @Override
-    public OrderStats getStats(LocalDate start, LocalDate end) {
+    public OrderStats getStats(LocalDate start, LocalDate end, Long storeId) {
         throw new UnsupportedOperationException(
                 "内存实现不支持订单统计：支付时刻只在轨迹表里，本类持有的 OrderModel 不带各次变更的时间");
     }

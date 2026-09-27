@@ -111,7 +111,7 @@ import type { StatsGrain, StatsOverview, StatsOverviewQuery, StatsPoint, StatsWi
 // 按需注册（不引整包）：本页只要折线图 + 直角坐标系 + 悬浮提示 + Canvas 渲染
 echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 
-/** 窗口下拉选项；值必须与后端 `AdminStatsQueryDTO.Window` 逐字同名（文案是展示层的事，只在这） */
+/** 窗口下拉选项；值必须与后端 `common` 的 `StatsWindow` 逐字同名（文案是展示层的事，只在这） */
 const WINDOW_OPTIONS: { value: StatsWindow; label: string }[] = [
   { value: 'THIS_MONTH', label: '本月' },
   { value: 'LAST_MONTH', label: '上月' },

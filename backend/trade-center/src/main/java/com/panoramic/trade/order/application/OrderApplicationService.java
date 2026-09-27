@@ -280,23 +280,27 @@ public class OrderApplicationService {
     }
 
     /**
-     * <b>平台订单统计</b>（首页看板用）：窗口内营业额 / 成交数 / 已支付数 + 每日新增下单数。
+     * <b>订单统计</b>（首页看板用）：窗口内营业额 / 成交数 / 已支付数 + 每日新增下单数。
      *
-     * <p>⚠ 与上面两个读路径<b>形态不同</b>：它<b>没有作用域这一维</b>（数全平台），调用方是 admin BFF。
-     * 域内仍不做鉴权——「谁能看全平台」由 admin 侧的路由与权限决定。</p>
+     * <p>⚠ <b>作用域 {@code storeId} 可选</b>（2026-09-27 起）：不传 = 全平台（admin BFF），
+     * 传了 = 本店（store-bff）——与上面两条读路径同款「传了就筛、不传就是不限定」。
+     * ⚠ 此前这里写的是「没有作用域这一维」，那是当时的事实，现已订正。
+     * 域内仍不做鉴权——「谁能看全平台 / 谁能看这家店」由各端 BFF 决定。</p>
+     *
+     * <p>⚠ 传了 {@code storeId} 就是<b>四个部件一起筛</b>：本店看板上四个数必须同源，否则加总对不上。</p>
      *
      * <p>⚠ <b>只收显式起止，不收窗口枚举、不收粒度</b>（cross-cutting 第 25 条）：月 / 季 / 年与
-     * 日→月归并只在 admin BFF；本方法原样把两个日期交给仓储，<b>不做任何日历运算</b>。</p>
+     * 日→月归并只在发起调用的端 BFF；本方法原样把两个日期交给仓储，<b>不做任何日历运算</b>。</p>
      *
      * <p>⚠ 也 <b>readOnly 事务</b>：本方法要发四条 SQL（三个聚合 + 一条分组），它们共同描述同一个窗口，
      * 理应在同一个读视图上——理由与分页 / 详情那两条相同（见类注释），不是为了回滚。</p>
      *
-     * @param dto 窗口起止（两个字段都必填，由 DTO 上的 {@code @NotNull} 守）
+     * @param dto 窗口起止（都必填，由 DTO 上的 {@code @NotNull} 守）+ 可选作用域 {@code storeId}
      * @return 四个部件（营业额恒非 null、系列不返回 null）
      */
     @Transactional(readOnly = true)
     public TradeOrderStatsVO getStats(TradeOrderStatsQueryDTO dto) {
-        return toStatsVo(orderRepository.getStats(dto.getStart(), dto.getEnd()));
+        return toStatsVo(orderRepository.getStats(dto.getStart(), dto.getEnd(), dto.getStoreId()));
     }
 
     // ── 内部：按作用域取单（取不到一律 404） ────────────────────────────────────

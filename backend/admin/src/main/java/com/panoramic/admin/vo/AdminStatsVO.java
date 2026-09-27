@@ -1,5 +1,7 @@
 package com.panoramic.admin.vo;
 
+import com.panoramic.common.stats.StatsGrain;
+import com.panoramic.common.stats.StatsPointVO;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -17,6 +19,10 @@ import java.util.List;
  * <p>⚠ 前一类的口径是**近似**：{@link #userCount} 数的是**顾客资料行**，
  * **不等于**注册用户数（偏差两个方向都有，见 {@code docs/contracts/customer-center.md}），
  * 对外文案**不得**写成「注册用户数」。</p>
+ *
+ * <p>⚠ 折线点与粒度用的是 {@code common} 的共用类型（{@link StatsPointVO} / {@link StatsGrain}），
+ * 与店主端看板同一份——它们是「BFF 补零归并之后的点」，与域侧那几个 {@code *StatsPointVO}
+ * **不可互相替换**。</p>
  */
 @Data
 public class AdminStatsVO {
@@ -64,12 +70,12 @@ public class AdminStatsVO {
      * <p>⚠ 页面**不得**自己按窗口天数重算这条规则——那会让「≤180 天按天、否则按月」有第二处实现。
      * 页面拿本字段决定 x 轴标签怎么格式化即可。</p>
      */
-    private Grain grain;
+    private StatsGrain grain;
 
     /**
      * 新增用户折线（窗口 · 按顾客资料行的创建时刻分桶 · 已按窗口零填充）
      */
-    private List<AdminStatsPointVO> userSeries;
+    private List<StatsPointVO> userSeries;
 
     /**
      * 新增订单折线（窗口 · 按**下单时刻**分桶 · 已按窗口零填充）
@@ -77,17 +83,5 @@ public class AdminStatsVO {
      * <p>⚠ 与 {@link #revenue} / {@link #dealOrderCount} 的时间基准**刻意不同**：
      * 「钱动了才算营业额」按支付时刻，「新下了多少单」按字面的下单时刻。</p>
      */
-    private List<AdminStatsPointVO> orderSeries;
-
-    /**
-     * 折线粒度取值（页面的 x 轴标签格式化依据）
-     */
-    public enum Grain {
-
-        /** 窗口跨度 ≤ 180 天：一天一个点 */
-        DAY,
-
-        /** 窗口跨度 &gt; 180 天：一个月一个点 */
-        MONTH
-    }
+    private List<StatsPointVO> orderSeries;
 }

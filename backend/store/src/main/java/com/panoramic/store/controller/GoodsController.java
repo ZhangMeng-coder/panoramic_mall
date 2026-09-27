@@ -11,6 +11,7 @@ import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.contract.store.dto.StoreGoodsStatsQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
@@ -20,6 +21,7 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.contract.store.vo.StoreGoodsStatsVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import com.panoramic.store.service.StoreGoodsSpuService;
 import jakarta.validation.groups.Default;
@@ -164,6 +166,24 @@ public class GoodsController {
             @Validated({Default.class, StoreScopeGroup.class}) @RequestBody StoreGoodsStockBatchUpdateDTO dto) {
         storeGoodsSpuService.batchUpdateSkuStock(dto.getStoreId(), dto);
         return RespData.success();
+    }
+
+    /**
+     * <b>本店商品与库存规模</b>（店主端首页数据看板）：上架 / 下架商品数（按 SPU）+ 库存异常数（按 SKU 行）。
+     * <p>⚠ <b>无窗口</b>：三个数都是当前累计快照（理由见 {@code StoreGoodsStatsVO}）。</p>
+     * <p>⚠ <b>口径钉在三个 owner 方法上，此处只组装、不重述任何筛选条件</b>
+     * （{@code countOnShelf} / {@code countOffShelf} / {@code countAbnormalStock}，
+     * 说明见各自接口方法）；库存异常的判据与库存页「仅看低库存」的差异也写在那两处。</p>
+     * <p>⚠ 与 {@code /goods/spu/**}、{@code /goods/stock/**} 各段都不冲突：本域没有
+     * {@code /goods/{单段模板}} 这条路由（同 {@code /shops/stats} 与 {@code /shops/{id}} 的共存）。</p>
+     */
+    @GetMapping("/stats")
+    public RespData<StoreGoodsStatsVO> stats(@Validated StoreGoodsStatsQueryDTO dto) {
+        StoreGoodsStatsVO vo = new StoreGoodsStatsVO();
+        vo.setOnShelfCount(storeGoodsSpuService.countOnShelf(dto.getStoreId()));
+        vo.setOffShelfCount(storeGoodsSpuService.countOffShelf(dto.getStoreId()));
+        vo.setAbnormalStockCount(storeGoodsSpuService.countAbnormalStock(dto.getStoreId()));
+        return RespData.success(vo);
     }
 
     // ---- 跨店通用（无作用域锚点，限定条件全由调用方自设）----

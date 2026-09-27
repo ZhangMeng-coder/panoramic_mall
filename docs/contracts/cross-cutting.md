@@ -338,7 +338,7 @@ layer: cross-cutting
 | 为什么 | 同一套月 / 季 / 年算术若下沉到域，就会**在每个域各存一份、各自漂移**——与第 3 条（同名孪生类型）、第 24 条（不制造第二个真相源）是同一条理由：**同一规则不写两遍**。且域接口的调用方可能不止一个：窗口枚举一旦进域，域就要去理解「这个端说的本季是哪一季」 |
 | ⚠ 快照类指标不受本条约束 | 「当前累计」的计数（用户总数 / 商家数 / 商品数）**没有时间维度**，域接口就**不该收**时间参数——别为了「和统计接口对称」硬塞 `start` / `end`，那会造出一个永远被忽略的参数 |
 | ⚠ 比值不在域内算 | 域只回**分子分母两个计数**，比率与除零处置是**展示层的派生量**，由 BFF 算。域不产出「已经除过的数」 |
-| 定义位置 | admin BFF：窗口解析与归并（`AdminStatsBffService` + 页面入参 `AdminStatsQueryDTO`）；域侧只有 `TradeOrderStatsQueryDTO` / `CustomerStatsQueryDTO`（各含 `start` / `end`，无窗口枚举、无粒度） |
+| 定义位置 | `common`：窗口解析与归并（`com.panoramic.common.stats` —— `StatsWindows` + `StatsSeriesMerger`，2026-09-27 从 admin BFF 上收，与店主端看板共用同一份）；两端的页面入参各自持有窗口枚举（admin `AdminStatsQueryDTO` / store-bff `StoreStatsQueryDTO`）。域侧只有 `TradeOrderStatsQueryDTO` / `CustomerStatsQueryDTO`（各含 `start` / `end`，无窗口枚举、无粒度） |
 | 消费位置 | 2026-09-27 落地的平台首页看板：admin BFF → `trade-center#getOrderStats` / `store#getShopStats` / `customer-center#getCustomerStats`，形状见 [trade-center.md](./trade-center.md) / [store.md](./store.md) / [customer-center.md](./customer-center.md) 与 [admin.md](./admin.md) |
 | 破坏后果 | 域侧收窗口枚举 → 同一个「本季」在不同卡片上算出不同区间，且改一处漏一处；域侧收 `grain` → 归并规则同样分叉。**两种都不报错**，只是首页几个数字彼此对不上——最难被发现的一类 |
 | 核对方式 | **人工核对**（「域接口入参不得出现窗口枚举 / 粒度」无法静态表达）。`drift-check.mjs` 只比对路径 / 方法 / 权限串，**看不见入参字段**。形状信号：域侧 `*QueryDTO` 里出现 `window` / `grain` / `period` 字段 = 本条违规 |

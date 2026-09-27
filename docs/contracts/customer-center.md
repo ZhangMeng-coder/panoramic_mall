@@ -50,8 +50,9 @@ respEnvelope: RespData
 >   （那 9 条要么以 `{customerId}` 为路径标识、要么在 DTO 里带锚点）。调用方是 **admin BFF**，不是 mall-bff 的自助路径。
 > - **出参两个部件、时间基准不同**（同一接口里刻意并存）：`totalCount` 是**当前累计快照**（不受入参影响），
 >   `newSeries` 是**窗口内的新增折线**（按 `create_time` 分桶）。故入参不填时 `totalCount` 照样有值。
-> - **分桶粒度由调用方归并，本域一律按天出点**：域只回 `yyyy-MM-dd` 粒度的点，**按月归并由 admin BFF 做**
->   （窗口解析与粒度规则在整个系统里只有一处，见 [admin.md](./admin.md)）。⚠ 别在域侧加 `grain` 参数——
+> - **分桶粒度由调用方归并，本域一律按天出点**：域只回 `yyyy-MM-dd` 粒度的点，**按月归并由端 BFF 做**
+>   （窗口解析与粒度规则在整个系统里只有一处 —— 2026-09-27 起在 `common` 的 `com.panoramic.common.stats`，
+>   见 [cross-cutting.md](./cross-cutting.md) 第 25 条；admin BFF 与 store-bff 都只是调用方）。⚠ 别在域侧加 `grain` 参数——
 >   那会让同一套月/季/年算术在多个域里各存一份。
 > - **`/profile/stats` 与 `/profile/{customerId}` 同段不冲突**：Spring 的**字面量模式优先于模板模式**，
 >   与 `/shops/page` 之于 `/shops/{id}`、`/shops/options` 是同一种共存（本表既有惯例，不是新引入的风险）。

@@ -135,9 +135,10 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 > - ⚠ **这是本层第一次调 customer-center**（此前只调 goods-center / store / trade-center），
 >   也是 admin **首次读取顾客侧数据**：需在 `AdminApplication` 的 `@EnableFeignClients` 加扫
 >   `com.panoramic.contract.customer` 包、并在 `pom.xml` 加 `customer-center-interface` 依赖。
-> - ⚠ **时间窗口与分桶粒度只在本层解析**（`AdminStatsQueryDTO.window` → 显式 `start` / `end`）：
->   三个域**只收显式时间、一律按天出点**，「本月 / 上季 / 今年」的日历算术与「按天 → 按月」的归并
->   **全在这一处**。⚠ 别把窗口枚举沉到域里——那会让月/季/年算术在每个域各存一份、各自漂移。
+> - ⚠ **时间窗口与分桶粒度在 `common` 解析，本层只是发起方**（`AdminStatsQueryDTO.window` → 显式 `start` / `end`）：
+>   三个域**只收显式时间、一律按天出点**；「本月 / 上季 / 今年」的日历算术与「按天 → 按月」的归并
+>   2026-09-27 起落在 `com.panoramic.common.stats`（`StatsWindows` / `StatsSeriesMerger`），
+>   与店主端看板**共用同一份**。⚠ 别把窗口枚举沉到域里——那会让月/季/年算术在每个域各存一份、各自漂移。
 > - ⚠ **指标的时间基准分两类**：`userCount` / `shopCount` / `goodsCount` 是**当前累计快照**（不受窗口影响）；
 >   其余 5 个按窗口算。⚠ 前一类的口径是**近似**——`userCount` 数的是顾客资料行，**不等于**注册用户数
 >   （偏差两个方向都有，见 [customer-center.md](./customer-center.md)）；对外文案不得写成「注册用户数」。
@@ -184,7 +185,8 @@ typeDirs: backend/goods-center-interface/src/main/java, backend/store-interface/
 
 | 来源 | 类型 |
 |---|---|
-| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO；首页看板：AdminStatsQueryDTO, AdminStatsVO, AdminStatsPointVO |
+| **admin 本地**（`admin/dto`、`admin/vo`） | RBAC 与登录：LoginDTO, ChangePasswordDTO, LoginResultVO, CurrentUserVO, RolePageQueryDTO, RoleSaveDTO, RoleUpdateDTO, RoleVO, RolePermissionIdsDTO, RoleUserIdsDTO, RoleUnassignedUserPageQueryDTO, UserPageQueryDTO, UserSaveDTO, UserUpdateDTO, UserVO, UserRoleIdsDTO, PermissionSaveDTO, PermissionUpdateDTO, PermissionTreeVO；编排专用：ShopGoodsPageQueryDTO, OrderPageQueryDTO；首页看板：AdminStatsQueryDTO, AdminStatsVO |
+| `common`（`com.panoramic.common.stats`，**两个端 BFF 共用**、域不得引用） | 首页看板用的窗口与折线类型：StatsWindow, StatsGrain, StatsPointVO, StatsDateRange, StatsWindows, StatsSeriesMerger（**同一份**，职责说明见 [store-bff.md](./store-bff.md) 第四节） |
 | `trade-center-interface`（`com.panoramic.contract.trade.vo`） | 订单：TradeOrderVO |
 | 两个接口模块（`com.panoramic.contract.goods.*` 在 `goods-center-interface`；`.store.*` 在 `store-interface`） | 商品模板：SpuPageQueryDTO, SpuSaveDTO, SpuUpdateDTO, SpuSkuReplaceDTO, SpuStatusDTO, SpuPageItemVO, SpuDetailVO, CategorySaveDTO, CategoryUpdateDTO, CategoryTreeVO, BrandPageQueryDTO, BrandSaveDTO, BrandUpdateDTO, BrandVO；店铺类型清单见 [store.md](./store.md) 第五节 |
 

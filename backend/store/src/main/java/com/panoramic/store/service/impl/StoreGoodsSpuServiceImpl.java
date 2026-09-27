@@ -385,6 +385,51 @@ public class StoreGoodsSpuServiceImpl extends ServiceImpl<StoreGoodsSpuMapper, S
         skuStockService.batchUpdateStock(skuIds, dto.getStock());
     }
 
+    // ---- 有作用域维度：本店商品与库存规模（当前累计快照，无窗口）----
+
+    @Override
+    public long countOnShelf(Long storeId) {
+        return countByShelfStatus(storeId, StoreGoodsSpu.SHELF_ON);
+    }
+
+    @Override
+    public long countOffShelf(Long storeId) {
+        return countByShelfStatus(storeId, StoreGoodsSpu.SHELF_OFF);
+    }
+
+    /**
+     * 本店某上下架状态的 SPU 数。
+     * <p>口径钉在接口方法上（调用方只说「要上架数」，不重述 {@code SHELF_ON} 是几），本方法只做拼装。
+     * ⚠ 逻辑删除条件（{@code is_delete = 0}）由 MP 基类自动拼上，不手写。</p>
+     */
+    private long countByShelfStatus(Long storeId, int shelfStatus) {
+        return lambdaQuery()
+                .eq(StoreGoodsSpu::getStoreId, storeId)
+                .eq(StoreGoodsSpu::getShelfStatus, shelfStatus)
+                .count();
+    }
+
+    @Override
+    public long countAbnormalStock(Long storeId) {
+        // 基表选 store_goods_sku：库存异常是 SKU 级事实（stock / warn_stock 都挂在 SKU 上），
+        // 故「按 SKU 行计数」的数就是它；SKU 的 is_delete=0 仍由 MP 基类自动拼上。
+        LambdaQueryWrapper<StoreGoodsSku> qw = Wrappers.<StoreGoodsSku>lambdaQuery()
+                // 店铺过滤走子查询：与 pageStock 同一手法（避免把全店 SPU id 拉回来拼 IN 列表；
+                // 用 apply 而非 inSql——MP 3.5.16 的 inSql(R, String) 不收参数、也不认 {0} 占位符）
+                .apply("spu_id IN (SELECT id FROM store_goods_spu WHERE store_id = {0} AND is_delete = 0)",
+                        storeId)
+                // 判据（含「库存行缺失按 0 计」那一支）：两个 EXISTS 是同一个「该 SKU 的库存行」
+                // 子查询的肯定 / 否定形式，合起来即「没有库存行 ⟹ 按 0 计 ⟹ 异常」。
+                // ⚠ 判断式与库存页的 lowStockOnly 刻意不同（那边只有 stock <= warn_stock），
+                //    差异与理由写在 StoreGoodsSpuService#countAbnormalStock 与 store README 第 9 节。
+                .apply("(EXISTS (SELECT 1 FROM store_goods_sku_stock st"
+                        + " WHERE st.sku_id = store_goods_sku.id AND st.is_delete = 0"
+                        + " AND (st.stock = 0 OR (st.warn_stock IS NOT NULL AND st.stock <= st.warn_stock)))"
+                        + " OR NOT EXISTS (SELECT 1 FROM store_goods_sku_stock st"
+                        + " WHERE st.sku_id = store_goods_sku.id AND st.is_delete = 0))");
+        return skuService.count(qw);
+    }
+
     // ---- 跨店通用（调用方自设限定条件；批量详情供 mall-bff 购物车，锁定解锁供 admin）----
 
     @Override

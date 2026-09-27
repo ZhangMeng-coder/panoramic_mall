@@ -21,6 +21,7 @@ import com.panoramic.contract.store.dto.StoreGoodsSpuCrossShopPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuFacetQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuSaveDTO;
 import com.panoramic.contract.store.dto.StoreGoodsSpuUpdateDTO;
+import com.panoramic.contract.store.dto.StoreGoodsStatsQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockBatchUpdateDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockPageQueryDTO;
 import com.panoramic.contract.store.dto.StoreGoodsStockUpdateDTO;
@@ -36,6 +37,7 @@ import com.panoramic.contract.store.vo.StoreGoodsSpuCrossShopPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuFacetVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPageItemVO;
 import com.panoramic.contract.store.vo.StoreGoodsSpuPlatformDetailVO;
+import com.panoramic.contract.store.vo.StoreGoodsStatsVO;
 import com.panoramic.contract.store.vo.StoreGoodsStockPageItemVO;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.cloud.openfeign.SpringQueryMap;
@@ -213,6 +215,25 @@ public interface StoreClient {
     @PutMapping("/goods/stock/batch")
     RespData<Void> batchUpdateSkuStock(@RequestBody StoreGoodsStockBatchUpdateDTO dto);
 
+    /**
+     * <b>本店商品与库存规模</b>（店主端首页数据看板用）：上架 / 下架商品数（按 SPU）+ 库存异常数（按 SKU 行）。
+     * <p>⚠ <b>与 {@link #getShopStats} 是一对但不是一个</b>，别合并：那条是<b>平台全量视角</b>
+     * （店铺数 + 商品总数，无锚点），本条是<b>某一家店</b>的规模（{@code storeId} 必填，没有全量视角——
+     * 「全平台的上下架数」在本域没有语义）。两条的差别是<b>有没有合法的全量视角</b>，不是「是不是统计接口」。</p>
+     * <p>⚠ <b>无窗口</b>：三个数都是当前累计快照，没有时间范围概念——别为了「和订单统计对称」
+     * 给它加 {@code start} / {@code end}（加了也没有对应语义，见 {@code StoreGoodsStatsVO}）。</p>
+     * <p>⚠ 三个数<b>合并成一个接口</b>：同属「本店商品规模」一件事，一次往返拿全，不拆三条。</p>
+     * <p>⚠ 与既有的 {@code /goods/spu/**}、{@code /goods/stock/**} 各段都不冲突：本域没有
+     * {@code /goods/{单段模板}} 这条路由（模板都在更深一段，如 {@code /goods/spu/{id}}）。</p>
+     * <p>⚠ 调用方是 <b>store-bff</b>（店主端看板）；域内只按传入的 {@code storeId} 筛，
+     * 不判身份、不读 {@code X-User-Type} 判权。口径（含库存异常的判据）见
+     * {@link com.panoramic.contract.store.vo.StoreGoodsStatsVO} 与 store README 第 9 节。</p>
+     *
+     * @return 上架 / 下架商品数与库存异常数（均为计数，无则为 0、不返回 null）
+     */
+    @GetMapping("/goods/stats")
+    RespData<StoreGoodsStatsVO> getGoodsStats(@SpringQueryMap StoreGoodsStatsQueryDTO dto);
+
     // ---- 跨店通用（无作用域锚点，限定条件全由调用方自设）----
     // 分页（/goods/cross-shop/spu/page）与聚合（/goods/facets）**跨店通用**：不传 store_id 锚点，
     //   —— admin BFF「店铺商品管理」走全量，mall-bff C 端浏览固定传 shopStatus/shelfStatus/lockStatus。
@@ -294,6 +315,10 @@ public interface StoreClient {
      * 评价星级分布（固定 1~5 五行、无评价的星级补 0，外加总条数；跨店通用，条件同上）。
      * <p>⚠ C 端要的是<b>分布</b>（不要星级筛选），商户端要的是<b>筛选</b>（不要分布）——
      * 但域侧不为端分侧，两个能力都通用地提供。</p>
+     * <p>⚠ 另收<b>可选</b> {@code start} / {@code end}（2026-09-27 加，为店主端看板的「评价分布」）：
+     * 按评价行 {@code create_time} 筛，<b>闭区间、含首尾整天</b>（上界取 {@code end} 次日 00:00 用 {@code <} 排除）；
+     * <b>不传 = 不限定</b>，C 端商品详情照旧不传、行为不变。⚠ 窗口<b>枚举</b>（「本月」「上季」）不进本接口——
+     * 域只收显式时间（cross-cutting 第 25 条），日历算术在调用方 BFF。</p>
      */
     @GetMapping("/goods/evaluation/stat")
     RespData<StoreGoodsEvaluationStatVO> evaluationStat(@SpringQueryMap StoreGoodsEvaluationStatQueryDTO query);
